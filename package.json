@@ -1,0 +1,62 @@
+{
+  "name": "sevale-crm",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "engines": {
+    "node": ">=24.15.0 <25",
+    "npm": ">=11.0.0 <12"
+  },
+  "overrides": {
+    "deepmerge-ts": "8.0.2",
+    "mysql2": "3.24.3"
+  },
+  "scripts": {
+    "dev": "concurrently --kill-others --names web,api --prefix-colors blue,green \"npm run dev:web\" \"npm run dev:api\"",
+    "dev:web": "npm run dev --workspace @sevale/web",
+    "dev:api": "npm run dev --workspace @sevale/api",
+    "build": "npm run prisma:generate && npm run build --workspaces --if-present",
+    "start": "npm run start:prod --workspace @sevale/api",
+    "lint": "eslint . --max-warnings 0",
+    "typecheck": "tsc --noEmit --pretty false && npm run typecheck --workspaces --if-present",
+    "test:auth": "tsc --ignoreConfig --module NodeNext --moduleResolution NodeNext --target ES2023 --experimentalDecorators --emitDecoratorMetadata --esModuleInterop --skipLibCheck --outDir .tmp/auth-smoke --rootDir . scripts/auth-smoke.ts && node .tmp/auth-smoke/scripts/auth-smoke.js",
+    "test:users": "tsc --ignoreConfig --module NodeNext --moduleResolution NodeNext --target ES2023 --experimentalDecorators --emitDecoratorMetadata --esModuleInterop --skipLibCheck --outDir .tmp/users-smoke --rootDir . scripts/users-smoke.ts && node .tmp/users-smoke/scripts/users-smoke.js",
+    "test:products": "tsc --ignoreConfig --module NodeNext --moduleResolution NodeNext --target ES2023 --experimentalDecorators --emitDecoratorMetadata --esModuleInterop --skipLibCheck --outDir .tmp/products-smoke --rootDir . scripts/products-smoke.ts && node .tmp/products-smoke/scripts/products-smoke.js",
+    "test:integrations": "tsc --ignoreConfig --module NodeNext --moduleResolution NodeNext --target ES2023 --experimentalDecorators --emitDecoratorMetadata --esModuleInterop --skipLibCheck --outDir .tmp/integrations-smoke --rootDir . scripts/integrations-smoke.ts && node .tmp/integrations-smoke/scripts/integrations-smoke.js",
+    "test:siigo-token": "tsc --ignoreConfig --module NodeNext --moduleResolution NodeNext --target ES2023 --experimentalDecorators --emitDecoratorMetadata --esModuleInterop --skipLibCheck --outDir .tmp/siigo-token-smoke --rootDir . scripts/siigo-token-smoke.ts && node .tmp/siigo-token-smoke/scripts/siigo-token-smoke.js",
+    "test:product-link": "tsc --ignoreConfig --module NodeNext --moduleResolution NodeNext --target ES2023 --experimentalDecorators --emitDecoratorMetadata --esModuleInterop --skipLibCheck --outDir .tmp/product-link-smoke --rootDir . scripts/product-link-smoke.ts && node .tmp/product-link-smoke/scripts/product-link-smoke.js",
+    "test:n8n": "tsc --ignoreConfig --module NodeNext --moduleResolution NodeNext --target ES2023 --experimentalDecorators --emitDecoratorMetadata --esModuleInterop --skipLibCheck --outDir .tmp/n8n-smoke --rootDir . scripts/n8n-smoke.ts && node .tmp/n8n-smoke/scripts/n8n-smoke.js",
+    "test:realtime": "tsc --ignoreConfig --module NodeNext --moduleResolution NodeNext --target ES2023 --experimentalDecorators --emitDecoratorMetadata --esModuleInterop --skipLibCheck --outDir .tmp/realtime-smoke --rootDir . scripts/realtime-smoke.ts && node .tmp/realtime-smoke/scripts/realtime-smoke.js",
+    "test:notifications": "tsc --ignoreConfig --module NodeNext --moduleResolution NodeNext --target ES2023 --experimentalDecorators --emitDecoratorMetadata --esModuleInterop --skipLibCheck --outDir .tmp/notifications-smoke --rootDir . scripts/notifications-smoke.ts && node .tmp/notifications-smoke/scripts/notifications-smoke.js",
+    "test:security": "tsc --ignoreConfig --module NodeNext --moduleResolution NodeNext --target ES2023 --experimentalDecorators --emitDecoratorMetadata --esModuleInterop --skipLibCheck --outDir .tmp/security-smoke --rootDir . scripts/security-check.ts scripts/hardening-smoke.ts && node .tmp/security-smoke/scripts/security-check.js && node .tmp/security-smoke/scripts/hardening-smoke.js",
+    "test:exposure": "tsc --ignoreConfig --module NodeNext --moduleResolution NodeNext --target ES2023 --experimentalDecorators --emitDecoratorMetadata --esModuleInterop --skipLibCheck --outDir .tmp/exposure-smoke --rootDir . scripts/exposure-smoke.ts && node .tmp/exposure-smoke/scripts/exposure-smoke.js",
+    "test:smoke": "npm run test:auth && npm run test:users && npm run test:products && npm run test:integrations && npm run test:siigo-token && npm run test:product-link && npm run test:n8n && npm run test:realtime && npm run test:notifications && npm run test:exposure",
+    "check:release": "npm run format:check && npm run lint && npm run typecheck && npm run prisma:validate && npm run build && npm run test:security && npm run test:smoke",
+    "check:siigo-auth": "tsc --ignoreConfig --module NodeNext --moduleResolution NodeNext --target ES2023 --experimentalDecorators --emitDecoratorMetadata --esModuleInterop --skipLibCheck --outDir .tmp/siigo-auth-check --rootDir . scripts/siigo-auth-check.ts && node .tmp/siigo-auth-check/scripts/siigo-auth-check.js",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "prisma:generate": "prisma7 generate",
+    "prisma:format": "prisma7 format",
+    "prisma:validate": "prisma7 validate",
+    "prisma:migrate": "prisma7 migrate dev",
+    "prisma:migrate:deploy": "prisma7 migrate deploy",
+    "prisma:seed": "prisma7 db seed",
+    "prisma:studio": "prisma7 studio"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@prisma/prisma7": "7.10.0",
+    "@types/node": "24.10.9",
+    "concurrently": "9.2.4",
+    "eslint": "10.9.1",
+    "globals": "16.4.0",
+    "prettier": "3.9.6",
+    "tsx": "4.23.13",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.69.0"
+  }
+}

@@ -1,0 +1,163 @@
+generator client {
+  provider     = "prisma-client"
+  output       = "../apps/api/src/generated/prisma"
+  moduleFormat = "esm"
+}
+
+datasource db {
+  provider = "mysql"
+}
+
+enum Role {
+  ADMIN
+  COMMERCIAL
+  LOGISTICS
+}
+
+enum Store {
+  SERATUS
+  PALI
+}
+
+enum SyncStatus {
+  PENDING
+  SYNCED
+  OUT_OF_SYNC
+  ERROR
+}
+
+model User {
+  id                String             @id @default(uuid()) @db.VarChar(36)
+  name              String             @db.VarChar(191)
+  email             String             @unique @db.VarChar(191)
+  emailVerified     Boolean            @default(false) @map("email_verified")
+  image             String?            @db.Text
+  role              Role               @default(COMMERCIAL)
+  active            Boolean            @default(true)
+  lastLoginAt       DateTime?          @map("last_login_at")
+  createdAt         DateTime           @default(now()) @map("created_at")
+  updatedAt         DateTime           @updatedAt @map("updated_at")
+  sessions          Session[]
+  accounts          Account[]
+  notificationReads NotificationRead[]
+
+  @@map("users")
+}
+
+model Session {
+  id        String   @id @default(uuid()) @db.VarChar(36)
+  userId    String   @map("user_id") @db.VarChar(36)
+  token     String   @unique @db.VarChar(255)
+  expiresAt DateTime @map("expires_at")
+  ipAddress String?  @map("ip_address") @db.VarChar(191)
+  userAgent String?  @map("user_agent") @db.Text
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("sessions")
+}
+
+model Account {
+  id                    String    @id @default(uuid()) @db.VarChar(36)
+  userId                String    @map("user_id") @db.VarChar(36)
+  issuer                String    @db.VarChar(255)
+  accountId             String    @map("account_id") @db.VarChar(191)
+  providerId            String    @map("provider_id") @db.VarChar(191)
+  accessToken           String?   @map("access_token") @db.Text
+  refreshToken          String?   @map("refresh_token") @db.Text
+  accessTokenExpiresAt  DateTime? @map("access_token_expires_at")
+  refreshTokenExpiresAt DateTime? @map("refresh_token_expires_at")
+  scope                 String?   @db.Text
+  idToken               String?   @map("id_token") @db.Text
+  password              String?   @db.Text
+  createdAt             DateTime  @default(now()) @map("created_at")
+  updatedAt             DateTime  @updatedAt @map("updated_at")
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([issuer, accountId])
+  @@index([userId])
+  @@map("accounts")
+}
+
+model Verification {
+  id         String   @id @default(uuid()) @db.VarChar(36)
+  identifier String   @db.VarChar(191)
+  value      String   @db.Text
+  expiresAt  DateTime @map("expires_at")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  @@index([identifier])
+  @@index([expiresAt])
+  @@map("verifications")
+}
+
+model Product {
+  id             Int            @id @default(autoincrement())
+  siigoId        String         @unique @map("siigo_id") @db.VarChar(191)
+  sku            String         @unique @db.VarChar(191)
+  siigoPriceCop  Decimal        @map("siigo_price_cop") @db.Decimal(14, 2)
+  siigoPriceUsd  Decimal        @map("siigo_price_usd") @db.Decimal(14, 2)
+  siigoStock     Int            @map("siigo_stock")
+  store          Store
+  wooParentId    BigInt?        @map("woo_parent_id") @db.UnsignedBigInt
+  wooVariationId BigInt?        @map("woo_variation_id") @db.UnsignedBigInt
+  wooSku         String         @map("woo_sku") @db.VarChar(191)
+  wooPriceCop    Decimal        @map("woo_price_cop") @db.Decimal(14, 2)
+  wooPriceUsd    Decimal        @map("woo_price_usd") @db.Decimal(14, 2)
+  wooStock       Int            @map("woo_stock")
+  syncStatus     SyncStatus     @default(PENDING) @map("sync_status")
+  lastSyncAt     DateTime?      @map("last_sync_at")
+  lastCheckAt    DateTime?      @map("last_check_at")
+  productName    String         @map("product_name") @db.VarChar(255)
+  imageUrl       String?        @map("image_url") @db.Text
+  createdAt      DateTime       @default(now()) @map("created_at")
+  updatedAt      DateTime       @updatedAt @map("updated_at")
+  notifications  Notification[]
+
+  @@index([store])
+  @@index([syncStatus])
+  @@index([productName])
+  @@map("products")
+}
+
+model IntegrationToken {
+  id          Int      @id @default(autoincrement())
+  provider    String   @unique @db.VarChar(64)
+  accessToken String   @map("access_token") @db.Text
+  expiresAt   DateTime @map("expires_at")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@map("integration_tokens")
+}
+
+model Notification {
+  id        Int                @id @default(autoincrement())
+  type      String             @db.VarChar(100)
+  title     String             @db.VarChar(191)
+  message   String             @db.Text
+  productId Int?               @map("product_id")
+  createdAt DateTime           @default(now()) @map("created_at")
+  product   Product?           @relation(fields: [productId], references: [id], onDelete: SetNull)
+  reads     NotificationRead[]
+
+  @@index([productId])
+  @@index([createdAt])
+  @@map("notifications")
+}
+
+model NotificationRead {
+  notificationId Int          @map("notification_id")
+  userId         String       @map("user_id") @db.VarChar(36)
+  readAt         DateTime     @default(now()) @map("read_at")
+  notification   Notification @relation(fields: [notificationId], references: [id], onDelete: Cascade)
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([notificationId, userId])
+  @@index([userId])
+  @@map("notification_reads")
+}

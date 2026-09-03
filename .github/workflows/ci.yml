@@ -1,0 +1,64 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: ci-root-password
+          MYSQL_DATABASE: sevale_crm
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -pci-root-password"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+
+    env:
+      NODE_ENV: test
+      DATABASE_URL: mysql://root:ci-root-password@127.0.0.1:3306/sevale_crm
+      FRONTEND_URL: http://localhost:5173
+      BETTER_AUTH_URL: http://localhost:3000
+      BETTER_AUTH_SECRET: ci-only-better-auth-secret-at-least-32-characters
+      VITE_API_URL: http://localhost:3000
+      VITE_TURNSTILE_SITE_KEY: 1x00000000000000000000BB
+      TURNSTILE_SECRET_KEY: 1x0000000000000000000000000000000AA
+      N8N_API_KEY: ci-only-n8n-api-key-at-least-32-characters
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Node.js 24.16.0
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.16.0
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Apply migrations to CI database
+        run: npm run prisma:migrate:deploy
+
+      - name: Validate release
+        run: npm run check:release
+
+      - name: Reject future critical advisories
+        run: npm audit --omit=dev --audit-level=critical

@@ -1,0 +1,111 @@
+import { z } from 'zod';
+
+export const emailSchema = z.string().trim().toLowerCase().email('Ingresa un correo válido.');
+
+export const passwordSchema = z
+  .string()
+  .min(8, 'La contraseña debe tener al menos 8 caracteres.')
+  .max(128, 'La contraseña no puede superar los 128 caracteres.');
+
+export const otpSchema = z.string().regex(/^\d{6}$/, 'Ingresa el código de 6 dígitos.');
+
+export const requestOtpSchema = z.object({
+  email: emailSchema,
+  type: z.literal('sign-in'),
+});
+
+export const passwordLoginSchema = z.object({
+  email: emailSchema,
+  password: passwordSchema,
+});
+
+export const otpLoginSchema = z.object({
+  email: emailSchema,
+  otp: otpSchema,
+});
+
+export const roleSchema = z.enum(['ADMIN', 'COMMERCIAL', 'LOGISTICS']);
+
+export const createUserSchema = z.object({
+  name: z.string().trim().min(2, 'El nombre debe tener al menos 2 caracteres.').max(191),
+  email: emailSchema,
+  role: roleSchema,
+  active: z.boolean().default(true),
+});
+
+export const updateUserSchema = z
+  .object({
+    name: z.string().trim().min(2).max(191).optional(),
+    role: roleSchema.optional(),
+    active: z.boolean().optional(),
+  })
+  .refine((data) => Object.keys(data).length > 0, 'Debes enviar al menos un cambio.');
+
+export const userListQuerySchema = z.object({
+  search: z.string().trim().max(191).default(''),
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(20),
+});
+
+export const userIdSchema = z.string().uuid('El identificador del usuario no es válido.');
+
+export const storeSchema = z.enum(['SERATUS', 'PALI']);
+export const syncStatusSchema = z.enum(['PENDING', 'SYNCED', 'OUT_OF_SYNC', 'ERROR']);
+
+export const productListQuerySchema = z.object({
+  search: z.string().trim().max(191, 'La búsqueda es demasiado larga.').default(''),
+  store: storeSchema.optional(),
+  syncStatus: syncStatusSchema.optional(),
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(20),
+});
+
+export const productIdSchema = z.coerce
+  .number()
+  .int('El identificador del producto no es válido.')
+  .positive('El identificador del producto no es válido.');
+
+export const skuSchema = z
+  .string()
+  .trim()
+  .min(1, 'Debes ingresar un SKU.')
+  .max(191, 'El SKU no puede superar los 191 caracteres.')
+  .regex(/^[A-Za-z0-9._-]+$/, 'El SKU contiene caracteres no válidos.');
+
+export const externalProductQuerySchema = z.object({
+  sku: skuSchema,
+});
+
+export const createProductLinkSchema = z.object({
+  sku: skuSchema,
+});
+
+export const siigoProductUpdateSchema = z
+  .object({
+    siigo_id: z.string().trim().min(1).max(191),
+    sku: skuSchema,
+    siigo_price_cop: z.number().finite().nonnegative(),
+    siigo_price_usd: z.number().finite().nonnegative(),
+    siigo_stock: z.number().int().nonnegative(),
+  })
+  .strict();
+
+export const notificationListQuerySchema = z.object({
+  status: z.enum(['all', 'unread', 'read']).default('all'),
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(50).default(20),
+});
+
+export const notificationIdSchema = z.coerce
+  .number()
+  .int('El identificador de la notificación no es válido.')
+  .positive('El identificador de la notificación no es válido.');
+
+export type ExternalProductQuery = z.infer<typeof externalProductQuerySchema>;
+export type CreateProductLinkInput = z.infer<typeof createProductLinkSchema>;
+export type SiigoProductUpdateInput = z.infer<typeof siigoProductUpdateSchema>;
+export type NotificationListQuery = z.infer<typeof notificationListQuerySchema>;
+
+export type CreateUserInput = z.infer<typeof createUserSchema>;
+export type UpdateUserInput = z.infer<typeof updateUserSchema>;
+export type ProductListQuery = z.infer<typeof productListQuerySchema>;
