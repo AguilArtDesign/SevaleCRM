@@ -48,6 +48,8 @@ const currencyCop = new Intl.NumberFormat('es-CO', {
   currency: 'COP',
   maximumFractionDigits: 0,
 });
+const tableCop = new Intl.NumberFormat('es-CO', { maximumFractionDigits: 0 });
+const tableUsd = new Intl.NumberFormat('es-CO', { maximumFractionDigits: 2 });
 
 const statusMeta: Record<
   ProductSyncStatus,
@@ -146,9 +148,9 @@ export function InventoryPage() {
                 <Boxes3 width={20} height={20} />
               )}
             </span>
-            <div>
-              <strong>{row.original.productName}</strong>
-              <span>{row.original.sku}</span>
+            <div className="inventory-product-copy">
+              <span className="inventory-product-name">{row.original.productName}</span>
+              <small className="inventory-product-sku">{row.original.sku}</small>
             </div>
           </div>
         ),
@@ -161,7 +163,12 @@ export function InventoryPage() {
       {
         id: 'price',
         header: 'Precio Siigo',
-        cell: ({ row }) => currencyCop.format(row.original.siigoPriceCop),
+        cell: ({ row }) => (
+          <div className="inventory-price-cell">
+            <span>${tableCop.format(row.original.siigoPriceCop)} COP</span>
+            <small>${tableUsd.format(row.original.siigoPriceUsd)} USD</small>
+          </div>
+        ),
       },
       {
         id: 'stock',
@@ -245,6 +252,7 @@ export function InventoryPage() {
     features: tableFeatureSet,
     columns,
     data: productsQuery.data?.data ?? [],
+    getRowId: (product) => String(product.id),
   });
 
   const applySearch = (value: string) => {
@@ -462,7 +470,7 @@ export function InventoryPage() {
                 </Table.Header>
                 <Table.Body>
                   {table.getRowModel().rows.map((row) => (
-                    <Table.Row key={row.id} id={row.original.id}>
+                    <Table.Row key={row.original.id} id={row.original.id}>
                       <Table.Cell className="inventory-selection-cell">
                         <Checkbox
                           slot="selection"

@@ -33,8 +33,11 @@ export function NotificationCenter() {
 
   return (
     <Popover>
-      <Popover.Trigger
+      <Button
         className="notification-trigger"
+        isIconOnly
+        size="sm"
+        variant="ghost"
         aria-label={
           unreadCount > 0 ? `Abrir notificaciones, ${unreadCount} sin leer` : 'Abrir notificaciones'
         }
@@ -45,7 +48,7 @@ export function NotificationCenter() {
             {unreadCount > 99 ? '99+' : unreadCount}
           </span>
         )}
-      </Popover.Trigger>
+      </Button>
       <Popover.Content placement="bottom end" className="shell-popover notification-popover">
         <Popover.Dialog>
           <div className="notification-heading">

@@ -451,12 +451,13 @@ select {
 
 .notification-trigger {
   position: relative;
+  flex: 0 0 auto;
 }
 
 .notification-badge {
   position: absolute;
-  top: 0.1rem;
-  right: 0.05rem;
+  top: -0.3rem;
+  right: -0.3rem;
   display: grid;
   min-width: 1.05rem;
   height: 1.05rem;
@@ -900,20 +901,35 @@ select {
   gap: 0.75rem;
 }
 
-.inventory-product-cell > div,
+.inventory-product-copy,
+.inventory-price-cell,
 .product-detail-product > div {
   display: grid;
+  gap: 0;
 }
 
-.inventory-product-cell span,
 .product-detail-product span {
   color: var(--muted);
   font-size: 0.75rem;
 }
 
-.inventory-product-cell div strong {
-  font-size: 0.8rem;
+.inventory-product-name,
+.inventory-price-cell > span {
+  color: var(--foreground);
+  font-size: 0.875rem;
+  font-weight: 400;
+  line-height: 1.25;
 }
+
+.inventory-product-sku,
+.inventory-price-cell > small {
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 400;
+  line-height: 1.25;
+  opacity: 0.8;
+}
+
 .product-thumbnail,
 .product-detail-image,
 .inventory-empty-icon {
