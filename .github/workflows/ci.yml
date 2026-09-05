@@ -54,6 +54,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Generate Prisma client
+        run: npm run prisma:generate
+
       - name: Apply migrations to CI database
         run: npm run prisma:migrate:deploy
 
