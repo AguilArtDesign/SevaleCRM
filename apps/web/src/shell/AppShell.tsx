@@ -1,13 +1,12 @@
 import { useEffect, useState } from 'react';
-import { Button, Popover, Spinner, Typography } from '@heroui/react';
+import { Avatar, Button, Spinner, Typography } from '@heroui/react';
 import {
   ArrowRightFromSquare,
-  Bars,
   Boxes3,
-  ChevronDown,
+  Gear,
+  LayoutSideContentLeft,
   Moon,
   Persons,
-  ShieldKeyhole,
   Sun,
   Xmark,
 } from '@gravity-ui/icons';
@@ -24,17 +23,6 @@ const roleLabels = {
   LOGISTICS: 'Logística',
 } as const;
 
-const pageMeta = {
-  '/inventory': {
-    title: 'Inventario',
-    description: 'Consulta y sincronización de productos',
-  },
-  '/users': {
-    title: 'Usuarios',
-    description: 'Administración de cuentas y permisos',
-  },
-} as const;
-
 function initials(name?: string): string {
   if (!name) return 'SC';
   return name
@@ -44,6 +32,17 @@ function initials(name?: string): string {
     .join('');
 }
 
+function firstName(name?: string): string {
+  return name?.trim().split(/\s+/)[0] || 'Usuario';
+}
+
+function greeting(date = new Date()): string {
+  const hour = date.getHours();
+  if (hour >= 5 && hour < 12) return 'Buenos días';
+  if (hour >= 12 && hour < 19) return 'Buenas tardes';
+  return 'Buenas noches';
+}
+
 export function AppShell() {
   useRealtimeUpdates();
   const navigate = useNavigate();
@@ -51,16 +50,38 @@ export function AppShell() {
   const { user, isLoading } = useCurrentUser();
   const { theme, toggleTheme } = useTheme();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const currentPage =
-    pageMeta[location.pathname as keyof typeof pageMeta] ?? pageMeta['/inventory'];
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [isMobile, setIsMobile] = useState(
+    () => typeof window !== 'undefined' && window.matchMedia?.('(max-width: 900px)').matches,
+  );
+  const isSidebarVisible = isMobile ? isSidebarOpen : !isSidebarCollapsed;
 
   useEffect(() => {
     setIsSidebarOpen(false);
   }, [location.pathname]);
 
+  useEffect(() => {
+    const mediaQuery = window.matchMedia?.('(max-width: 900px)');
+    if (!mediaQuery) return;
+
+    const updateViewport = (event: MediaQueryListEvent) => setIsMobile(event.matches);
+    setIsMobile(mediaQuery.matches);
+    mediaQuery.addEventListener('change', updateViewport);
+    return () => mediaQuery.removeEventListener('change', updateViewport);
+  }, []);
+
   const logout = async () => {
     await authClient.signOut();
     void navigate('/login', { replace: true });
+  };
+
+  const toggleSidebar = () => {
+    if (isMobile) {
+      setIsSidebarOpen((isOpen) => !isOpen);
+      return;
+    }
+
+    setIsSidebarCollapsed((isCollapsed) => !isCollapsed);
   };
 
   if (isLoading) {
@@ -73,19 +94,20 @@ export function AppShell() {
   }
 
   return (
-    <div className="crm-shell">
+    <div className={`crm-shell${isSidebarCollapsed ? ' crm-shell-sidebar-collapsed' : ''}`}>
       <aside className={`crm-sidebar${isSidebarOpen ? ' crm-sidebar-open' : ''}`}>
-        <div className="sidebar-brand">
-          <span className="sidebar-brand-mark" aria-hidden="true">
-            <ShieldKeyhole width={25} height={25} />
-          </span>
+        <div className="sidebar-profile">
+          <Avatar color="accent" size="sm" variant="soft" aria-hidden="true">
+            <Avatar.Fallback>{initials(user?.name)}</Avatar.Fallback>
+          </Avatar>
           <div>
-            <strong>SevaleCRM</strong>
-            <span>Panel administrativo</span>
+            <strong>{user?.name || 'Usuario'}</strong>
+            <span>{user ? roleLabels[user.role] : 'Sesión activa'}</span>
           </div>
           <Button
             className="sidebar-close"
             isIconOnly
+            size="sm"
             variant="ghost"
             aria-label="Cerrar navegación"
             onPress={() => setIsSidebarOpen(false)}
@@ -120,14 +142,26 @@ export function AppShell() {
           )}
         </nav>
 
-        <div className="sidebar-session">
-          <span className="user-avatar" aria-hidden="true">
-            {initials(user?.name)}
-          </span>
-          <div>
-            <strong>{user?.name || 'Usuario'}</strong>
-            <span>{user ? roleLabels[user.role] : 'Sesión activa'}</span>
-          </div>
+        <div className="sidebar-footer">
+          <Button
+            className="sidebar-footer-action"
+            fullWidth
+            variant="ghost"
+            isDisabled
+            aria-label="Configuración, próximamente"
+          >
+            <Gear width={18} height={18} />
+            Configuración
+          </Button>
+          <Button
+            className="sidebar-footer-action"
+            fullWidth
+            variant="ghost"
+            onPress={() => void logout()}
+          >
+            <ArrowRightFromSquare width={18} height={18} />
+            Cerrar sesión
+          </Button>
         </div>
       </aside>
 
@@ -141,27 +175,28 @@ export function AppShell() {
 
       <div className="crm-workspace">
         <header className="crm-header">
-          <div className="crm-header-title">
+          <div className="crm-header-welcome">
             <Button
-              className="sidebar-open"
+              className="sidebar-toggle"
               isIconOnly
+              size="sm"
               variant="ghost"
-              aria-label="Abrir navegación"
-              onPress={() => setIsSidebarOpen(true)}
+              aria-label={isSidebarVisible ? 'Ocultar navegación' : 'Mostrar navegación'}
+              aria-expanded={isSidebarVisible}
+              onPress={toggleSidebar}
             >
-              <Bars width={20} height={20} />
+              <LayoutSideContentLeft width={18} height={18} />
             </Button>
-            <div>
-              <Typography.Heading level={1}>{currentPage.title}</Typography.Heading>
-              <Typography.Paragraph color="muted" size="sm">
-                {currentPage.description}
-              </Typography.Paragraph>
-            </div>
+            <Typography.Heading level={1}>
+              {greeting()}, {firstName(user?.name)}
+            </Typography.Heading>
           </div>
 
           <div className="crm-header-actions">
             <Button
+              className="shell-icon-button"
               isIconOnly
+              size="sm"
               variant="ghost"
               aria-label={theme === 'dark' ? 'Cambiar a tema claro' : 'Cambiar a tema oscuro'}
               onPress={toggleTheme}
@@ -170,39 +205,6 @@ export function AppShell() {
             </Button>
 
             <NotificationCenter />
-
-            <Popover>
-              <Popover.Trigger className="user-menu-button" aria-label="Abrir menú de usuario">
-                <span className="user-avatar" aria-hidden="true">
-                  {initials(user?.name)}
-                </span>
-                <span className="user-menu-copy">
-                  <strong>{user?.name || 'Usuario'}</strong>
-                  <small>{user?.email}</small>
-                </span>
-                <ChevronDown width={16} height={16} />
-              </Popover.Trigger>
-              <Popover.Content placement="bottom end" className="shell-popover user-popover">
-                <Popover.Dialog>
-                  <div className="user-popover-heading">
-                    <span className="user-avatar user-avatar-large" aria-hidden="true">
-                      {initials(user?.name)}
-                    </span>
-                    <div>
-                      <strong>{user?.name}</strong>
-                      <span>{user?.email}</span>
-                      <small>{user ? roleLabels[user.role] : ''}</small>
-                    </div>
-                  </div>
-                  <div className="user-popover-actions">
-                    <Button variant="ghost" fullWidth onPress={() => void logout()}>
-                      <ArrowRightFromSquare width={17} height={17} />
-                      Cerrar sesión
-                    </Button>
-                  </div>
-                </Popover.Dialog>
-              </Popover.Content>
-            </Popover>
           </div>
         </header>
 

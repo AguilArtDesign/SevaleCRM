@@ -22,6 +22,7 @@ export function useRealtimeUpdates() {
 
     socket.on('product.created', refreshProducts);
     socket.on('product.updated', refreshProducts);
+    socket.on('product.deleted', refreshProducts);
     socket.on('notification.created', refreshNotifications);
 
     return () => {

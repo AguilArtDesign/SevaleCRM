@@ -3,7 +3,6 @@ import {
   Alert,
   Button,
   Card,
-  Chip,
   Input,
   Label,
   Radio,
@@ -14,16 +13,10 @@ import {
   TextField,
   Typography,
 } from '@heroui/react';
-import {
-  ArrowLeft,
-  ArrowRight,
-  Magnifier,
-  Pencil,
-  PersonPlus,
-  Persons,
-  Xmark,
-} from '@gravity-ui/icons';
+import { Magnifier, Pencil, PersonPlus, Persons, Xmark } from '@gravity-ui/icons';
 import { createUserSchema, updateUserSchema } from '@sevale/validation';
+import { Chip } from '../components/Chip';
+import { getPaginationItems, Pagination } from '../components/Pagination';
 import { usersApi, type UserRecord, type UserRole } from './api';
 import { useCurrentUser } from './useCurrentUser';
 
@@ -270,34 +263,48 @@ export function UsersPage() {
             </Table>
           )}
 
-          <footer className="users-pagination">
-            <span>
+          <Pagination aria-label="Paginación de usuarios">
+            <Pagination.Summary>
               {total} {total === 1 ? 'usuario' : 'usuarios'}
-            </span>
-            <div>
-              <Button
-                size="sm"
-                variant="ghost"
-                isDisabled={page <= 1 || isLoading}
-                onPress={() => setPage((value) => Math.max(1, value - 1))}
-                aria-label="Página anterior"
-              >
-                <ArrowLeft width={16} height={16} />
-              </Button>
-              <span>
-                Página {page} de {totalPages}
-              </span>
-              <Button
-                size="sm"
-                variant="ghost"
-                isDisabled={page >= totalPages || isLoading}
-                onPress={() => setPage((value) => Math.min(totalPages, value + 1))}
-                aria-label="Página siguiente"
-              >
-                <ArrowRight width={16} height={16} />
-              </Button>
-            </div>
-          </footer>
+            </Pagination.Summary>
+            <Pagination.Content>
+              <Pagination.Item>
+                <Pagination.Previous
+                  isDisabled={page <= 1 || isLoading}
+                  onPress={() => setPage((value) => Math.max(1, value - 1))}
+                >
+                  <Pagination.PreviousIcon />
+                  Anterior
+                </Pagination.Previous>
+              </Pagination.Item>
+              {getPaginationItems(page, totalPages).map((item, index) =>
+                item === 'ellipsis' ? (
+                  <Pagination.Item key={`ellipsis-${index}`}>
+                    <Pagination.Ellipsis />
+                  </Pagination.Item>
+                ) : (
+                  <Pagination.Item key={item}>
+                    <Pagination.Link
+                      isActive={item === page}
+                      isDisabled={isLoading}
+                      onPress={() => setPage(item)}
+                    >
+                      {item}
+                    </Pagination.Link>
+                  </Pagination.Item>
+                ),
+              )}
+              <Pagination.Item>
+                <Pagination.Next
+                  isDisabled={page >= totalPages || isLoading}
+                  onPress={() => setPage((value) => Math.min(totalPages, value + 1))}
+                >
+                  Siguiente
+                  <Pagination.NextIcon />
+                </Pagination.Next>
+              </Pagination.Item>
+            </Pagination.Content>
+          </Pagination>
         </Card.Content>
       </Card>
 

@@ -1,4 +1,13 @@
-import { BadRequestException, Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Post,
+  Query,
+} from '@nestjs/common';
 import {
   createProductLinkSchema,
   externalProductQuerySchema,
@@ -50,5 +59,11 @@ export class ProductsController {
   @Get(':id')
   detail(@Param('id') id: string) {
     return this.productsService.detail(parseInput(productIdSchema, id));
+  }
+
+  @Delete(':id')
+  @RequirePermissions('inventory.delete')
+  remove(@Param('id') id: string) {
+    return this.productsService.remove(parseInput(productIdSchema, id));
   }
 }

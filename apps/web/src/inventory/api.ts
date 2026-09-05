@@ -109,4 +109,5 @@ export const inventoryApi = {
       method: 'POST',
       body: JSON.stringify({ sku }),
     }),
+  remove: (id: number) => request<ProductRecord>(`/api/products/${id}`, { method: 'DELETE' }),
 };

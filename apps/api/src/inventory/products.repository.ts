@@ -44,4 +44,8 @@ export class ProductsRepository {
   create(data: Prisma.ProductUncheckedCreateInput) {
     return this.prisma.product.create({ data });
   }
+
+  delete(id: number) {
+    return this.prisma.product.delete({ where: { id } });
+  }
 }

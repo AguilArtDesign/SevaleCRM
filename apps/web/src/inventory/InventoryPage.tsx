@@ -1,22 +1,37 @@
 import { useMemo, useState } from 'react';
-import { keepPreviousData, useQuery } from '@tanstack/react-query';
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { tableFeatures, useTable, type ColumnDef } from '@tanstack/react-table';
 import type { Selection } from '@heroui/react';
 import {
   Alert,
+  AlertDialog,
   Button,
   Card,
   Checkbox,
-  Chip,
+  Description,
+  Dropdown,
+  Header,
+  Label,
   ListBox,
-  Pagination,
   SearchField,
   Select,
+  Separator,
   Skeleton,
   Table,
+  Toast,
   Typography,
 } from '@heroui/react';
-import { ArrowRotateLeft, Boxes3, Eye, Link, Xmark } from '@gravity-ui/icons';
+import {
+  ArrowRotateLeft,
+  Boxes3,
+  EllipsisVertical,
+  Eye,
+  Link,
+  TrashBin,
+  Xmark,
+} from '@gravity-ui/icons';
+import { Chip } from '../components/Chip';
+import { getPaginationItems, Pagination } from '../components/Pagination';
 import {
   inventoryApi,
   type ProductFilters,
@@ -77,28 +92,14 @@ function InventorySkeleton() {
   );
 }
 
-function visiblePages(current: number, total: number): Array<number | 'ellipsis'> {
-  if (total <= 7) return Array.from({ length: total }, (_, index) => index + 1);
-
-  const pages = new Set([1, total, current - 1, current, current + 1]);
-  const sorted = [...pages].filter((page) => page > 0 && page <= total).sort((a, b) => a - b);
-  const result: Array<number | 'ellipsis'> = [];
-
-  sorted.forEach((page, index) => {
-    const previous = sorted[index - 1];
-    if (previous !== undefined && page - previous > 1) result.push('ellipsis');
-    result.push(page);
-  });
-
-  return result;
-}
-
 export function InventoryPage() {
+  const queryClient = useQueryClient();
   const { user } = useCurrentUser();
   const [searchDraft, setSearchDraft] = useState('');
   const [filters, setFilters] = useState<ProductFilters>(initialFilters);
   const [selectedKeys, setSelectedKeys] = useState<Selection>(new Set());
   const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<ProductRecord | null>(null);
   const [linkOpen, setLinkOpen] = useState(false);
   const productsQuery = useQuery({
     queryKey: ['products', filters],
@@ -109,6 +110,26 @@ export function InventoryPage() {
     queryKey: ['products', 'detail', selectedId],
     queryFn: () => inventoryApi.detail(selectedId as number),
     enabled: selectedId !== null,
+  });
+  const deleteProduct = useMutation({
+    mutationFn: (product: ProductRecord) => inventoryApi.remove(product.id),
+    onSuccess: async (_, product) => {
+      setDeleteTarget(null);
+      setSelectedKeys(new Set());
+      if (selectedId === product.id) setSelectedId(null);
+      if ((productsQuery.data?.data.length ?? 0) === 1 && filters.page > 1) {
+        setFilters((current) => ({ ...current, page: current.page - 1 }));
+      }
+      await queryClient.invalidateQueries({ queryKey: ['products'] });
+      Toast.toast.success('Producto eliminado', {
+        description: `${product.productName} se eliminó únicamente del inventario local del CRM.`,
+      });
+    },
+    onError: (error) => {
+      Toast.toast.danger('No pudimos eliminar el producto', {
+        description: error.message,
+      });
+    },
   });
 
   const columns = useMemo<Array<ColumnDef<typeof tableFeatureSet, ProductRecord>>>(
@@ -161,21 +182,62 @@ export function InventoryPage() {
       },
       {
         id: 'actions',
-        header: 'Detalle',
+        header: 'Acciones',
         cell: ({ row }) => (
-          <Button
-            size="sm"
-            variant="ghost"
-            onPress={() => setSelectedId(row.original.id)}
-            aria-label={`Ver detalle de ${row.original.productName}`}
-          >
-            <Eye width={16} height={16} />
-            Ver
-          </Button>
+          <Dropdown>
+            <Button
+              isIconOnly
+              size="sm"
+              variant="secondary"
+              aria-label={`Acciones para ${row.original.productName}`}
+            >
+              <EllipsisVertical width={17} height={17} />
+            </Button>
+            <Dropdown.Popover placement="bottom end">
+              <Dropdown.Menu
+                aria-label={`Acciones para ${row.original.productName}`}
+                onAction={(key) => {
+                  if (String(key) === 'view') setSelectedId(row.original.id);
+                  if (String(key) === 'delete') setDeleteTarget(row.original);
+                }}
+              >
+                <Dropdown.Section>
+                  <Header>Acciones</Header>
+                  <Dropdown.Item id="view" textValue="Ver producto">
+                    <span className="inventory-action-item-icon" aria-hidden="true">
+                      <Eye width={16} height={16} />
+                    </span>
+                    <span className="inventory-action-item-copy">
+                      <Label>Ver producto</Label>
+                      <Description>Consultar información</Description>
+                    </span>
+                  </Dropdown.Item>
+                </Dropdown.Section>
+                {user?.role === 'ADMIN' && <Separator />}
+                {user?.role === 'ADMIN' && (
+                  <Dropdown.Section>
+                    <Header>Zona de peligro</Header>
+                    <Dropdown.Item id="delete" textValue="Eliminar producto" variant="danger">
+                      <span
+                        className="inventory-action-item-icon inventory-action-item-icon-danger"
+                        aria-hidden="true"
+                      >
+                        <TrashBin width={16} height={16} />
+                      </span>
+                      <span className="inventory-action-item-copy">
+                        <Label>Eliminar</Label>
+                        <Description>Suprimir del CRM</Description>
+                      </span>
+                    </Dropdown.Item>
+                  </Dropdown.Section>
+                )}
+              </Dropdown.Menu>
+            </Dropdown.Popover>
+          </Dropdown>
         ),
       },
     ],
-    [],
+    [user?.role],
   );
 
   const table = useTable({
@@ -215,7 +277,7 @@ export function InventoryPage() {
   const hasFilters = Boolean(filters.search || filters.store || filters.syncStatus);
   const selectedCount =
     selectedKeys === 'all' ? (productsQuery.data?.data.length ?? 0) : selectedKeys.size;
-  const pageItems = visiblePages(pagination?.page ?? 1, pagination?.totalPages ?? 1);
+  const pageItems = getPaginationItems(pagination?.page ?? 1, pagination?.totalPages ?? 1);
   const firstResult =
     pagination && pagination.total > 0 ? (pagination.page - 1) * filters.pageSize + 1 : 0;
   const lastResult = pagination
@@ -228,9 +290,7 @@ export function InventoryPage() {
         <header className="inventory-list-heading">
           <div>
             <Typography.Heading level={2}>Todos los productos</Typography.Heading>
-            <Chip size="sm" color="default">
-              {pagination?.total ?? 0}
-            </Chip>
+            <Chip color="default">{pagination?.total ?? 0}</Chip>
           </div>
           {user?.role === 'ADMIN' && (
             <Button variant="primary" onPress={() => setLinkOpen(true)}>
@@ -427,7 +487,7 @@ export function InventoryPage() {
               </Table.Content>
             </Table.ScrollContainer>
             <Table.Footer>
-              <Pagination size="sm" aria-label="Paginación del inventario">
+              <Pagination aria-label="Paginación del inventario">
                 <Pagination.Summary>
                   {selectedCount > 0
                     ? `${selectedCount} ${selectedCount === 1 ? 'seleccionado' : 'seleccionados'}`
@@ -525,6 +585,48 @@ export function InventoryPage() {
       )}
 
       {user?.role === 'ADMIN' && <LinkProductModal isOpen={linkOpen} onOpenChange={setLinkOpen} />}
+
+      <AlertDialog
+        isOpen={deleteTarget !== null}
+        onOpenChange={(isOpen) => {
+          if (!isOpen && !deleteProduct.isPending) setDeleteTarget(null);
+        }}
+      >
+        <AlertDialog.Backdrop>
+          <AlertDialog.Container size="sm">
+            <AlertDialog.Dialog>
+              <AlertDialog.Header>
+                <AlertDialog.Icon status="danger">
+                  <TrashBin width={20} height={20} />
+                </AlertDialog.Icon>
+                <AlertDialog.Heading>Eliminar producto del CRM</AlertDialog.Heading>
+              </AlertDialog.Header>
+              <AlertDialog.Body>
+                <p>
+                  Se eliminará <strong>{deleteTarget?.productName}</strong> del inventario local.
+                  Esta acción no elimina el producto en Siigo ni en WooCommerce.
+                </p>
+              </AlertDialog.Body>
+              <AlertDialog.Footer>
+                <Button
+                  variant="secondary"
+                  isDisabled={deleteProduct.isPending}
+                  onPress={() => setDeleteTarget(null)}
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  variant="danger"
+                  isPending={deleteProduct.isPending}
+                  onPress={() => deleteTarget && deleteProduct.mutate(deleteTarget)}
+                >
+                  Eliminar producto
+                </Button>
+              </AlertDialog.Footer>
+            </AlertDialog.Dialog>
+          </AlertDialog.Container>
+        </AlertDialog.Backdrop>
+      </AlertDialog>
     </section>
   );
 }

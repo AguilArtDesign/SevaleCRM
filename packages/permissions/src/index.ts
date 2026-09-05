@@ -8,6 +8,7 @@ export const permissions = [
   'inventory.read',
   'inventory.create',
   'inventory.update',
+  'inventory.delete',
 ] as const;
 
 export type Role = (typeof roles)[number];

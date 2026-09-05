@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import type { ProductListQuery } from '@sevale/validation';
 import type { Product } from '../generated/prisma/client.js';
+import { RealtimeGateway } from '../realtime/realtime.gateway.js';
 import { ProductsRepository } from './products.repository.js';
 
 export function serializeProduct(product: Product) {
@@ -17,7 +18,10 @@ export function serializeProduct(product: Product) {
 
 @Injectable()
 export class ProductsService {
-  constructor(private readonly productsRepository: ProductsRepository) {}
+  constructor(
+    private readonly productsRepository: ProductsRepository,
+    private readonly realtime: RealtimeGateway,
+  ) {}
 
   async list(query: ProductListQuery) {
     const [products, total] = await this.productsRepository.list(query);
@@ -41,5 +45,19 @@ export class ProductsService {
       });
     }
     return serializeProduct(product);
+  }
+
+  async remove(id: number) {
+    const product = await this.productsRepository.findById(id);
+    if (!product) {
+      throw new NotFoundException({
+        success: false,
+        error: { code: 'PRODUCT_NOT_FOUND', message: 'El producto no existe.' },
+      });
+    }
+
+    const deleted = await this.productsRepository.delete(id);
+    this.realtime.emitProductDeleted(deleted);
+    return serializeProduct(deleted);
   }
 }

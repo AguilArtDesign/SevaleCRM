@@ -1,17 +1,8 @@
 import { useState, type FormEvent } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import {
-  Alert,
-  Button,
-  Chip,
-  Input,
-  Label,
-  Modal,
-  Skeleton,
-  TextField,
-  Typography,
-} from '@heroui/react';
+import { Alert, Button, Input, Label, Modal, Skeleton, TextField, Typography } from '@heroui/react';
 import { Boxes3, Link, Magnifier, Xmark } from '@gravity-ui/icons';
+import { Chip } from '../components/Chip';
 import {
   inventoryApi,
   type ProductLinkPreview,

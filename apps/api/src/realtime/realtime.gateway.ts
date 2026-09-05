@@ -87,6 +87,10 @@ export class RealtimeGateway implements OnGatewayInit {
     }
   }
 
+  emitProductDeleted(product: { id: number; sku: string }) {
+    this.server.emit('product.deleted', this.productEvent(product));
+  }
+
   emitNotificationCreated(notification: {
     id: number;
     type: string;
