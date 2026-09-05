@@ -666,7 +666,6 @@ select {
   padding: clamp(1rem, 3vw, 2rem);
 }
 
-.inventory-card,
 .product-detail-card,
 .users-card,
 .user-form-card {
@@ -685,36 +684,40 @@ select {
   align-items: start;
 }
 
-.inventory-card-content,
+.inventory-list {
+  display: grid;
+  min-width: 0;
+  gap: 1rem;
+}
+
 .product-detail-content {
   display: grid;
   gap: 1.25rem;
   padding: 1.35rem;
 }
 
+.inventory-list-heading,
+.inventory-list-heading > div,
 .inventory-toolbar,
-.inventory-search,
 .inventory-filters,
-.inventory-filter-label,
-.inventory-pagination,
-.inventory-pagination > div,
 .product-detail-heading {
   display: flex;
   align-items: center;
 }
 
+.inventory-list-heading,
 .inventory-toolbar,
-.inventory-pagination,
 .product-detail-heading {
   justify-content: space-between;
   gap: 1rem;
 }
 
-.inventory-toolbar-actions {
-  display: flex;
-  flex: 0 0 auto;
-  align-items: center;
-  gap: 0.65rem;
+.inventory-list-heading > div {
+  gap: 0.55rem;
+}
+
+.inventory-list-heading h2 {
+  font-size: 1rem;
 }
 
 .link-product-modal-body {
@@ -885,77 +888,36 @@ select {
 }
 
 .inventory-search {
-  width: min(100%, 40rem);
-  align-items: end;
-  gap: 0.65rem;
-}
-
-.inventory-search > :first-child {
-  flex: 1;
+  width: min(100%, 20rem);
+  margin-inline-start: auto;
 }
 
 .inventory-filters {
   flex-wrap: wrap;
-  gap: 0.75rem;
+  gap: 0.5rem;
 }
 
-.inventory-filter-label {
-  color: var(--muted);
-  gap: 0.35rem;
-  font-size: 0.85rem;
-  font-weight: 600;
-}
-
-.inventory-filters label {
-  display: grid;
-  gap: 0.3rem;
-  color: var(--muted);
-  font-size: 0.78rem;
-  font-weight: 600;
-}
-
-.inventory-filters select {
+.inventory-filters .select {
   min-width: 10rem;
-  min-height: 2.35rem;
-  padding: 0 2rem 0 0.75rem;
-  color: var(--foreground);
-  background-color: var(--field-background);
-  border: 1px solid var(--border);
-  border-radius: var(--field-radius);
-  font: inherit;
 }
 
-.inventory-table-wrap {
-  width: 100%;
-  overflow-x: auto;
+.inventory-products-table {
+  min-width: 0;
+  box-shadow: none;
 }
 
-.inventory-table {
-  width: 100%;
-  min-width: 48rem;
-  border-collapse: collapse;
+.inventory-products-table .table__content {
+  min-width: 54rem;
 }
 
-.inventory-table th,
-.inventory-table td {
-  padding: 0.85rem 0.75rem;
-  border-bottom: 1px solid var(--border);
-  text-align: left;
-  vertical-align: middle;
+.inventory-selection-column,
+.inventory-selection-cell {
+  width: 3rem;
+  padding-inline: 0.85rem;
 }
 
-.inventory-table th {
-  color: var(--muted);
-  font-size: 0.78rem;
-  font-weight: 650;
-}
-
-.inventory-table td {
-  font-size: 0.88rem;
-}
-
-.inventory-table tbody tr:hover {
-  background-color: var(--surface-secondary);
+.inventory-products-table .table__footer {
+  min-height: 3.75rem;
 }
 
 .inventory-product-cell,
@@ -1027,11 +989,12 @@ select {
   min-height: 4.25rem;
   padding: 0.65rem 0.75rem;
   align-items: center;
-  grid-template-columns: minmax(13rem, 2fr) repeat(3, minmax(6rem, 1fr)) 4.5rem;
+  grid-template-columns: 2rem minmax(13rem, 2fr) repeat(4, minmax(6rem, 1fr)) 4.5rem;
   gap: 1rem;
   border-bottom: 1px solid var(--border);
 }
 
+.skeleton-selection,
 .skeleton-product,
 .skeleton-cell,
 .skeleton-action,
@@ -1039,6 +1002,10 @@ select {
 .detail-panel-skeleton {
   height: 1rem;
   border-radius: 0.45rem;
+}
+
+.skeleton-selection {
+  width: 1rem;
 }
 
 .skeleton-product {
@@ -1076,18 +1043,10 @@ select {
   max-width: 32rem;
 }
 
-.inventory-pagination {
-  color: var(--muted);
-  font-size: 0.85rem;
-}
-
-.inventory-pagination > div {
-  gap: 0.5rem;
-}
-
 .product-detail-card {
   position: sticky;
   top: 6rem;
+  box-shadow: none;
 }
 
 .product-detail-heading h2 {
@@ -1348,10 +1307,6 @@ select {
     flex-direction: column;
   }
 
-  .inventory-toolbar-actions {
-    justify-content: space-between;
-  }
-
   .link-product-search {
     align-items: stretch;
     flex-direction: column;
@@ -1371,11 +1326,8 @@ select {
     align-items: stretch;
   }
 
-  .inventory-filters label {
+  .inventory-filters .select {
     flex: 1 1 9rem;
-  }
-
-  .inventory-filters select {
     width: 100%;
   }
 
@@ -1400,8 +1352,7 @@ select {
   }
 
   .inventory-search {
-    align-items: stretch;
-    flex-direction: column;
+    margin-inline-start: 0;
   }
 
   .users-search {
@@ -1411,13 +1362,11 @@ select {
 
   .users-card-content,
   .user-form-content,
-  .inventory-card-content,
   .product-detail-content {
     padding: 1rem;
   }
 
-  .users-pagination,
-  .inventory-pagination {
+  .users-pagination {
     align-items: flex-start;
     flex-direction: column;
   }
