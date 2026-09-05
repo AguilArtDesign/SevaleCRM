@@ -19,7 +19,11 @@ export async function configureApplication(app: NestFastifyApplication): Promise
         frameSrc: ['https://challenges.cloudflare.com'],
         imgSrc: ["'self'", 'data:', 'https:'],
         objectSrc: ["'none'"],
-        scriptSrc: ["'self'", 'https://challenges.cloudflare.com'],
+        scriptSrc: [
+          "'self'",
+          'https://challenges.cloudflare.com',
+          'https://static.cloudflareinsights.com',
+        ],
         scriptSrcAttr: ["'none'"],
         styleSrc: ["'self'", "'unsafe-inline'"],
         upgradeInsecureRequests: isProduction ? [] : null,
