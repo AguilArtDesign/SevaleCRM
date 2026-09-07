@@ -165,7 +165,7 @@ export function AppShell() {
     <div className={`crm-shell${isSidebarCollapsed ? ' crm-shell-sidebar-collapsed' : ''}`}>
       <aside className={`crm-sidebar${isSidebarOpen ? ' crm-sidebar-open' : ''}`}>
         <div className="sidebar-profile">
-          <Avatar size="sm" aria-hidden="true">
+          <Avatar size="md" aria-hidden="true">
             <Avatar.Fallback
               className="sidebar-user-avatar-fallback"
               style={avatarGradient(user?.id || user?.email || user?.name)}
