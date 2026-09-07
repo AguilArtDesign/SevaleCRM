@@ -121,7 +121,11 @@ function Preview({ preview }: { preview: ProductLinkPreview }) {
       {preview.issues.length > 0 && (
         <Alert status="danger">
           <Alert.Content>
-            <Alert.Title>No se puede crear el enlace</Alert.Title>
+            <Alert.Title>
+              {preview.isLinked
+                ? 'No se puede actualizar el enlace'
+                : 'No se puede crear el enlace'}
+            </Alert.Title>
             <Alert.Description>{preview.issues.join(' ')}</Alert.Description>
           </Alert.Content>
         </Alert>
@@ -147,15 +151,19 @@ function Preview({ preview }: { preview: ProductLinkPreview }) {
   );
 }
 
-function SuccessfulLink({ product }: { product: ProductRecord }) {
+function SuccessfulLink({ product, isUpdate }: { product: ProductRecord; isUpdate: boolean }) {
   return (
     <div className="link-success">
       <span className="link-success-icon" aria-hidden="true">
         <Link width={26} height={26} />
       </span>
-      <Typography.Heading level={3}>Producto vinculado</Typography.Heading>
+      <Typography.Heading level={3}>
+        {isUpdate ? 'Enlace actualizado' : 'Producto vinculado'}
+      </Typography.Heading>
       <Typography.Paragraph color="muted">
-        {product.productName} ya está disponible en el inventario.
+        {isUpdate
+          ? `${product.productName} se actualizó con la información más reciente.`
+          : `${product.productName} ya está disponible en el inventario.`}
       </Typography.Paragraph>
       <Chip color="success">{product.sku}</Chip>
     </div>
@@ -173,13 +181,16 @@ export function LinkProductModal({
   const [sku, setSku] = useState('');
   const [preview, setPreview] = useState<ProductLinkPreview | null>(null);
   const [created, setCreated] = useState<ProductRecord | null>(null);
+  const [updatedExistingLink, setUpdatedExistingLink] = useState(false);
   const previewMutation = useMutation({
     mutationFn: inventoryApi.linkPreview,
     onSuccess: setPreview,
   });
   const createMutation = useMutation({
-    mutationFn: inventoryApi.createLink,
-    onSuccess: async (product) => {
+    mutationFn: ({ sku: productSku, isLinked }: { sku: string; isLinked: boolean }) =>
+      isLinked ? inventoryApi.updateLink(productSku) : inventoryApi.createLink(productSku),
+    onSuccess: async (product, variables) => {
+      setUpdatedExistingLink(variables.isLinked);
       setCreated(product);
       await queryClient.invalidateQueries({ queryKey: ['products'] });
     },
@@ -189,6 +200,7 @@ export function LinkProductModal({
     setSku('');
     setPreview(null);
     setCreated(null);
+    setUpdatedExistingLink(false);
     previewMutation.reset();
     createMutation.reset();
   };
@@ -203,6 +215,7 @@ export function LinkProductModal({
     const normalizedSku = sku.trim();
     if (!normalizedSku) return;
     setCreated(null);
+    setUpdatedExistingLink(false);
     setPreview(null);
     createMutation.reset();
     previewMutation.mutate(normalizedSku);
@@ -265,7 +278,7 @@ export function LinkProductModal({
                   </Alert.Content>
                 </Alert>
               ) : created ? (
-                <SuccessfulLink product={created} />
+                <SuccessfulLink product={created} isUpdate={updatedExistingLink} />
               ) : preview ? (
                 <Preview preview={preview} />
               ) : (
@@ -281,7 +294,11 @@ export function LinkProductModal({
               {createMutation.isError && (
                 <Alert status="danger">
                   <Alert.Content>
-                    <Alert.Title>No se pudo vincular el producto</Alert.Title>
+                    <Alert.Title>
+                      {preview?.isLinked
+                        ? 'No se pudo actualizar el enlace'
+                        : 'No se pudo vincular el producto'}
+                    </Alert.Title>
                     <Alert.Description>{createMutation.error.message}</Alert.Description>
                   </Alert.Content>
                 </Alert>
@@ -307,10 +324,13 @@ export function LinkProductModal({
                     variant="primary"
                     isPending={createMutation.isPending}
                     isDisabled={!preview?.canLink || previewMutation.isPending}
-                    onPress={() => preview && createMutation.mutate(preview.sku)}
+                    onPress={() =>
+                      preview &&
+                      createMutation.mutate({ sku: preview.sku, isLinked: preview.isLinked })
+                    }
                   >
                     <Link width={17} height={17} />
-                    Crear enlace
+                    {preview?.isLinked ? 'Actualizar enlace' : 'Crear enlace'}
                   </Button>
                 </>
               )}

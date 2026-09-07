@@ -18,7 +18,7 @@
   "scripts": {
     "dev": "concurrently --kill-others --names web,api --prefix-colors blue,green \"npm run dev:web\" \"npm run dev:api\"",
     "dev:web": "npm run dev --workspace @sevale/web",
-    "dev:api": "npm run dev --workspace @sevale/api",
+    "dev:api": "npm run dev:watch --workspace @sevale/api",
     "build": "npm run prisma:generate && npm run build --workspaces --if-present",
     "start": "npm run start:prod --workspace @sevale/api",
     "lint": "eslint . --max-warnings 0",

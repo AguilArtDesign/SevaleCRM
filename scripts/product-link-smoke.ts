@@ -65,7 +65,9 @@ const upstream = createServer((request, response) => {
 
   const store = url.pathname.includes('/seratus/') ? 'seratus' : 'pali';
   let products: unknown[] = [];
-  if (sku === 'LINK-OK' && store === 'pali') products = [wooProduct(sku, store)];
+  if ((sku === 'LINK-OK' || sku?.startsWith('LINK-DUP-')) && store === 'pali') {
+    products = [wooProduct(sku, store)];
+  }
   if (sku === 'LINK-INCOMPLETE' && store === 'pali') {
     const product = wooProduct(sku, store);
     product.meta_data = [];
@@ -212,13 +214,49 @@ try {
   const commercialCookie = await login(emails[1]);
 
   const beforeDuplicate = externalRequests.get(duplicateSku) ?? 0;
-  expectStatus(
-    await api(`/api/products/link-preview?sku=${encodeURIComponent(duplicateSku)}`, adminCookie),
-    409,
-    'SKU ya vinculado',
+  const duplicatePreviewResponse = await api(
+    `/api/products/link-preview?sku=${encodeURIComponent(duplicateSku)}`,
+    adminCookie,
   );
-  if ((externalRequests.get(duplicateSku) ?? 0) !== beforeDuplicate) {
-    throw new Error('El SKU ya vinculado provocó solicitudes externas innecesarias.');
+  expectStatus(duplicatePreviewResponse, 200, 'Vista previa de SKU ya vinculado');
+  const duplicatePreview = (await duplicatePreviewResponse.json()) as {
+    isLinked: boolean;
+    canLink: boolean;
+  };
+  if (!duplicatePreview.isLinked || !duplicatePreview.canLink) {
+    throw new Error('La vista previa no identificó el enlace existente actualizable.');
+  }
+  if ((externalRequests.get(duplicateSku) ?? 0) <= beforeDuplicate) {
+    throw new Error('La vista previa del SKU vinculado no consultó los proveedores externos.');
+  }
+
+  expectStatus(
+    await api('/api/products', commercialCookie, {
+      method: 'PUT',
+      body: JSON.stringify({ sku: duplicateSku }),
+    }),
+    403,
+    'Actualización comercial',
+  );
+
+  const updateResponse = await api('/api/products', adminCookie, {
+    method: 'PUT',
+    body: JSON.stringify({ sku: duplicateSku }),
+  });
+  expectStatus(updateResponse, 200, 'Actualización administrativa');
+  const updatedExisting = (await updateResponse.json()) as {
+    id: number;
+    sku: string;
+    siigoPriceCop: number;
+    wooVariationId: string;
+  };
+  if (
+    updatedExisting.id !== duplicate.id ||
+    updatedExisting.sku !== duplicateSku ||
+    updatedExisting.siigoPriceCop !== 87500 ||
+    updatedExisting.wooVariationId !== '9102'
+  ) {
+    throw new Error('La actualización no reemplazó los datos del enlace existente.');
   }
 
   expectStatus(
@@ -272,12 +310,14 @@ try {
   expectStatus(previewResponse, 200, 'Vista previa comercial');
   const preview = (await previewResponse.json()) as {
     sku: string;
+    isLinked: boolean;
     store: { store: string; variationId: string };
     syncStatus: string;
     canLink: boolean;
   };
   if (
     preview.sku !== 'LINK-OK' ||
+    preview.isLinked ||
     preview.store.store !== 'PALI' ||
     preview.store.variationId !== '9102' ||
     preview.syncStatus !== 'SYNCED' ||
@@ -346,7 +386,7 @@ try {
   }
 
   process.stdout.write(
-    'Product link smoke: auth, RBAC, early duplicate stop, three-source validation, mismatches, normalized preview and safe creation checks passed.\n',
+    'Product link smoke: auth, RBAC, linked-product refresh, early duplicate creation stop, three-source validation, mismatches, normalized preview and safe creation checks passed.\n',
   );
 } finally {
   if (createdProductIds.length > 0) {

@@ -5,7 +5,7 @@ import {
   UnprocessableEntityException,
 } from '@nestjs/common';
 import type { CreateProductLinkInput } from '@sevale/validation';
-import type { SyncStatus } from '../generated/prisma/client.js';
+import type { Product, SyncStatus } from '../generated/prisma/client.js';
 import { SiigoService, type SiigoProduct } from '../integrations/siigo/siigo.service.js';
 import {
   WooCommerceService,
@@ -18,6 +18,7 @@ import { NotificationsService } from '../notifications/notifications.service.js'
 
 export type ProductLinkPreview = {
   sku: string;
+  isLinked: boolean;
   siigo: SiigoProduct;
   store: WooCommerceProduct;
   syncStatus: SyncStatus;
@@ -67,6 +68,22 @@ function isUniqueConstraintError(error: unknown): boolean {
   );
 }
 
+function numericChange(previous: number, current: number) {
+  return previous === current ? null : { previous, current };
+}
+
+function productChanges(previous: Product, preview: ProductLinkPreview) {
+  return {
+    priceCop: numericChange(Number(previous.siigoPriceCop), preview.siigo.priceCop as number),
+    priceUsd: numericChange(Number(previous.siigoPriceUsd), preview.siigo.priceUsd as number),
+    stock: numericChange(previous.siigoStock, preview.siigo.stock),
+    syncStatus:
+      previous.syncStatus === preview.syncStatus
+        ? null
+        : { previous: previous.syncStatus, current: preview.syncStatus },
+  };
+}
+
 @Injectable()
 export class ProductLinkService {
   constructor(
@@ -78,13 +95,7 @@ export class ProductLinkService {
   ) {}
 
   async preview(sku: string): Promise<ProductLinkPreview> {
-    if (await this.products.findBySku(sku)) {
-      throw businessError(
-        ConflictException,
-        'PRODUCT_ALREADY_LINKED',
-        'Este producto ya está vinculado.',
-      );
-    }
+    const existingProduct = await this.products.findBySku(sku);
 
     const siigo = await this.siigo.searchProductBySku(sku);
     if (!siigo) {
@@ -125,6 +136,7 @@ export class ProductLinkService {
     const issues = requiredDataIssues(siigo, store);
     return {
       sku,
+      isLinked: existingProduct !== null,
       siigo,
       store,
       syncStatus: calculateSyncStatus(siigo, store, issues),
@@ -134,6 +146,14 @@ export class ProductLinkService {
   }
 
   async create({ sku }: CreateProductLinkInput) {
+    if (await this.products.findBySku(sku)) {
+      throw businessError(
+        ConflictException,
+        'PRODUCT_ALREADY_LINKED',
+        'Este producto ya está vinculado.',
+      );
+    }
+
     const preview = await this.preview(sku);
     if (!preview.canLink) {
       throw new UnprocessableEntityException({
@@ -190,5 +210,63 @@ export class ProductLinkService {
       }
       throw error;
     }
+  }
+
+  async update({ sku }: CreateProductLinkInput) {
+    const existingProduct = await this.products.findBySku(sku);
+    if (!existingProduct) {
+      throw businessError(
+        NotFoundException,
+        'PRODUCT_LINK_NOT_FOUND',
+        'Este producto todavía no está vinculado.',
+      );
+    }
+
+    const preview = await this.preview(sku);
+    if (!preview.canLink) {
+      throw new UnprocessableEntityException({
+        success: false,
+        error: {
+          code: 'EXTERNAL_PRODUCT_DATA_INVALID',
+          message: 'El producto tiene datos externos incompletos y no puede actualizarse.',
+          details: preview.issues,
+        },
+      });
+    }
+
+    const { siigo, store } = preview;
+    if (
+      siigo.priceCop === null ||
+      siigo.priceUsd === null ||
+      store.parentId === null ||
+      store.priceCop === null ||
+      store.priceUsd === null ||
+      store.stock === null
+    ) {
+      throw new UnprocessableEntityException('Los datos externos están incompletos.');
+    }
+
+    const updated = await this.products.update(existingProduct.id, {
+      siigoId: siigo.id,
+      sku: siigo.sku,
+      siigoPriceCop: siigo.priceCop,
+      siigoPriceUsd: siigo.priceUsd,
+      siigoStock: siigo.stock,
+      store: store.store,
+      wooParentId: BigInt(store.parentId),
+      wooVariationId: BigInt(store.variationId),
+      wooSku: store.sku,
+      wooPriceCop: store.priceCop,
+      wooPriceUsd: store.priceUsd,
+      wooStock: store.stock,
+      syncStatus: preview.syncStatus,
+      lastCheckAt: new Date(),
+      productName: store.productName,
+      imageUrl: store.imageUrl,
+    });
+    const changes = productChanges(existingProduct, preview);
+    await this.notifications.createProductChanges(updated, changes);
+    this.realtime.emitProductUpdated(updated, changes);
+    return serializeProduct(updated);
   }
 }

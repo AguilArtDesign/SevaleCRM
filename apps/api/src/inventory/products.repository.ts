@@ -45,6 +45,10 @@ export class ProductsRepository {
     return this.prisma.product.create({ data });
   }
 
+  update(id: number, data: Prisma.ProductUncheckedUpdateInput) {
+    return this.prisma.product.update({ where: { id }, data });
+  }
+
   delete(id: number) {
     return this.prisma.product.delete({ where: { id } });
   }

@@ -6,6 +6,7 @@ import {
   Get,
   Param,
   Post,
+  Put,
   Query,
 } from '@nestjs/common';
 import {
@@ -54,6 +55,12 @@ export class ProductsController {
   @RequirePermissions('inventory.create')
   createLink(@Body() body: unknown) {
     return this.productLinkService.create(parseInput(createProductLinkSchema, body));
+  }
+
+  @Put()
+  @RequirePermissions('inventory.update')
+  updateLink(@Body() body: unknown) {
+    return this.productLinkService.update(parseInput(createProductLinkSchema, body));
   }
 
   @Get(':id')

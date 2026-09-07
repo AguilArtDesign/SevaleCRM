@@ -63,6 +63,7 @@ export type ExternalStoreSource = {
 
 export type ProductLinkPreview = {
   sku: string;
+  isLinked: boolean;
   siigo: ExternalProductSource;
   store: ExternalStoreSource;
   syncStatus: ProductSyncStatus;
@@ -107,6 +108,11 @@ export const inventoryApi = {
   createLink: (sku: string) =>
     request<ProductRecord>('/api/products', {
       method: 'POST',
+      body: JSON.stringify({ sku }),
+    }),
+  updateLink: (sku: string) =>
+    request<ProductRecord>('/api/products', {
+      method: 'PUT',
       body: JSON.stringify({ sku }),
     }),
   remove: (id: number) => request<ProductRecord>(`/api/products/${id}`, { method: 'DELETE' }),

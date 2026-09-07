@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { tableFeatures, useTable, type ColumnDef } from '@tanstack/react-table';
 import type { Selection } from '@heroui/react';
@@ -6,11 +6,11 @@ import {
   Alert,
   AlertDialog,
   Button,
-  Card,
   Checkbox,
   Dropdown,
   Label,
   ListBox,
+  Modal,
   SearchField,
   Separator,
   Skeleton,
@@ -19,12 +19,15 @@ import {
   Typography,
 } from '@heroui/react';
 import {
+  ArrowDownToLine,
   ArrowRotateLeft,
+  ArrowRotateRight,
   Boxes3,
   EllipsisVertical,
   Eye,
   Link,
   TrashBin,
+  TriangleExclamation,
   Xmark,
 } from '@gravity-ui/icons';
 import { Chip } from '../components/Chip';
@@ -41,11 +44,6 @@ import { LinkProductModal } from './LinkProductModal';
 import { useCurrentUser } from '../users/useCurrentUser';
 
 const tableFeatureSet = tableFeatures({});
-const currencyCop = new Intl.NumberFormat('es-CO', {
-  style: 'currency',
-  currency: 'COP',
-  maximumFractionDigits: 0,
-});
 const tableCop = new Intl.NumberFormat('es-CO', { maximumFractionDigits: 0 });
 const tableUsd = new Intl.NumberFormat('es-CO', { maximumFractionDigits: 2 });
 
@@ -98,6 +96,7 @@ export function InventoryPage() {
   const [searchDraft, setSearchDraft] = useState('');
   const [filters, setFilters] = useState<ProductFilters>(initialFilters);
   const [selectedKeys, setSelectedKeys] = useState<Selection>(new Set());
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ProductRecord | null>(null);
   const [linkOpen, setLinkOpen] = useState(false);
@@ -129,6 +128,20 @@ export function InventoryPage() {
       Toast.toast.danger('No pudimos eliminar el producto', {
         description: error.message,
       });
+    },
+  });
+  const deleteSelectedProducts = useMutation({
+    mutationFn: async (ids: number[]) => Promise.all(ids.map((id) => inventoryApi.remove(id))),
+    onSuccess: async (_, ids) => {
+      setBulkDeleteOpen(false);
+      setSelectedKeys(new Set());
+      await queryClient.invalidateQueries({ queryKey: ['products'] });
+      Toast.toast.success('Productos eliminados', {
+        description: `${ids.length} productos se eliminaron del inventario local del CRM.`,
+      });
+    },
+    onError: (error) => {
+      Toast.toast.danger('No pudimos eliminar los productos', { description: error.message });
     },
   });
 
@@ -270,30 +283,43 @@ export function InventoryPage() {
   };
 
   const changePage = (page: number) => {
-    setSelectedKeys(new Set());
     setFilters((current) => ({ ...current, page }));
+  };
+
+  const changePageSize = (pageSize: number) => {
+    setFilters((current) => ({ ...current, pageSize, page: 1 }));
   };
 
   const pagination = productsQuery.data?.pagination;
   const hasFilters = Boolean(filters.search || filters.store || filters.syncStatus);
+  const isAdmin = user?.role === 'ADMIN';
   const selectedCount =
     selectedKeys === 'all' ? (productsQuery.data?.data.length ?? 0) : selectedKeys.size;
+  const selectedIdSet = selectedKeys === 'all' ? new Set<number>() : selectedKeys;
+  const currentPageIds = new Set((productsQuery.data?.data ?? []).map((product) => product.id));
+  const currentPageSelection = new Set(
+    [...selectedIdSet].filter((key) => currentPageIds.has(Number(key))),
+  );
+  const updatePageSelection = (selection: Selection) => {
+    setSelectedKeys((current) => {
+      const next = new Set(current === 'all' ? [] : current);
+      currentPageIds.forEach((id) => next.delete(id));
+      if (selection === 'all') currentPageIds.forEach((id) => next.add(id));
+      else selection.forEach((key) => next.add(Number(key)));
+      return next;
+    });
+  };
   const pageItems = getPaginationItems(pagination?.page ?? 1, pagination?.totalPages ?? 1);
-  const firstResult =
-    pagination && pagination.total > 0 ? (pagination.page - 1) * filters.pageSize + 1 : 0;
-  const lastResult = pagination
-    ? Math.min(pagination.page * filters.pageSize, pagination.total)
-    : 0;
 
   return (
-    <section className={`inventory-layout${selectedId ? ' inventory-layout-with-detail' : ''}`}>
+    <section className="inventory-layout">
       <div className="inventory-list">
         <header className="inventory-list-heading">
           <div>
             <Typography.Heading level={2}>Todos los productos</Typography.Heading>
             <Chip color="default">{pagination?.total ?? 0}</Chip>
           </div>
-          {user?.role === 'ADMIN' && (
+          {isAdmin && (
             <Button variant="primary" onPress={() => setLinkOpen(true)}>
               <Link width={17} height={17} />
               Vincular producto
@@ -403,6 +429,33 @@ export function InventoryPage() {
           </SearchField>
         </div>
 
+        {isAdmin && selectedCount > 0 && (
+          <div className="inventory-bulk-actions" role="toolbar" aria-label="Acciones en lote">
+            <span className="inventory-bulk-count">{selectedCount}</span>
+            <Button size="sm" variant="ghost" isDisabled>
+              <ArrowDownToLine width={16} height={16} />
+              Exportar
+            </Button>
+            <Button size="sm" variant="ghost" isDisabled>
+              <ArrowRotateRight width={16} height={16} />
+              Sincronizar
+            </Button>
+            <Button size="sm" variant="danger" onPress={() => setBulkDeleteOpen(true)}>
+              <TrashBin width={16} height={16} />
+              Borrar
+            </Button>
+            <Button
+              isIconOnly
+              size="sm"
+              variant="ghost"
+              aria-label="Limpiar selección"
+              onPress={() => setSelectedKeys(new Set())}
+            >
+              <Xmark width={16} height={16} />
+            </Button>
+          </div>
+        )}
+
         {productsQuery.isError ? (
           <div className="inventory-feedback">
             <Alert status="danger">
@@ -442,23 +495,25 @@ export function InventoryPage() {
             <Table.ScrollContainer>
               <Table.Content
                 aria-label="Productos del inventario"
-                selectionMode="multiple"
-                selectedKeys={selectedKeys}
-                onSelectionChange={setSelectedKeys}
+                selectionMode={isAdmin ? 'multiple' : 'none'}
+                selectedKeys={isAdmin ? currentPageSelection : new Set()}
+                onSelectionChange={isAdmin ? updatePageSelection : undefined}
               >
                 <Table.Header>
-                  <Table.Column id="selection" className="inventory-selection-column">
-                    <Checkbox
-                      slot="selection"
-                      aria-label="Seleccionar todos los productos de esta página"
-                    >
-                      <Checkbox.Content>
-                        <Checkbox.Control>
-                          <Checkbox.Indicator />
-                        </Checkbox.Control>
-                      </Checkbox.Content>
-                    </Checkbox>
-                  </Table.Column>
+                  {isAdmin && (
+                    <Table.Column id="selection" className="inventory-selection-column">
+                      <Checkbox
+                        slot="selection"
+                        aria-label="Seleccionar todos los productos de esta página"
+                      >
+                        <Checkbox.Content>
+                          <Checkbox.Control>
+                            <Checkbox.Indicator />
+                          </Checkbox.Control>
+                        </Checkbox.Content>
+                      </Checkbox>
+                    </Table.Column>
+                  )}
                   {table.getHeaderGroups()[0]?.headers.map((header) => (
                     <Table.Column
                       key={header.id}
@@ -473,22 +528,24 @@ export function InventoryPage() {
                 <Table.Body>
                   {table.getRowModel().rows.map((row) => (
                     <Table.Row key={row.original.id} id={row.original.id}>
-                      <Table.Cell
-                        className="inventory-selection-cell"
-                        onPointerDown={(event) => event.stopPropagation()}
-                      >
-                        <Checkbox
-                          slot="selection"
-                          aria-label={`Seleccionar ${row.original.productName}`}
-                          variant="secondary"
+                      {isAdmin && (
+                        <Table.Cell
+                          className="inventory-selection-cell"
+                          onPointerDown={(event) => event.stopPropagation()}
                         >
-                          <Checkbox.Content>
-                            <Checkbox.Control>
-                              <Checkbox.Indicator />
-                            </Checkbox.Control>
-                          </Checkbox.Content>
-                        </Checkbox>
-                      </Table.Cell>
+                          <Checkbox
+                            slot="selection"
+                            aria-label={`Seleccionar ${row.original.productName}`}
+                            variant="secondary"
+                          >
+                            <Checkbox.Content>
+                              <Checkbox.Control>
+                                <Checkbox.Indicator />
+                              </Checkbox.Control>
+                            </Checkbox.Content>
+                          </Checkbox>
+                        </Table.Cell>
+                      )}
                       {row.getAllCells().map((cell) => (
                         <Table.Cell
                           key={cell.id}
@@ -505,9 +562,30 @@ export function InventoryPage() {
             <Table.Footer>
               <Pagination aria-label="Paginación del inventario">
                 <Pagination.Summary>
-                  {selectedCount > 0
-                    ? `${selectedCount} ${selectedCount === 1 ? 'seleccionado' : 'seleccionados'}`
-                    : `${firstResult} a ${lastResult} de ${pagination?.total ?? 0} productos`}
+                  <div className="inventory-page-size-control">
+                    <span>Filas por página</span>
+                    <Select
+                      aria-label="Filas por página"
+                      className="inventory-page-size"
+                      value={String(filters.pageSize)}
+                      onChange={(value) => value && changePageSize(Number(value))}
+                    >
+                      <Select.Trigger>
+                        <Select.Value />
+                        <Select.Indicator />
+                      </Select.Trigger>
+                      <Select.Popover>
+                        <ListBox>
+                          {[20, 50, 100].map((size) => (
+                            <ListBox.Item key={size} id={String(size)} textValue={String(size)}>
+                              {size}
+                              <ListBox.ItemIndicator />
+                            </ListBox.Item>
+                          ))}
+                        </ListBox>
+                      </Select.Popover>
+                    </Select>
+                  </div>
                 </Pagination.Summary>
                 <Pagination.Content>
                   <Pagination.Item>
@@ -560,47 +638,88 @@ export function InventoryPage() {
         )}
       </div>
 
-      {selectedId !== null && (
-        <Card className="product-detail-card">
-          <Card.Content className="product-detail-content">
-            <div className="product-detail-heading">
-              <div>
-                <Typography.Heading level={2}>Detalle del producto</Typography.Heading>
-                <Typography.Paragraph color="muted" size="sm">
-                  Información almacenada localmente
-                </Typography.Paragraph>
-              </div>
-              <Button
-                isIconOnly
-                variant="ghost"
-                aria-label="Cerrar detalle"
-                onPress={() => setSelectedId(null)}
-              >
-                <Xmark width={18} height={18} />
-              </Button>
-            </div>
+      <Modal
+        isOpen={selectedId !== null}
+        onOpenChange={(isOpen) => {
+          if (!isOpen) setSelectedId(null);
+        }}
+      >
+        <Modal.Backdrop>
+          <Modal.Container size="sm" placement="center" scroll="inside">
+            <Modal.Dialog className="product-detail-modal">
+              <Modal.CloseTrigger aria-label="Cerrar detalle" />
+              <Modal.Header>
+                <div>
+                  <Modal.Heading>Detalle del producto</Modal.Heading>
+                  <Typography.Paragraph color="muted" size="sm">
+                    Información almacenada localmente
+                  </Typography.Paragraph>
+                </div>
+              </Modal.Header>
+              <Modal.Body className="product-detail-content">
+                {detailQuery.isPending ? (
+                  <div className="product-detail-skeleton">
+                    <Skeleton className="detail-image-skeleton" />
+                    <Skeleton className="detail-line-skeleton" />
+                    <Skeleton className="detail-line-skeleton detail-line-short" />
+                    <Skeleton className="detail-panel-skeleton" />
+                  </div>
+                ) : detailQuery.isError ? (
+                  <Alert status="danger">
+                    <Alert.Content>
+                      <Alert.Description>{detailQuery.error.message}</Alert.Description>
+                    </Alert.Content>
+                  </Alert>
+                ) : (
+                  detailQuery.data && <ProductDetail product={detailQuery.data} />
+                )}
+              </Modal.Body>
+            </Modal.Dialog>
+          </Modal.Container>
+        </Modal.Backdrop>
+      </Modal>
 
-            {detailQuery.isPending ? (
-              <div className="product-detail-skeleton">
-                <Skeleton className="detail-image-skeleton" />
-                <Skeleton className="detail-line-skeleton" />
-                <Skeleton className="detail-line-skeleton detail-line-short" />
-                <Skeleton className="detail-panel-skeleton" />
-              </div>
-            ) : detailQuery.isError ? (
-              <Alert status="danger">
-                <Alert.Content>
-                  <Alert.Description>{detailQuery.error.message}</Alert.Description>
-                </Alert.Content>
-              </Alert>
-            ) : (
-              detailQuery.data && <ProductDetail product={detailQuery.data} />
-            )}
-          </Card.Content>
-        </Card>
+      {isAdmin && <LinkProductModal isOpen={linkOpen} onOpenChange={setLinkOpen} />}
+
+      {isAdmin && (
+        <AlertDialog
+          isOpen={bulkDeleteOpen}
+          onOpenChange={(isOpen) => {
+            if (!isOpen && !deleteSelectedProducts.isPending) setBulkDeleteOpen(false);
+          }}
+        >
+          <AlertDialog.Backdrop>
+            <AlertDialog.Container size="sm">
+              <AlertDialog.Dialog>
+                <AlertDialog.Header>
+                  <AlertDialog.Icon status="danger">
+                    <TrashBin width={20} height={20} />
+                  </AlertDialog.Icon>
+                  <AlertDialog.Heading>Eliminar productos seleccionados</AlertDialog.Heading>
+                </AlertDialog.Header>
+                <AlertDialog.Body>
+                  <p>
+                    Se eliminarán {selectedCount} productos del inventario local. No se eliminarán
+                    en Siigo ni WooCommerce.
+                  </p>
+                </AlertDialog.Body>
+                <AlertDialog.Footer>
+                  <Button variant="secondary" onPress={() => setBulkDeleteOpen(false)}>
+                    Cancelar
+                  </Button>
+                  <Button
+                    variant="danger"
+                    isPending={deleteSelectedProducts.isPending}
+                    onPress={() => deleteSelectedProducts.mutate([...selectedIdSet].map(Number))}
+                  >
+                    Borrar productos
+                  </Button>
+                </AlertDialog.Footer>
+              </AlertDialog.Dialog>
+            </AlertDialog.Container>
+          </AlertDialog.Backdrop>
+        </AlertDialog>
       )}
-
-      {user?.role === 'ADMIN' && <LinkProductModal isOpen={linkOpen} onOpenChange={setLinkOpen} />}
 
       <AlertDialog
         isOpen={deleteTarget !== null}
@@ -661,7 +780,7 @@ function ProductDetail({ product }: { product: ProductRecord }) {
         </span>
         <div>
           <strong>{product.productName}</strong>
-          <span>{product.sku}</span>
+          <span className="product-detail-sku">{product.sku}</span>
           <Chip color={status.color}>{status.label}</Chip>
         </div>
       </div>
@@ -684,6 +803,7 @@ function ProductDetail({ product }: { product: ProductRecord }) {
       <div className="product-source-panels">
         <ProductSource
           title="Siigo"
+          source="siigo"
           sku={product.sku}
           priceCop={product.siigoPriceCop}
           priceUsd={product.siigoPriceUsd}
@@ -691,10 +811,16 @@ function ProductDetail({ product }: { product: ProductRecord }) {
         />
         <ProductSource
           title="WooCommerce"
+          source={product.store.toLowerCase() as 'pali' | 'seratus'}
           sku={product.wooSku}
           priceCop={product.wooPriceCop}
           priceUsd={product.wooPriceUsd}
           stock={product.wooStock}
+          mismatches={{
+            stock: product.wooStock !== product.siigoStock,
+            priceCop: product.wooPriceCop !== product.siigoPriceCop,
+            priceUsd: product.wooPriceUsd !== product.siigoPriceUsd,
+          }}
         />
       </div>
     </div>
@@ -703,19 +829,23 @@ function ProductDetail({ product }: { product: ProductRecord }) {
 
 function ProductSource({
   title,
+  source,
   sku,
   priceCop,
   priceUsd,
   stock,
+  mismatches,
 }: {
   title: string;
+  source: 'siigo' | 'pali' | 'seratus';
   sku: string;
   priceCop: number;
   priceUsd: number;
   stock: number;
+  mismatches?: Partial<Record<'stock' | 'priceCop' | 'priceUsd', boolean>>;
 }) {
   return (
-    <section>
+    <section className={`product-source-${source}`}>
       <span>{title}</span>
       <dl>
         <div>
@@ -723,18 +853,51 @@ function ProductSource({
           <dd>{sku}</dd>
         </div>
         <div>
+          <dt>Stock</dt>
+          <dd>
+            <SourceValue hasMismatch={mismatches?.stock}>{stock}</SourceValue>
+          </dd>
+        </div>
+        <div>
           <dt>Precio COP</dt>
-          <dd>{currencyCop.format(priceCop)}</dd>
+          <dd>
+            <SourceValue hasMismatch={mismatches?.priceCop}>
+              ${tableCop.format(priceCop)}
+            </SourceValue>
+          </dd>
         </div>
         <div>
           <dt>Precio USD</dt>
-          <dd>USD {priceUsd.toFixed(2)}</dd>
-        </div>
-        <div>
-          <dt>Stock</dt>
-          <dd>{stock}</dd>
+          <dd>
+            <SourceValue hasMismatch={mismatches?.priceUsd}>
+              ${tableCop.format(priceUsd)}
+            </SourceValue>
+          </dd>
         </div>
       </dl>
     </section>
+  );
+}
+
+function SourceValue({
+  children,
+  hasMismatch = false,
+}: {
+  children: ReactNode;
+  hasMismatch?: boolean;
+}) {
+  return (
+    <span className="product-source-value">
+      {children}
+      {hasMismatch && (
+        <TriangleExclamation
+          className="product-source-mismatch-icon"
+          width={14}
+          height={14}
+          role="img"
+          aria-label="No coincide con Siigo"
+        />
+      )}
+    </span>
   );
 }
