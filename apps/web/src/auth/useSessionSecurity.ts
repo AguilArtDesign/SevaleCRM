@@ -4,7 +4,7 @@ import { authClient } from './auth-client';
 
 export type SessionEndReason = 'absolute' | 'idle' | 'signed-out';
 
-const IDLE_TIMEOUT_MS = 30 * 60 * 1000;
+const IDLE_TIMEOUT_MS = 2 * 60 * 60 * 1000;
 const ABSOLUTE_TIMEOUT_MS = 8 * 60 * 60 * 1000;
 const WARNING_BEFORE_MS = 2 * 60 * 1000;
 const SESSION_REFRESH_INTERVAL_MS = 4 * 60 * 1000;

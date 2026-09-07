@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, type CSSProperties } from 'react';
 import { Avatar, Button, Spinner, Typography } from '@heroui/react';
 import {
   ArrowRightFromSquare,
@@ -28,6 +28,36 @@ const roleLabels = {
   LOGISTICS: 'Logística',
 } as const;
 
+const SIDEBAR_COLLAPSED_STORAGE_KEY = 'sevale-crm.sidebar-collapsed';
+
+type AvatarGradientStyle = CSSProperties & {
+  '--avatar-from': string;
+  '--avatar-to': string;
+};
+
+function getStoredSidebarState(): boolean {
+  try {
+    return window.localStorage.getItem(SIDEBAR_COLLAPSED_STORAGE_KEY) === 'true';
+  } catch {
+    return false;
+  }
+}
+
+function avatarGradient(seed?: string): AvatarGradientStyle {
+  let hash = 2_166_136_261;
+  for (const character of seed || 'SevaleCRM') {
+    hash ^= character.charCodeAt(0);
+    hash = Math.imul(hash, 16_777_619);
+  }
+  const unsignedHash = hash >>> 0;
+  const startHue = unsignedHash % 360;
+  const endHue = (startHue + 50 + ((unsignedHash >>> 8) % 71)) % 360;
+  return {
+    '--avatar-from': `hsl(${startHue} 72% 42%)`,
+    '--avatar-to': `hsl(${endHue} 78% 50%)`,
+  };
+}
+
 function initials(name?: string): string {
   if (!name) return 'SC';
   return name
@@ -55,7 +85,7 @@ export function AppShell() {
   const { user, isLoading } = useCurrentUser();
   const { theme, toggleTheme } = useTheme();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(getStoredSidebarState);
   const [isMobile, setIsMobile] = useState(
     () => typeof window !== 'undefined' && window.matchMedia?.('(max-width: 900px)').matches,
   );
@@ -75,6 +105,24 @@ export function AppShell() {
     return () => mediaQuery.removeEventListener('change', updateViewport);
   }, []);
 
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(SIDEBAR_COLLAPSED_STORAGE_KEY, String(isSidebarCollapsed));
+    } catch {
+      // La navegación sigue funcionando aunque el navegador bloquee el almacenamiento local.
+    }
+  }, [isSidebarCollapsed]);
+
+  useEffect(() => {
+    const syncSidebarState = (event: StorageEvent) => {
+      if (event.key === SIDEBAR_COLLAPSED_STORAGE_KEY) {
+        setIsSidebarCollapsed(event.newValue === 'true');
+      }
+    };
+    window.addEventListener('storage', syncSidebarState);
+    return () => window.removeEventListener('storage', syncSidebarState);
+  }, []);
+
   const logout = useCallback(
     async (reason?: SessionEndReason) => {
       try {
@@ -83,7 +131,7 @@ export function AppShell() {
         clearSessionActivity();
         const notice =
           reason === 'idle'
-            ? 'La sesión se cerró después de 30 minutos sin actividad.'
+            ? 'La sesión se cerró después de 2 horas sin actividad.'
             : reason === 'absolute'
               ? 'La sesión finalizó al alcanzar el límite de 8 horas.'
               : undefined;
@@ -117,8 +165,13 @@ export function AppShell() {
     <div className={`crm-shell${isSidebarCollapsed ? ' crm-shell-sidebar-collapsed' : ''}`}>
       <aside className={`crm-sidebar${isSidebarOpen ? ' crm-sidebar-open' : ''}`}>
         <div className="sidebar-profile">
-          <Avatar color="accent" size="sm" variant="soft" aria-hidden="true">
-            <Avatar.Fallback>{initials(user?.name)}</Avatar.Fallback>
+          <Avatar size="sm" aria-hidden="true">
+            <Avatar.Fallback
+              className="sidebar-user-avatar-fallback"
+              style={avatarGradient(user?.id || user?.email || user?.name)}
+            >
+              {initials(user?.name)}
+            </Avatar.Fallback>
           </Avatar>
           <div>
             <strong>{user?.name || 'Usuario'}</strong>

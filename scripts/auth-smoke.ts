@@ -40,8 +40,8 @@ function assertSessionCookieAttributes(response: Response): void {
   if (!cookie || !/;\s*HttpOnly/i.test(cookie) || !/;\s*SameSite=Lax/i.test(cookie)) {
     throw new Error('La cookie de sesión no incluye HttpOnly y SameSite=Lax.');
   }
-  if (!/;\s*Max-Age=1800/i.test(cookie)) {
-    throw new Error('La cookie de sesión no vence después de 30 minutos.');
+  if (!/;\s*Max-Age=7200/i.test(cookie)) {
+    throw new Error('La cookie de sesión no vence después de 2 horas.');
   }
   if (process.env.NODE_ENV === 'production' && !/;\s*Secure/i.test(cookie)) {
     throw new Error('La cookie de producción no incluye Secure.');

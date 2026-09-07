@@ -8,9 +8,7 @@ import {
   Button,
   Card,
   Checkbox,
-  Description,
   Dropdown,
-  Header,
   Label,
   ListBox,
   SearchField,
@@ -201,14 +199,15 @@ export function InventoryPage() {
           <div className="inventory-row-actions">
             <Dropdown>
               <Button
+                className="inventory-actions-trigger"
                 isIconOnly
                 size="sm"
-                variant="secondary"
+                variant="ghost"
                 aria-label={`Acciones para ${row.original.productName}`}
               >
-                <EllipsisVertical width={17} height={17} />
+                <EllipsisVertical className="text-muted" width={17} height={17} />
               </Button>
-              <Dropdown.Popover placement="bottom end">
+              <Dropdown.Popover className="inventory-actions-popover" placement="bottom end">
                 <Dropdown.Menu
                   aria-label={`Acciones para ${row.original.productName}`}
                   onAction={(key) => {
@@ -217,32 +216,17 @@ export function InventoryPage() {
                   }}
                 >
                   <Dropdown.Section>
-                    <Header>Acciones</Header>
                     <Dropdown.Item id="view" textValue="Ver producto">
-                      <span className="inventory-action-item-icon" aria-hidden="true">
-                        <Eye width={16} height={16} />
-                      </span>
-                      <span className="inventory-action-item-copy">
-                        <Label>Ver producto</Label>
-                        <Description>Consultar información</Description>
-                      </span>
+                      <Eye className="size-4 shrink-0 text-muted" aria-hidden="true" />
+                      <Label>Ver producto</Label>
                     </Dropdown.Item>
                   </Dropdown.Section>
                   {user?.role === 'ADMIN' && <Separator />}
                   {user?.role === 'ADMIN' && (
                     <Dropdown.Section>
-                      <Header>Zona de peligro</Header>
                       <Dropdown.Item id="delete" textValue="Eliminar producto" variant="danger">
-                        <span
-                          className="inventory-action-item-icon inventory-action-item-icon-danger"
-                          aria-hidden="true"
-                        >
-                          <TrashBin width={16} height={16} />
-                        </span>
-                        <span className="inventory-action-item-copy">
-                          <Label>Eliminar</Label>
-                          <Description>Suprimir del CRM</Description>
-                        </span>
+                        <TrashBin className="size-4 shrink-0 text-danger" aria-hidden="true" />
+                        <Label>Eliminar</Label>
                       </Dropdown.Item>
                     </Dropdown.Section>
                   )}
@@ -489,7 +473,10 @@ export function InventoryPage() {
                 <Table.Body>
                   {table.getRowModel().rows.map((row) => (
                     <Table.Row key={row.original.id} id={row.original.id}>
-                      <Table.Cell className="inventory-selection-cell">
+                      <Table.Cell
+                        className="inventory-selection-cell"
+                        onPointerDown={(event) => event.stopPropagation()}
+                      >
                         <Checkbox
                           slot="selection"
                           aria-label={`Seleccionar ${row.original.productName}`}
@@ -503,7 +490,10 @@ export function InventoryPage() {
                         </Checkbox>
                       </Table.Cell>
                       {row.getAllCells().map((cell) => (
-                        <Table.Cell key={cell.id}>
+                        <Table.Cell
+                          key={cell.id}
+                          onPointerDown={(event) => event.stopPropagation()}
+                        >
                           <table.FlexRender cell={cell} />
                         </Table.Cell>
                       ))}

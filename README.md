@@ -196,7 +196,7 @@ Los scripts `prisma:*` administran el esquema, el cliente, las migraciones y el 
 
 ## Hardening de V1
 
-La API limita cada origen a 300 solicitudes por minuto y Better Auth aplica límites más estrictos al login y al envío/verificación de OTP. Las cookies de sesión son `HttpOnly`, `SameSite=Lax` y, en producción, `Secure`. Las sesiones vencen después de 30 minutos sin actividad y tienen una duración absoluta máxima de 8 horas; el frontend avisa dos minutos antes del cierre por inactividad y sincroniza la actividad entre pestañas. CORS y Socket.IO aceptan únicamente `FRONTEND_URL`; las respuestas HTTP incorporan cabeceras defensivas y los errores no controlados no exponen trazas, consultas, rutas internas ni configuración.
+La API limita cada origen a 300 solicitudes por minuto y Better Auth aplica límites más estrictos al login y al envío/verificación de OTP. Las cookies de sesión son `HttpOnly`, `SameSite=Lax` y, en producción, `Secure`. Las sesiones vencen después de 2 horas sin actividad y tienen una duración absoluta máxima de 8 horas; el frontend avisa dos minutos antes del cierre por inactividad y sincroniza la actividad entre pestañas. CORS y Socket.IO aceptan únicamente `FRONTEND_URL`; las respuestas HTTP incorporan cabeceras defensivas y los errores no controlados no exponen trazas, consultas, rutas internas ni configuración.
 
 El arranque valida con Zod la configuración esencial. En producción exige HTTPS, un secreto de autenticación de al menos 32 caracteres, SMTP completo y una credencial real de Turnstile; las credenciales de prueba son rechazadas. `TRUST_PROXY` debe permanecer en `false` salvo que la API esté detrás de un proxy inverso confiable que reemplace las cabeceras del cliente.
 

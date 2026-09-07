@@ -317,6 +317,14 @@ select {
   min-width: 0;
 }
 
+.sidebar-user-avatar-fallback {
+  color: white !important;
+  background: linear-gradient(135deg, var(--avatar-from), var(--avatar-to));
+  border: 0;
+  font-weight: 600 !important;
+  font-size: 0.875rem !important;
+}
+
 .sidebar-profile strong {
   overflow: hidden;
   font-size: 0.875rem;
@@ -923,27 +931,26 @@ select {
 
 .inventory-row-actions {
   display: flex;
+  padding-right: 1rem;
   justify-content: center;
 }
 
-.inventory-action-item-icon {
-  display: flex;
-  width: 2rem;
-  padding-top: 0.05rem;
-  color: var(--muted);
-  flex: 0 0 auto;
-  align-items: flex-start;
-  justify-content: center;
+.inventory-actions-trigger {
+  background: transparent;
 }
 
-.inventory-action-item-icon-danger {
-  color: var(--danger);
+.inventory-actions-trigger:hover,
+.inventory-actions-trigger[data-hovered='true'] {
+  background: var(--default);
 }
 
-.inventory-action-item-copy {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
+.inventory-actions-popover {
+  width: max-content;
+  min-width: max-content;
+}
+
+.inventory-actions-popover [data-slot='menu-item'] {
+  padding-right: 1rem;
 }
 
 .inventory-product-cell,

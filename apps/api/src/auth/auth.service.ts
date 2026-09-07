@@ -67,7 +67,7 @@ export class AuthService {
         },
       },
       session: {
-        expiresIn: 60 * 30,
+        expiresIn: 60 * 60 * 2,
         updateAge: 60 * 5,
         cookieCache: { enabled: false },
       },
