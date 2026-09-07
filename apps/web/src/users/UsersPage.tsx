@@ -3,7 +3,6 @@ import {
   Alert,
   Button,
   Card,
-  Input,
   Label,
   Radio,
   RadioGroup,
@@ -16,6 +15,7 @@ import {
 import { Magnifier, Pencil, PersonPlus, Persons, Xmark } from '@gravity-ui/icons';
 import { createUserSchema, updateUserSchema } from '@sevale/validation';
 import { Chip } from '../components/Chip';
+import { Input } from '../components/Input';
 import { getPaginationItems, Pagination } from '../components/Pagination';
 import { usersApi, type UserRecord, type UserRole } from './api';
 import { useCurrentUser } from './useCurrentUser';
@@ -175,6 +175,7 @@ export function UsersPage() {
               <TextField fullWidth name="search">
                 <Label>Buscar usuarios</Label>
                 <Input
+                  variant="secondary"
                   value={searchDraft}
                   onChange={(event) => setSearchDraft(event.target.value)}
                   placeholder="Nombre o correo"
@@ -338,7 +339,11 @@ export function UsersPage() {
             <form className="user-form" onSubmit={(event) => void handleSubmit(event)} noValidate>
               <TextField fullWidth name="name" isRequired>
                 <Label>Nombre completo</Label>
-                <Input value={name} onChange={(event) => setName(event.target.value)} />
+                <Input
+                  variant="secondary"
+                  value={name}
+                  onChange={(event) => setName(event.target.value)}
+                />
               </TextField>
               <TextField
                 fullWidth
@@ -348,7 +353,11 @@ export function UsersPage() {
                 isDisabled={formMode === 'edit'}
               >
                 <Label>Correo electrónico</Label>
-                <Input value={email} onChange={(event) => setEmail(event.target.value)} />
+                <Input
+                  variant="secondary"
+                  value={email}
+                  onChange={(event) => setEmail(event.target.value)}
+                />
               </TextField>
 
               <RadioGroup

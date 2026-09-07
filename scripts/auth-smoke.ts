@@ -40,6 +40,9 @@ function assertSessionCookieAttributes(response: Response): void {
   if (!cookie || !/;\s*HttpOnly/i.test(cookie) || !/;\s*SameSite=Lax/i.test(cookie)) {
     throw new Error('La cookie de sesión no incluye HttpOnly y SameSite=Lax.');
   }
+  if (!/;\s*Max-Age=1800/i.test(cookie)) {
+    throw new Error('La cookie de sesión no vence después de 30 minutos.');
+  }
   if (process.env.NODE_ENV === 'production' && !/;\s*Secure/i.test(cookie)) {
     throw new Error('La cookie de producción no incluye Secure.');
   }
@@ -110,6 +113,17 @@ try {
     headers: new Headers({ cookie: otpCookie }),
   });
   if (otpSession?.user.id !== testId) throw new Error('La sesión con OTP no es válida.');
+
+  await prisma.session.update({
+    where: { id: otpSession.session.id },
+    data: { createdAt: new Date(Date.now() - 8 * 60 * 60 * 1000 - 1_000) },
+  });
+  const absoluteTimeoutResponse = await fetch(`${baseUrl}/api/me`, {
+    headers: { cookie: otpCookie, origin },
+  });
+  if (absoluteTimeoutResponse.status !== 401) {
+    throw new Error('La ruta protegida aceptó una sesión con más de 8 horas.');
+  }
 
   let reusedOtpRejected = false;
   try {

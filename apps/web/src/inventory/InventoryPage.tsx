@@ -14,7 +14,6 @@ import {
   Label,
   ListBox,
   SearchField,
-  Select,
   Separator,
   Skeleton,
   Table,
@@ -32,6 +31,7 @@ import {
 } from '@gravity-ui/icons';
 import { Chip } from '../components/Chip';
 import { getPaginationItems, Pagination } from '../components/Pagination';
+import { Select } from '../components/Select';
 import {
   inventoryApi,
   type ProductFilters,
@@ -158,7 +158,14 @@ export function InventoryPage() {
       {
         accessorKey: 'store',
         header: 'Tienda',
-        cell: ({ row }) => (row.original.store === 'SERATUS' ? 'Seratus' : 'Pali'),
+        cell: ({ row }) => {
+          const store = row.original.store;
+          return (
+            <Chip className={`inventory-store-chip-${store.toLowerCase()}`} color="default">
+              {store === 'SERATUS' ? 'Seratus' : 'Pali'}
+            </Chip>
+          );
+        },
       },
       {
         id: 'price',
@@ -191,56 +198,58 @@ export function InventoryPage() {
         id: 'actions',
         header: 'Acciones',
         cell: ({ row }) => (
-          <Dropdown>
-            <Button
-              isIconOnly
-              size="sm"
-              variant="secondary"
-              aria-label={`Acciones para ${row.original.productName}`}
-            >
-              <EllipsisVertical width={17} height={17} />
-            </Button>
-            <Dropdown.Popover placement="bottom end">
-              <Dropdown.Menu
+          <div className="inventory-row-actions">
+            <Dropdown>
+              <Button
+                isIconOnly
+                size="sm"
+                variant="secondary"
                 aria-label={`Acciones para ${row.original.productName}`}
-                onAction={(key) => {
-                  if (String(key) === 'view') setSelectedId(row.original.id);
-                  if (String(key) === 'delete') setDeleteTarget(row.original);
-                }}
               >
-                <Dropdown.Section>
-                  <Header>Acciones</Header>
-                  <Dropdown.Item id="view" textValue="Ver producto">
-                    <span className="inventory-action-item-icon" aria-hidden="true">
-                      <Eye width={16} height={16} />
-                    </span>
-                    <span className="inventory-action-item-copy">
-                      <Label>Ver producto</Label>
-                      <Description>Consultar información</Description>
-                    </span>
-                  </Dropdown.Item>
-                </Dropdown.Section>
-                {user?.role === 'ADMIN' && <Separator />}
-                {user?.role === 'ADMIN' && (
+                <EllipsisVertical width={17} height={17} />
+              </Button>
+              <Dropdown.Popover placement="bottom end">
+                <Dropdown.Menu
+                  aria-label={`Acciones para ${row.original.productName}`}
+                  onAction={(key) => {
+                    if (String(key) === 'view') setSelectedId(row.original.id);
+                    if (String(key) === 'delete') setDeleteTarget(row.original);
+                  }}
+                >
                   <Dropdown.Section>
-                    <Header>Zona de peligro</Header>
-                    <Dropdown.Item id="delete" textValue="Eliminar producto" variant="danger">
-                      <span
-                        className="inventory-action-item-icon inventory-action-item-icon-danger"
-                        aria-hidden="true"
-                      >
-                        <TrashBin width={16} height={16} />
+                    <Header>Acciones</Header>
+                    <Dropdown.Item id="view" textValue="Ver producto">
+                      <span className="inventory-action-item-icon" aria-hidden="true">
+                        <Eye width={16} height={16} />
                       </span>
                       <span className="inventory-action-item-copy">
-                        <Label>Eliminar</Label>
-                        <Description>Suprimir del CRM</Description>
+                        <Label>Ver producto</Label>
+                        <Description>Consultar información</Description>
                       </span>
                     </Dropdown.Item>
                   </Dropdown.Section>
-                )}
-              </Dropdown.Menu>
-            </Dropdown.Popover>
-          </Dropdown>
+                  {user?.role === 'ADMIN' && <Separator />}
+                  {user?.role === 'ADMIN' && (
+                    <Dropdown.Section>
+                      <Header>Zona de peligro</Header>
+                      <Dropdown.Item id="delete" textValue="Eliminar producto" variant="danger">
+                        <span
+                          className="inventory-action-item-icon inventory-action-item-icon-danger"
+                          aria-hidden="true"
+                        >
+                          <TrashBin width={16} height={16} />
+                        </span>
+                        <span className="inventory-action-item-copy">
+                          <Label>Eliminar</Label>
+                          <Description>Suprimir del CRM</Description>
+                        </span>
+                      </Dropdown.Item>
+                    </Dropdown.Section>
+                  )}
+                </Dropdown.Menu>
+              </Dropdown.Popover>
+            </Dropdown>
+          </div>
         ),
       },
     ],
@@ -313,7 +322,7 @@ export function InventoryPage() {
             <Select
               aria-label="Filtrar por tienda"
               value={filters.store || 'ALL'}
-              variant="secondary"
+              variant="primary"
               onChange={(value) =>
                 updateStore(
                   value === 'ALL' || value === null ? '' : (String(value) as ProductStore),
@@ -328,12 +337,15 @@ export function InventoryPage() {
                 <ListBox>
                   <ListBox.Item id="ALL" textValue="Todas las tiendas">
                     Todas las tiendas
+                    <ListBox.ItemIndicator />
                   </ListBox.Item>
                   <ListBox.Item id="SERATUS" textValue="Seratus">
                     Seratus
+                    <ListBox.ItemIndicator />
                   </ListBox.Item>
                   <ListBox.Item id="PALI" textValue="Pali">
                     Pali
+                    <ListBox.ItemIndicator />
                   </ListBox.Item>
                 </ListBox>
               </Select.Popover>
@@ -342,7 +354,7 @@ export function InventoryPage() {
             <Select
               aria-label="Filtrar por estado"
               value={filters.syncStatus || 'ALL'}
-              variant="secondary"
+              variant="primary"
               onChange={(value) =>
                 updateStatus(
                   value === 'ALL' || value === null ? '' : (String(value) as ProductSyncStatus),
@@ -357,18 +369,23 @@ export function InventoryPage() {
                 <ListBox>
                   <ListBox.Item id="ALL" textValue="Todos los estados">
                     Todos los estados
+                    <ListBox.ItemIndicator />
                   </ListBox.Item>
                   <ListBox.Item id="SYNCED" textValue="Sincronizado">
                     Sincronizado
+                    <ListBox.ItemIndicator />
                   </ListBox.Item>
                   <ListBox.Item id="PENDING" textValue="Pendiente">
                     Pendiente
+                    <ListBox.ItemIndicator />
                   </ListBox.Item>
                   <ListBox.Item id="OUT_OF_SYNC" textValue="Desactualizado">
                     Desactualizado
+                    <ListBox.ItemIndicator />
                   </ListBox.Item>
                   <ListBox.Item id="ERROR" textValue="Con error">
                     Con error
+                    <ListBox.ItemIndicator />
                   </ListBox.Item>
                 </ListBox>
               </Select.Popover>
@@ -386,7 +403,7 @@ export function InventoryPage() {
             aria-label="Buscar productos"
             className="inventory-search"
             value={searchDraft}
-            variant="secondary"
+            variant="primary"
             onChange={setSearchDraft}
             onSubmit={applySearch}
             onClear={() => {
@@ -462,6 +479,7 @@ export function InventoryPage() {
                     <Table.Column
                       key={header.id}
                       id={header.id}
+                      className={header.id === 'actions' ? 'inventory-actions-column' : undefined}
                       isRowHeader={header.id === 'product'}
                     >
                       {header.isPlaceholder ? null : <table.FlexRender header={header} />}

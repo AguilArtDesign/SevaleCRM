@@ -39,16 +39,32 @@ export default tseslint.config(
           paths: [
             {
               name: '@heroui/react',
-              importNames: ['Chip', 'Pagination'],
+              importNames: ['Chip', 'Input', 'Pagination', 'Select'],
               message: 'Usa los componentes compartidos de apps/web/src/components.',
             },
           ],
         },
       ],
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: "JSXOpeningElement[name.name='input']",
+          message: 'Usa el componente Input compartido basado en HeroUI.',
+        },
+        {
+          selector: "JSXOpeningElement[name.name='select']",
+          message: 'Usa el componente Select compartido basado en HeroUI.',
+        },
+      ],
     },
   },
   {
-    files: ['apps/web/src/components/Chip.tsx', 'apps/web/src/components/Pagination.tsx'],
+    files: [
+      'apps/web/src/components/Chip.tsx',
+      'apps/web/src/components/Input.tsx',
+      'apps/web/src/components/Pagination.tsx',
+      'apps/web/src/components/Select.tsx',
+    ],
     rules: {
       'no-restricted-imports': 'off',
     },

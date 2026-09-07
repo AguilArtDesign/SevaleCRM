@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { Alert, Button, Card, Input, InputOTP, Label, TextField, Typography } from '@heroui/react';
+import { Alert, Button, Card, InputOTP, Label, TextField, Typography } from '@heroui/react';
 import { Envelope, Key } from '@gravity-ui/icons';
 import { emailSchema, otpSchema, passwordSchema } from '@sevale/validation';
 import { Navigate, useLocation, useNavigate } from 'react-router-dom';
@@ -7,6 +7,7 @@ import { authClient } from './auth-client';
 import { BrandMark } from './BrandMark';
 import { ThemeButton } from './ThemeButton';
 import { TurnstileField } from './TurnstileField';
+import { Input } from '../components/Input';
 
 type LoginMode = 'email' | 'password' | 'otp';
 
@@ -33,7 +34,9 @@ export function LoginPage() {
   const [captchaResetKey, setCaptchaResetKey] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
-  const [notice, setNotice] = useState('');
+  const [notice, setNotice] = useState(
+    () => (location.state as { notice?: string } | null)?.notice || '',
+  );
   const [resendSeconds, setResendSeconds] = useState(0);
 
   useEffect(() => {
@@ -201,6 +204,7 @@ export function LoginPage() {
               <TextField fullWidth name="email" type="email" isRequired>
                 <Label>Correo electrónico</Label>
                 <Input
+                  variant="secondary"
                   value={email}
                   onChange={(event) => setEmail(event.target.value)}
                   placeholder="correo@sevale.com"
@@ -223,6 +227,7 @@ export function LoginPage() {
               <TextField fullWidth name="email" type="email" isRequired>
                 <Label>Correo electrónico</Label>
                 <Input
+                  variant="secondary"
                   value={email}
                   onChange={(event) => setEmail(event.target.value)}
                   autoComplete="email"
@@ -231,6 +236,7 @@ export function LoginPage() {
               <TextField fullWidth name="password" type="password" isRequired>
                 <Label>Contraseña</Label>
                 <Input
+                  variant="secondary"
                   value={password}
                   onChange={(event) => setPassword(event.target.value)}
                   autoComplete="current-password"

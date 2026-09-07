@@ -6,6 +6,8 @@ import { PrismaService } from '../database/prisma.service.js';
 import { AuthService } from './auth.service.js';
 import { IS_PUBLIC_ROUTE } from './public.decorator.js';
 
+const ABSOLUTE_SESSION_TIMEOUT_MS = 8 * 60 * 60 * 1000;
+
 export type AuthenticatedRequest = FastifyRequest & {
   auth: NonNullable<Awaited<ReturnType<AuthService['getSession']>>>;
 };
@@ -28,6 +30,15 @@ export class AuthGuard implements CanActivate {
     const request = context.switchToHttp().getRequest<AuthenticatedRequest>();
     const session = await this.authService.getSession(request.headers);
     if (!session) throw new UnauthorizedException('Debes iniciar sesión.');
+
+    const sessionCreatedAt = new Date(session.session.createdAt).getTime();
+    if (
+      !Number.isFinite(sessionCreatedAt) ||
+      Date.now() - sessionCreatedAt >= ABSOLUTE_SESSION_TIMEOUT_MS
+    ) {
+      await this.prisma.session.deleteMany({ where: { id: session.session.id } });
+      throw new UnauthorizedException('La sesión alcanzó su duración máxima de 8 horas.');
+    }
 
     const user = await this.prisma.user.findUnique({
       where: { id: session.user.id },

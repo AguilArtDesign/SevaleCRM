@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Avatar, Button, Spinner, Typography } from '@heroui/react';
 import {
   ArrowRightFromSquare,
@@ -16,6 +16,11 @@ import { useTheme } from '../theme/ThemeProvider';
 import { useCurrentUser } from '../users/useCurrentUser';
 import { useRealtimeUpdates } from '../realtime/useRealtimeUpdates';
 import { NotificationCenter } from '../notifications/NotificationCenter';
+import {
+  clearSessionActivity,
+  useSessionSecurity,
+  type SessionEndReason,
+} from '../auth/useSessionSecurity';
 
 const roleLabels = {
   ADMIN: 'Administrador',
@@ -70,10 +75,25 @@ export function AppShell() {
     return () => mediaQuery.removeEventListener('change', updateViewport);
   }, []);
 
-  const logout = async () => {
-    await authClient.signOut();
-    void navigate('/login', { replace: true });
-  };
+  const logout = useCallback(
+    async (reason?: SessionEndReason) => {
+      try {
+        await authClient.signOut();
+      } finally {
+        clearSessionActivity();
+        const notice =
+          reason === 'idle'
+            ? 'La sesión se cerró después de 30 minutos sin actividad.'
+            : reason === 'absolute'
+              ? 'La sesión finalizó al alcanzar el límite de 8 horas.'
+              : undefined;
+        void navigate('/login', { replace: true, state: notice ? { notice } : undefined });
+      }
+    },
+    [navigate],
+  );
+
+  useSessionSecurity((reason) => void logout(reason));
 
   const toggleSidebar = () => {
     if (isMobile) {
@@ -117,25 +137,27 @@ export function AppShell() {
         </div>
 
         <nav className="sidebar-nav" aria-label="Navegación principal">
-          <span className="sidebar-section-label">Operación</span>
           <NavLink
             to="/inventory"
             className={({ isActive }) => `sidebar-link${isActive ? ' sidebar-link-active' : ''}`}
           >
-            <Boxes3 width={19} height={19} />
+            <span className="sidebar-menu-icon" aria-hidden="true">
+              <Boxes3 />
+            </span>
             <span>Inventario</span>
           </NavLink>
 
           {user?.role === 'ADMIN' && (
             <>
-              <span className="sidebar-section-label sidebar-section-spaced">Administración</span>
               <NavLink
                 to="/users"
                 className={({ isActive }) =>
                   `sidebar-link${isActive ? ' sidebar-link-active' : ''}`
                 }
               >
-                <Persons width={19} height={19} />
+                <span className="sidebar-menu-icon" aria-hidden="true">
+                  <Persons />
+                </span>
                 <span>Usuarios</span>
               </NavLink>
             </>
@@ -150,8 +172,10 @@ export function AppShell() {
             isDisabled
             aria-label="Configuración, próximamente"
           >
-            <Gear width={18} height={18} />
-            Configuración
+            <span className="sidebar-menu-icon" aria-hidden="true">
+              <Gear />
+            </span>
+            <span>Configuración</span>
           </Button>
           <Button
             className="sidebar-footer-action"
@@ -159,8 +183,10 @@ export function AppShell() {
             variant="ghost"
             onPress={() => void logout()}
           >
-            <ArrowRightFromSquare width={18} height={18} />
-            Cerrar sesión
+            <span className="sidebar-menu-icon" aria-hidden="true">
+              <ArrowRightFromSquare />
+            </span>
+            <span>Cerrar sesión</span>
           </Button>
         </div>
       </aside>

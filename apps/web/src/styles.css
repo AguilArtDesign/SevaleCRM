@@ -26,6 +26,10 @@
   --focus: oklch(62.04% 0.195 253.83);
   --foreground: oklch(21.03% 0.0015 253.83);
   --muted: oklch(55.17% 0.003 253.83);
+  --pali-bg: #7e22ce26;
+  --pali-text: #7e22ce;
+  --seratus-bg: #1d4ed826;
+  --seratus-text: #1d4ed8;
   --overlay: oklch(100% 0.0004 253.83);
   --overlay-foreground: oklch(21.03% 0.0015 253.83);
   --scrollbar: oklch(87.1% 0.0015 253.83);
@@ -71,6 +75,10 @@
   --focus: oklch(62.04% 0.195 253.83);
   --foreground: oklch(99.11% 0.0015 253.83);
   --muted: oklch(70.5% 0.003 253.83);
+  --pali-bg: #bf76ff26;
+  --pali-text: #bf76ff;
+  --seratus-bg: #5c7fe226;
+  --seratus-text: #5c7fe2;
   --overlay: oklch(21.03% 0.003 253.83);
   --overlay-foreground: oklch(99.11% 0.0015 253.83);
   --scrollbar: oklch(70.5% 0.0015 253.83);
@@ -311,17 +319,21 @@ select {
 
 .sidebar-profile strong {
   overflow: hidden;
-  font-size: 0.88rem;
+  font-size: 0.875rem;
+  font-weight: 500;
   text-overflow: ellipsis;
   white-space: nowrap;
+  line-height: 1.25;
 }
 
 .sidebar-profile span {
   overflow: hidden;
   color: var(--muted);
   font-size: 0.75rem;
+  font-weight: 500;
   text-overflow: ellipsis;
   white-space: nowrap;
+  line-height: 1.25;
 }
 
 .sidebar-close {
@@ -337,7 +349,7 @@ select {
   margin-top: 1.4rem;
   flex: 1;
   flex-direction: column;
-  gap: 0.35rem;
+  gap: 0.125rem;
 }
 
 .sidebar-section-label {
@@ -353,37 +365,58 @@ select {
   margin-top: 1.35rem;
 }
 
+.sidebar-link,
+.sidebar-footer-action {
+  height: 2.25rem;
+  min-height: 0;
+  max-height: 2.25rem;
+  padding: 0.375rem 0.5rem;
+  color: var(--text);
+  background: transparent;
+  border: 0;
+  border-radius: 1rem;
+  gap: 0.75rem;
+  font-size: 0.875rem;
+  font-weight: 400;
+  line-height: 1.25;
+}
+
 .sidebar-link {
-  min-height: 2.75rem;
-  padding: 0.65rem 0.75rem;
-  color: var(--muted);
-  border: 1px solid transparent;
-  border-radius: 0.75rem;
-  gap: 0.7rem;
-  font-size: 0.9rem;
-  font-weight: 600;
   text-decoration: none;
 }
 
-.sidebar-link:hover {
+.sidebar-link:hover,
+.sidebar-footer-action:hover {
   color: var(--foreground);
-  background: var(--surface-secondary);
+  background: var(--default);
 }
 
 .sidebar-link-active {
-  color: var(--accent);
-  background: color-mix(in oklch, var(--accent) 12%, var(--surface));
-  border-color: color-mix(in oklch, var(--accent) 24%, var(--border));
+  color: var(--foreground);
+  background: var(--default);
+  font-weight: 500;
+}
+
+.sidebar-menu-icon {
+  display: grid;
+  flex: 0 0 1.25rem;
+  width: 1.25rem;
+  height: 1.25rem;
+  place-items: center;
+}
+
+.sidebar-menu-icon > svg {
+  width: 1rem;
+  height: 1rem;
 }
 
 .sidebar-footer {
   display: grid;
-  gap: 0.25rem;
+  gap: 0.125rem;
 }
 
 .sidebar-footer-action {
   justify-content: flex-start;
-  gap: 0.7rem;
 }
 
 .sidebar-backdrop {
@@ -848,7 +881,7 @@ select {
 }
 
 .inventory-filters .select {
-  min-width: 10rem;
+  min-width: 11rem;
 }
 
 .inventory-products-table {
@@ -872,6 +905,25 @@ select {
 
 .inventory-products-table .table__cell {
   vertical-align: middle;
+}
+
+.inventory-store-chip-pali {
+  color: var(--pali-text);
+  background: var(--pali-bg);
+}
+
+.inventory-store-chip-seratus {
+  color: var(--seratus-text);
+  background: var(--seratus-bg);
+}
+
+.inventory-actions-column {
+  text-align: center;
+}
+
+.inventory-row-actions {
+  display: flex;
+  justify-content: center;
 }
 
 .inventory-action-item-icon {

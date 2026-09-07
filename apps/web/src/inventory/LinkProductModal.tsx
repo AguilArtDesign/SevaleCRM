@@ -1,8 +1,9 @@
 import { useState, type FormEvent } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { Alert, Button, Input, Label, Modal, Skeleton, TextField, Typography } from '@heroui/react';
+import { Alert, Button, Label, Modal, Skeleton, TextField, Typography } from '@heroui/react';
 import { Boxes3, Link, Magnifier, Xmark } from '@gravity-ui/icons';
 import { Chip } from '../components/Chip';
+import { Input } from '../components/Input';
 import {
   inventoryApi,
   type ProductLinkPreview,
@@ -234,6 +235,7 @@ export function LinkProductModal({
                   <TextField fullWidth name="link-product-sku">
                     <Label>SKU</Label>
                     <Input
+                      variant="secondary"
                       value={sku}
                       onChange={(event) => setSku(event.target.value)}
                       placeholder="Ej. 40204-ROJO-S"
