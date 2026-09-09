@@ -90,6 +90,15 @@ export const createProductLinkSchema = z.object({
   sku: skuSchema,
 });
 
+export const productImportCsvSchema = z.object({
+  csv: z
+    .string()
+    .min(1, 'El archivo CSV está vacío.')
+    .max(800_000, 'El archivo CSV supera el tamaño máximo permitido.'),
+});
+
+export type ProductImportCsvInput = z.infer<typeof productImportCsvSchema>;
+
 export const siigoProductUpdateSchema = z
   .object({
     siigo_id: z.string().trim().min(1).max(191),

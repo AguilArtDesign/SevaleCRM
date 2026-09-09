@@ -31,6 +31,7 @@ const baseEnvironmentSchema = z.object({
   BETTER_AUTH_SECRET: z.string().optional(),
   TURNSTILE_SECRET_KEY: z.string().optional(),
   N8N_API_KEY: z.string().optional(),
+  PRODUCT_IMPORT_ENABLED: z.enum(['true', 'false']).default('false'),
   SMTP_PORT: z.preprocess(
     (value) => (value === '' ? undefined : value),
     z.coerce.number().int().min(1).max(65535).optional(),

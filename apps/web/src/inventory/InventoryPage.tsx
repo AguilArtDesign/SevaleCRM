@@ -21,6 +21,7 @@ import {
 } from '@heroui/react';
 import {
   ArrowDownToLine,
+  ArrowUpFromLine,
   ArrowRotateLeft,
   ArrowRotateRight,
   Boxes3,
@@ -43,6 +44,7 @@ import {
   type ProductSyncStatus,
 } from './api';
 import { LinkProductModal } from './LinkProductModal';
+import { ProductImportModal } from './ProductImportModal';
 import { useCurrentUser } from '../users/useCurrentUser';
 
 const tableFeatureSet = tableFeatures({});
@@ -131,6 +133,7 @@ export function InventoryPage() {
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ProductRecord | null>(null);
   const [linkOpen, setLinkOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
   const productsQuery = useQuery({
     queryKey: ['products', filters],
     queryFn: () => inventoryApi.list(filters),
@@ -140,6 +143,12 @@ export function InventoryPage() {
     queryKey: ['products', 'detail', selectedId],
     queryFn: () => inventoryApi.detail(selectedId as number),
     enabled: selectedId !== null,
+  });
+  const importStatusQuery = useQuery({
+    queryKey: ['products', 'import-status'],
+    queryFn: inventoryApi.importStatus,
+    enabled: isAdmin,
+    staleTime: 60_000,
   });
   const synchronizeProduct = useMutation({
     mutationFn: (product: ProductRecord) => inventoryApi.sync(product.id),
@@ -439,10 +448,18 @@ export function InventoryPage() {
             <Chip color="default">{pagination?.total ?? 0}</Chip>
           </div>
           {isAdmin && (
-            <Button variant="primary" onPress={() => setLinkOpen(true)}>
-              <Link width={17} height={17} />
-              Vincular producto
-            </Button>
+            <div className="inventory-heading-actions">
+              {importStatusQuery.data?.enabled && (
+                <Button variant="secondary" onPress={() => setImportOpen(true)}>
+                  <ArrowUpFromLine width={17} height={17} />
+                  Importar CSV
+                </Button>
+              )}
+              <Button variant="primary" onPress={() => setLinkOpen(true)}>
+                <Link width={17} height={17} />
+                Vincular producto
+              </Button>
+            </div>
           )}
         </header>
 
@@ -804,6 +821,9 @@ export function InventoryPage() {
       </Modal>
 
       {isAdmin && <LinkProductModal isOpen={linkOpen} onOpenChange={setLinkOpen} />}
+      {isAdmin && importStatusQuery.data?.enabled && (
+        <ProductImportModal isOpen={importOpen} onOpenChange={setImportOpen} />
+      )}
 
       {isAdmin && (
         <AlertDialog

@@ -85,6 +85,31 @@ export type ProductLinkPreview = {
   issues: string[];
 };
 
+export type ProductImportIssue = {
+  row: number;
+  field: string;
+  message: string;
+};
+
+export type ProductImportPreview = {
+  totalRows: number;
+  validRows: number;
+  newProducts: number;
+  existingProducts: number;
+  errorCount: number;
+  conflictCount: number;
+  errors: ProductImportIssue[];
+  conflicts: ProductImportIssue[];
+  canImport: boolean;
+};
+
+export type ProductImportResult = {
+  success: true;
+  totalRows: number;
+  imported: number;
+  skipped: number;
+};
+
 type ApiErrorBody = { message?: string; error?: { message?: string } };
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -128,6 +153,17 @@ export const inventoryApi = {
     request<ProductRecord>('/api/products', {
       method: 'PUT',
       body: JSON.stringify({ sku }),
+    }),
+  importStatus: () => request<{ enabled: boolean }>('/api/products/import/status'),
+  previewImport: (csv: string) =>
+    request<ProductImportPreview>('/api/products/import/preview', {
+      method: 'POST',
+      body: JSON.stringify({ csv }),
+    }),
+  importProducts: (csv: string) =>
+    request<ProductImportResult>('/api/products/import', {
+      method: 'POST',
+      body: JSON.stringify({ csv }),
     }),
   sync: (id: number) =>
     request<ProductRecord>(`/api/products/${id}/sync`, {

@@ -17,6 +17,7 @@ import {
   createProductLinkSchema,
   externalProductQuerySchema,
   productIdSchema,
+  productImportCsvSchema,
   productListQuerySchema,
   productSyncJobIdSchema,
 } from '@sevale/validation';
@@ -26,6 +27,7 @@ import { RequirePermissions } from '../permissions/require-permissions.decorator
 import { ProductLinkService } from './product-link.service.js';
 import { BulkProductSyncService } from './bulk-product-sync.service.js';
 import { ProductsService } from './products.service.js';
+import { ProductImportService } from './product-import.service.js';
 
 function parseInput<T>(schema: ZodType<T>, input: unknown): T {
   const result = schema.safeParse(input);
@@ -46,6 +48,7 @@ export class ProductsController {
     private readonly productsService: ProductsService,
     private readonly productLinkService: ProductLinkService,
     private readonly bulkProductSyncService: BulkProductSyncService,
+    private readonly productImportService: ProductImportService,
   ) {}
 
   @Get()
@@ -57,6 +60,26 @@ export class ProductsController {
   linkPreview(@Query() query: unknown) {
     const { sku } = parseInput(externalProductQuerySchema, query);
     return this.productLinkService.preview(sku);
+  }
+
+  @Get('import/status')
+  @RequirePermissions('inventory.create')
+  importStatus() {
+    return this.productImportService.status();
+  }
+
+  @Post('import/preview')
+  @RequirePermissions('inventory.create')
+  importPreview(@Body() body: unknown) {
+    const { csv } = parseInput(productImportCsvSchema, body);
+    return this.productImportService.preview(csv);
+  }
+
+  @Post('import')
+  @RequirePermissions('inventory.create')
+  importProducts(@Body() body: unknown) {
+    const { csv } = parseInput(productImportCsvSchema, body);
+    return this.productImportService.import(csv);
   }
 
   @Post()
