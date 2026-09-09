@@ -69,7 +69,9 @@ const upstream = createServer((request, response) => {
     (sku === 'LINK-OK' || sku === 'LINK-CAFÉ' || sku?.startsWith('LINK-DUP-')) &&
     store === 'pali'
   ) {
-    products = [wooProduct(sku, store)];
+    const product = wooProduct(sku, store);
+    if (sku?.startsWith('LINK-DUP-')) product.stock_quantity = 11;
+    products = [product];
   }
   if (sku === 'LINK-INCOMPLETE' && store === 'pali') {
     const product = wooProduct(sku, store);
@@ -252,14 +254,28 @@ try {
     sku: string;
     siigoPriceCop: number;
     wooVariationId: string;
+    syncStatus: string;
   };
   if (
     updatedExisting.id !== duplicate.id ||
     updatedExisting.sku !== duplicateSku ||
     updatedExisting.siigoPriceCop !== 87500 ||
-    updatedExisting.wooVariationId !== '9102'
+    updatedExisting.wooVariationId !== '9102' ||
+    updatedExisting.syncStatus !== 'OUT_OF_SYNC'
   ) {
     throw new Error('La actualización no reemplazó los datos del enlace existente.');
+  }
+  const linkUpdateNotifications = await prisma.notification.findMany({
+    where: { productId: duplicate.id },
+  });
+  if (
+    linkUpdateNotifications.length !== 1 ||
+    linkUpdateNotifications[0]?.type !== 'PRODUCT_LINK_UPDATED' ||
+    linkUpdateNotifications[0].title !== 'Producto actualizado' ||
+    linkUpdateNotifications[0].message !==
+      `Producto ${duplicateSku}\nStock 1 ➝ 12\nPrecio COP $1 ➝ $87.500\nPrecio USD $1 ➝ $21,75\nEstado Sincronizado ➝ Desactualizado`
+  ) {
+    throw new Error('La actualización del enlace no creó una única notificación consolidada.');
   }
 
   expectStatus(

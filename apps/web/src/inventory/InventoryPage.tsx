@@ -250,7 +250,7 @@ export function InventoryPage() {
         header: 'Stock',
         cell: ({ row }) => (
           <span className={row.original.siigoStock <= 0 ? 'stock-zero' : undefined}>
-            {row.original.siigoStock} unidades
+            {row.original.siigoStock} {row.original.siigoStock === 1 ? 'unidad' : 'unidades'}
           </span>
         ),
       },

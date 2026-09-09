@@ -4,11 +4,6 @@ import type { Product, SyncStatus } from '../generated/prisma/client.js';
 import { RealtimeGateway, type ProductUpdateChanges } from '../realtime/realtime.gateway.js';
 import { NotificationsRepository } from './notifications.repository.js';
 
-const cop = new Intl.NumberFormat('es-CO', {
-  style: 'currency',
-  currency: 'COP',
-  maximumFractionDigits: 0,
-});
 const compactNumber = new Intl.NumberFormat('es-CO', { maximumFractionDigits: 2 });
 
 const statusLabels: Record<SyncStatus, string> = {
@@ -73,52 +68,20 @@ export class NotificationsService {
     });
   }
 
-  async createProductChanges(product: Product, changes: ProductUpdateChanges) {
-    const notifications: Array<{
-      type: string;
-      title: string;
-      message: string;
-      productId: number;
-    }> = [];
-    const identity = `${product.productName} · ${product.sku}`;
-
-    if (changes.stock) {
-      notifications.push({
-        type: 'SIIGO_STOCK_UPDATED',
-        title: 'Stock actualizado',
-        message: `${identity}\n${changes.stock.previous} → ${changes.stock.current} unidades`,
-        productId: product.id,
-      });
-    }
-    if (changes.priceCop || changes.priceUsd) {
-      const priceChanges = [
-        changes.priceCop
-          ? `COP ${cop.format(changes.priceCop.previous)} → ${cop.format(changes.priceCop.current)}`
-          : null,
-        changes.priceUsd
-          ? `USD ${changes.priceUsd.previous.toFixed(2)} → ${changes.priceUsd.current.toFixed(2)}`
-          : null,
-      ].filter((value): value is string => value !== null);
-      notifications.push({
-        type: 'SIIGO_PRICE_UPDATED',
-        title: 'Precio actualizado',
-        message: `${identity}\n${priceChanges.join(' · ')}`,
-        productId: product.id,
-      });
-    }
-    if (changes.syncStatus) {
-      notifications.push({
-        type: 'SYNC_STATUS_CHANGED',
-        title: 'Estado de sincronización actualizado',
-        message: `${identity}\n${statusLabels[changes.syncStatus.previous]} → ${statusLabels[changes.syncStatus.current]}`,
-        productId: product.id,
-      });
-    }
-
-    return Promise.all(notifications.map((notification) => this.create(notification)));
+  createProductLinkUpdate(product: Product, changes: ProductUpdateChanges) {
+    return this.createProductUpdate('PRODUCT_LINK_UPDATED', product, changes, true);
   }
 
-  async createSiigoProductUpdate(product: Product, changes: ProductUpdateChanges) {
+  createSiigoProductUpdate(product: Product, changes: ProductUpdateChanges) {
+    return this.createProductUpdate('SIIGO_PRODUCT_UPDATED', product, changes, false);
+  }
+
+  private createProductUpdate(
+    type: 'PRODUCT_LINK_UPDATED' | 'SIIGO_PRODUCT_UPDATED',
+    product: Product,
+    changes: ProductUpdateChanges,
+    includeSyncStatus: boolean,
+  ) {
     const details: string[] = [];
     if (changes.stock) {
       details.push(`Stock ${changes.stock.previous} ➝ ${changes.stock.current}`);
@@ -133,10 +96,15 @@ export class NotificationsService {
         `Precio USD $${compactNumber.format(changes.priceUsd.previous)} ➝ $${compactNumber.format(changes.priceUsd.current)}`,
       );
     }
+    if (includeSyncStatus && changes.syncStatus) {
+      details.push(
+        `Estado ${statusLabels[changes.syncStatus.previous]} ➝ ${statusLabels[changes.syncStatus.current]}`,
+      );
+    }
     if (details.length === 0) return null;
 
     return this.create({
-      type: 'SIIGO_PRODUCT_UPDATED',
+      type,
       title: 'Producto actualizado',
       message: [product.productName, ...details].join('\n'),
       productId: product.id,

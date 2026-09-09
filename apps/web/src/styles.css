@@ -1341,7 +1341,6 @@ select {
 
 .stock-zero {
   color: var(--danger);
-  font-weight: 650;
 }
 
 .inventory-skeleton,

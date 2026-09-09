@@ -265,7 +265,7 @@ export class ProductLinkService {
       imageUrl: store.imageUrl,
     });
     const changes = productChanges(existingProduct, preview);
-    await this.notifications.createProductChanges(updated, changes);
+    await this.notifications.createProductLinkUpdate(updated, changes);
     this.realtime.emitProductUpdated(updated, changes);
     return serializeProduct(updated);
   }

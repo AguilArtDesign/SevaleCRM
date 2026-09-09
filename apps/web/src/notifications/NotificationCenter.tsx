@@ -23,7 +23,10 @@ function capitalize(value: string) {
 }
 
 function notificationDescription(notification: NotificationRecord) {
-  if (notification.type === 'SIIGO_PRODUCT_UPDATED') {
+  if (
+    notification.type === 'SIIGO_PRODUCT_UPDATED' ||
+    notification.type === 'PRODUCT_LINK_UPDATED'
+  ) {
     return notification.message.split('\n')[0] || notification.product?.productName || '';
   }
   if (notification.type === 'PRODUCT_LINKED' && notification.product) {
@@ -33,7 +36,12 @@ function notificationDescription(notification: NotificationRecord) {
 }
 
 function notificationChanges(notification: NotificationRecord) {
-  if (notification.type !== 'SIIGO_PRODUCT_UPDATED') return null;
+  if (
+    notification.type !== 'SIIGO_PRODUCT_UPDATED' &&
+    notification.type !== 'PRODUCT_LINK_UPDATED'
+  ) {
+    return null;
+  }
   const [, ...changes] = notification.message.split('\n');
   return changes.join('\n') || null;
 }
