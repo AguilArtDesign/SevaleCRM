@@ -2,6 +2,8 @@ import { Injectable } from '@nestjs/common';
 import type { Store } from '../../generated/prisma/client.js';
 import {
   integrationGet,
+  integrationPost,
+  integrationPut,
   integrationUrl,
   invalidIntegrationResponse,
   requireIntegrationValue,
@@ -22,6 +24,23 @@ export type WooCommerceProduct = {
   dataWarnings: string[];
 };
 
+export type WooCommerceProductUpdate = {
+  store: Store;
+  parentId: string | null;
+  productId: string;
+  priceCop: number;
+  priceUsd: number;
+  stock: number;
+};
+
+export type WooCommerceBatchProductUpdate = Omit<WooCommerceProductUpdate, 'store' | 'parentId'>;
+
+export type WooCommerceBatchUpdateResult = {
+  productId: string;
+  success: boolean;
+  error: string | null;
+};
+
 function isRecord(value: unknown): value is UnknownRecord {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -36,6 +55,20 @@ function identifier(value: unknown): string | null {
   if (typeof value === 'number' && Number.isSafeInteger(value) && value > 0) return String(value);
   if (typeof value === 'string' && /^\d+$/.test(value)) return value;
   return null;
+}
+
+function updateBody(update: WooCommerceBatchProductUpdate) {
+  return {
+    regular_price: String(update.priceCop),
+    stock_quantity: update.stock,
+    manage_stock: true,
+    meta_data: [
+      {
+        key: '_regular_price_wmcp',
+        value: JSON.stringify({ USD: String(update.priceUsd) }),
+      },
+    ],
+  };
 }
 
 function usdPrice(metaData: unknown): { price: number | null; invalid: boolean } {
@@ -129,5 +162,98 @@ export class WooCommerceService {
     }
     if (matches.length > 1) throw invalidIntegrationResponse(config.label);
     return matches[0] ?? null;
+  }
+
+  async updateProduct({
+    store,
+    parentId,
+    productId,
+    priceCop,
+    priceUsd,
+    stock,
+  }: WooCommerceProductUpdate): Promise<void> {
+    const config = storeConfiguration(store);
+    const normalizedProductId = identifier(productId);
+    const normalizedParentId = parentId === null ? null : identifier(parentId);
+    if (!normalizedProductId || (parentId !== null && !normalizedParentId)) {
+      throw invalidIntegrationResponse(config.label);
+    }
+
+    const path = normalizedParentId
+      ? `products/${normalizedParentId}/variations/${normalizedProductId}`
+      : `products/${normalizedProductId}`;
+    const url = integrationUrl(config.apiUrl, path);
+    const credentials = Buffer.from(`${config.consumerKey}:${config.consumerSecret}`).toString(
+      'base64',
+    );
+    const payload = await integrationPut(
+      url,
+      { Authorization: `Basic ${credentials}` },
+      updateBody({ productId, priceCop, priceUsd, stock }),
+      config.label,
+      { timeoutMs: 20_000, retryCount: 1 },
+    );
+
+    if (!isRecord(payload) || identifier(payload.id) !== normalizedProductId) {
+      throw invalidIntegrationResponse(config.label);
+    }
+  }
+
+  async updateProductsBatch({
+    store,
+    parentId,
+    updates,
+  }: {
+    store: Store;
+    parentId: string | null;
+    updates: WooCommerceBatchProductUpdate[];
+  }): Promise<WooCommerceBatchUpdateResult[]> {
+    const config = storeConfiguration(store);
+    const normalizedParentId = parentId === null ? null : identifier(parentId);
+    if (parentId !== null && !normalizedParentId) throw invalidIntegrationResponse(config.label);
+
+    const normalizedUpdates = updates.map((update) => {
+      const productId = identifier(update.productId);
+      const numericId = Number(productId);
+      if (!productId || !Number.isSafeInteger(numericId) || numericId <= 0) {
+        throw invalidIntegrationResponse(config.label);
+      }
+      return { ...update, productId, numericId };
+    });
+    const path = normalizedParentId
+      ? `products/${normalizedParentId}/variations/batch`
+      : 'products/batch';
+    const credentials = Buffer.from(`${config.consumerKey}:${config.consumerSecret}`).toString(
+      'base64',
+    );
+    const payload = await integrationPost(
+      integrationUrl(config.apiUrl, path),
+      { Authorization: `Basic ${credentials}` },
+      {
+        update: normalizedUpdates.map((update) => ({
+          id: update.numericId,
+          ...updateBody(update),
+        })),
+      },
+      config.label,
+      { timeoutMs: 30_000, retryCount: 1 },
+    );
+    if (!isRecord(payload)) {
+      throw invalidIntegrationResponse(config.label);
+    }
+    const updatedItems = payload.update;
+    if (!Array.isArray(updatedItems)) throw invalidIntegrationResponse(config.label);
+
+    return normalizedUpdates.map((update, index) => {
+      const result: unknown = updatedItems[index];
+      if (isRecord(result) && identifier(result.id) === update.productId) {
+        return { productId: update.productId, success: true, error: null };
+      }
+      const message =
+        isRecord(result) && isRecord(result.error) && typeof result.error.message === 'string'
+          ? result.error.message
+          : `${config.label} no confirmó la actualización del producto.`;
+      return { productId: update.productId, success: false, error: message };
+    });
   }
 }

@@ -39,6 +39,20 @@ export type ProductsResponse = {
   pagination: { page: number; pageSize: number; total: number; totalPages: number };
 };
 
+export type ProductSyncJob = {
+  id: string;
+  status: 'PENDING' | 'RUNNING' | 'COMPLETED' | 'COMPLETED_WITH_ERRORS' | 'FAILED';
+  total: number;
+  processed: number;
+  succeeded: number;
+  failed: number;
+  errorMessage: string | null;
+  createdAt: string;
+  startedAt: string | null;
+  completedAt: string | null;
+  failedProductIds?: number[];
+};
+
 export type ExternalProductSource = {
   id: string;
   sku: string;
@@ -115,5 +129,15 @@ export const inventoryApi = {
       method: 'PUT',
       body: JSON.stringify({ sku }),
     }),
+  sync: (id: number) =>
+    request<ProductRecord>(`/api/products/${id}/sync`, {
+      method: 'POST',
+    }),
+  createSyncJob: (ids: number[]) =>
+    request<ProductSyncJob>('/api/products/sync-jobs', {
+      method: 'POST',
+      body: JSON.stringify({ ids }),
+    }),
+  syncJob: (jobId: string) => request<ProductSyncJob>(`/api/products/sync-jobs/${jobId}`),
   remove: (id: number) => request<ProductRecord>(`/api/products/${id}`, { method: 'DELETE' }),
 };

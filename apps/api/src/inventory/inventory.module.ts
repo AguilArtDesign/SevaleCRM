@@ -6,10 +6,11 @@ import { ProductsRepository } from './products.repository.js';
 import { ProductsService } from './products.service.js';
 import { RealtimeModule } from '../realtime/realtime.module.js';
 import { NotificationsModule } from '../notifications/notifications.module.js';
+import { BulkProductSyncService } from './bulk-product-sync.service.js';
 
 @Module({
   imports: [IntegrationsModule, RealtimeModule, NotificationsModule],
   controllers: [ProductsController],
-  providers: [ProductsRepository, ProductsService, ProductLinkService],
+  providers: [ProductsRepository, ProductsService, ProductLinkService, BulkProductSyncService],
 })
 export class InventoryModule {}

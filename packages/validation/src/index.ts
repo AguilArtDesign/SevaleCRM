@@ -65,6 +65,16 @@ export const productIdSchema = z.coerce
   .int('El identificador del producto no es válido.')
   .positive('El identificador del producto no es válido.');
 
+export const bulkProductSyncSchema = z.object({
+  ids: z
+    .array(productIdSchema)
+    .min(1, 'Selecciona al menos un producto.')
+    .max(10_000, 'No puedes sincronizar más de 10.000 productos en un solo trabajo.')
+    .transform((ids) => [...new Set(ids)]),
+});
+
+export const productSyncJobIdSchema = z.string().uuid('La sincronización no es válida.');
+
 export const skuSchema = z
   .string()
   .trim()
@@ -109,3 +119,4 @@ export type NotificationListQuery = z.infer<typeof notificationListQuerySchema>;
 export type CreateUserInput = z.infer<typeof createUserSchema>;
 export type UpdateUserInput = z.infer<typeof updateUserSchema>;
 export type ProductListQuery = z.infer<typeof productListQuerySchema>;
+export type BulkProductSyncInput = z.infer<typeof bulkProductSyncSchema>;

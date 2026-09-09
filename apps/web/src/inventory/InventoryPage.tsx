@@ -16,6 +16,7 @@ import {
   Skeleton,
   Table,
   Toast,
+  toast,
   Typography,
 } from '@heroui/react';
 import {
@@ -38,6 +39,7 @@ import {
   type ProductFilters,
   type ProductRecord,
   type ProductStore,
+  type ProductSyncJob,
   type ProductSyncStatus,
 } from './api';
 import { LinkProductModal } from './LinkProductModal';
@@ -90,9 +92,38 @@ function InventorySkeleton() {
   );
 }
 
+function syncToastContent(
+  title: string,
+  description: string,
+  tone: 'default' | 'success' | 'warning' | 'danger',
+) {
+  return (
+    <span className="sync-toast-copy">
+      <span className={`sync-toast-title sync-toast-title--${tone}`}>{title}</span>
+      <span className="sync-toast-description">{description}</span>
+    </span>
+  );
+}
+
+const syncJobFinished = (job: ProductSyncJob) =>
+  job.status === 'COMPLETED' || job.status === 'COMPLETED_WITH_ERRORS' || job.status === 'FAILED';
+
+async function waitForSyncJob(job: ProductSyncJob): Promise<ProductSyncJob> {
+  let current = job;
+  while (!syncJobFinished(current)) {
+    await new Promise((resolve) => setTimeout(resolve, 800));
+    current = await inventoryApi.syncJob(job.id);
+  }
+  if (current.status === 'FAILED') {
+    throw new Error(current.errorMessage || 'No se pudo completar la sincronización masiva.');
+  }
+  return current;
+}
+
 export function InventoryPage() {
   const queryClient = useQueryClient();
   const { user } = useCurrentUser();
+  const isAdmin = user?.role === 'ADMIN';
   const [searchDraft, setSearchDraft] = useState('');
   const [filters, setFilters] = useState<ProductFilters>(initialFilters);
   const [selectedKeys, setSelectedKeys] = useState<Selection>(new Set());
@@ -109,6 +140,18 @@ export function InventoryPage() {
     queryKey: ['products', 'detail', selectedId],
     queryFn: () => inventoryApi.detail(selectedId as number),
     enabled: selectedId !== null,
+  });
+  const synchronizeProduct = useMutation({
+    mutationFn: (product: ProductRecord) => inventoryApi.sync(product.id),
+    onSettled: async () => queryClient.invalidateQueries({ queryKey: ['products'] }),
+  });
+  const synchronizeSelectedProducts = useMutation({
+    mutationFn: async (ids: number[]) => waitForSyncJob(await inventoryApi.createSyncJob(ids)),
+    onSuccess: async (job) => {
+      setSelectedKeys(new Set(job.failedProductIds ?? []));
+      await queryClient.invalidateQueries({ queryKey: ['products'] });
+    },
+    onError: () => queryClient.invalidateQueries({ queryKey: ['products'] }),
   });
   const deleteProduct = useMutation({
     mutationFn: (product: ProductRecord) => inventoryApi.remove(product.id),
@@ -225,6 +268,26 @@ export function InventoryPage() {
                   aria-label={`Acciones para ${row.original.productName}`}
                   onAction={(key) => {
                     if (String(key) === 'view') setSelectedId(row.original.id);
+                    if (String(key) === 'sync' && !synchronizeProduct.isPending) {
+                      const storeName = row.original.store === 'SERATUS' ? 'Seratus' : 'Pali';
+                      toast.promise(synchronizeProduct.mutateAsync(row.original), {
+                        loading: syncToastContent(
+                          'Sincronizando',
+                          `Se está sincronizando ${row.original.productName} en ${storeName}.`,
+                          'default',
+                        ),
+                        success: syncToastContent(
+                          'Producto sincronizado',
+                          `${row.original.productName} se ha sincronizado correctamente en ${storeName}.`,
+                          'success',
+                        ),
+                        error: syncToastContent(
+                          'Sincronización fallida',
+                          `Ha fallado la sincronización de ${row.original.productName} en ${storeName}.`,
+                          'danger',
+                        ),
+                      });
+                    }
                     if (String(key) === 'delete') setDeleteTarget(row.original);
                   }}
                 >
@@ -233,9 +296,22 @@ export function InventoryPage() {
                       <Eye className="size-4 shrink-0 text-muted" aria-hidden="true" />
                       <Label>Ver producto</Label>
                     </Dropdown.Item>
+                    {isAdmin && (
+                      <Dropdown.Item
+                        id="sync"
+                        textValue="Sincronizar producto"
+                        isDisabled={synchronizeProduct.isPending}
+                      >
+                        <ArrowRotateRight
+                          className="size-4 shrink-0 text-muted"
+                          aria-hidden="true"
+                        />
+                        <Label>Sincronizar</Label>
+                      </Dropdown.Item>
+                    )}
                   </Dropdown.Section>
-                  {user?.role === 'ADMIN' && <Separator />}
-                  {user?.role === 'ADMIN' && (
+                  {isAdmin && <Separator />}
+                  {isAdmin && (
                     <Dropdown.Section>
                       <Dropdown.Item id="delete" textValue="Eliminar producto" variant="danger">
                         <TrashBin className="size-4 shrink-0 text-danger" aria-hidden="true" />
@@ -250,7 +326,7 @@ export function InventoryPage() {
         ),
       },
     ],
-    [user?.role],
+    [isAdmin, synchronizeProduct],
   );
 
   const table = useTable({
@@ -262,23 +338,19 @@ export function InventoryPage() {
   });
 
   const applySearch = (value: string) => {
-    setSelectedKeys(new Set());
     setFilters((current) => ({ ...current, search: value.trim(), page: 1 }));
   };
 
   const updateStore = (store: ProductStore | '') => {
-    setSelectedKeys(new Set());
     setFilters((current) => ({ ...current, store, page: 1 }));
   };
 
   const updateStatus = (syncStatus: ProductSyncStatus | '') => {
-    setSelectedKeys(new Set());
     setFilters((current) => ({ ...current, syncStatus, page: 1 }));
   };
 
   const clearFilters = () => {
     setSearchDraft('');
-    setSelectedKeys(new Set());
     setFilters(initialFilters);
   };
 
@@ -292,7 +364,6 @@ export function InventoryPage() {
 
   const pagination = productsQuery.data?.pagination;
   const hasFilters = Boolean(filters.search || filters.store || filters.syncStatus);
-  const isAdmin = user?.role === 'ADMIN';
   const selectedCount =
     selectedKeys === 'all' ? (productsQuery.data?.data.length ?? 0) : selectedKeys.size;
   const selectedIdSet = selectedKeys === 'all' ? new Set<number>() : selectedKeys;
@@ -300,6 +371,54 @@ export function InventoryPage() {
   const currentPageSelection = new Set(
     [...selectedIdSet].filter((key) => currentPageIds.has(Number(key))),
   );
+  const selectedProductIds =
+    selectedKeys === 'all'
+      ? (productsQuery.data?.data ?? []).map((product) => product.id)
+      : [...selectedKeys].map(Number);
+  const startBulkSynchronization = () => {
+    if (selectedProductIds.length === 0 || synchronizeSelectedProducts.isPending) return;
+    const total = selectedProductIds.length;
+    const loadingId = toast(
+      syncToastContent(
+        'Sincronizando productos',
+        `Se están sincronizando ${total} productos seleccionados.`,
+        'default',
+      ),
+      { isLoading: true, timeout: 0 },
+    );
+    void synchronizeSelectedProducts
+      .mutateAsync(selectedProductIds)
+      .then((job) => {
+        toast.close(loadingId);
+        if (job.failed === 0) {
+          toast.success(
+            syncToastContent(
+              'Productos sincronizados',
+              `${job.succeeded} productos se sincronizaron correctamente.`,
+              'success',
+            ),
+          );
+          return;
+        }
+        toast.warning(
+          syncToastContent(
+            'Sincronización completada con errores',
+            `${job.succeeded} de ${job.total} productos se sincronizaron. ${job.failed} presentaron errores.`,
+            'warning',
+          ),
+        );
+      })
+      .catch((error: Error) => {
+        toast.close(loadingId);
+        toast.danger(
+          syncToastContent(
+            'Sincronización fallida',
+            error.message || 'No se pudo completar la sincronización masiva.',
+            'danger',
+          ),
+        );
+      });
+  };
   const updatePageSelection = (selection: Selection) => {
     setSelectedKeys((current) => {
       const next = new Set(current === 'all' ? [] : current);
@@ -402,7 +521,7 @@ export function InventoryPage() {
             </Select>
 
             {hasFilters && (
-              <Button size="sm" variant="ghost" onPress={clearFilters}>
+              <Button size="sm" variant="danger-soft" onPress={clearFilters}>
                 <Xmark width={15} height={15} />
                 Limpiar
               </Button>
@@ -436,7 +555,12 @@ export function InventoryPage() {
               <ArrowDownToLine width={16} height={16} />
               Exportar
             </Button>
-            <Button size="sm" variant="ghost" isDisabled>
+            <Button
+              size="sm"
+              variant="ghost"
+              isDisabled={synchronizeSelectedProducts.isPending}
+              onPress={startBulkSynchronization}
+            >
               <ArrowRotateRight width={16} height={16} />
               Sincronizar
             </Button>

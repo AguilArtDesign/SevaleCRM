@@ -26,6 +26,20 @@ enum SyncStatus {
   ERROR
 }
 
+enum ProductSyncJobStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  COMPLETED_WITH_ERRORS
+  FAILED
+}
+
+enum ProductSyncJobItemStatus {
+  PENDING
+  SYNCED
+  ERROR
+}
+
 model User {
   id                String             @id @default(uuid()) @db.VarChar(36)
   name              String             @db.VarChar(191)
@@ -40,8 +54,52 @@ model User {
   sessions          Session[]
   accounts          Account[]
   notificationReads NotificationRead[]
+  productSyncJobs   ProductSyncJob[]
 
   @@map("users")
+}
+
+model ProductSyncJob {
+  id            String               @id @default(uuid()) @db.VarChar(36)
+  requestedById String               @map("requested_by_id") @db.VarChar(36)
+  status        ProductSyncJobStatus @default(PENDING)
+  total         Int
+  processed     Int                  @default(0)
+  succeeded     Int                  @default(0)
+  failed        Int                  @default(0)
+  errorMessage  String?              @map("error_message") @db.Text
+  createdAt     DateTime             @default(now()) @map("created_at")
+  startedAt     DateTime?            @map("started_at")
+  completedAt   DateTime?            @map("completed_at")
+  requestedBy   User                 @relation(fields: [requestedById], references: [id], onDelete: Restrict)
+  items         ProductSyncJobItem[]
+
+  @@index([status, createdAt])
+  @@index([requestedById])
+  @@map("product_sync_jobs")
+}
+
+model ProductSyncJobItem {
+  id           Int                      @id @default(autoincrement())
+  jobId        String                   @map("job_id") @db.VarChar(36)
+  productId    Int                      @map("product_id")
+  sku          String                   @db.VarChar(191)
+  productName  String                   @map("product_name") @db.VarChar(255)
+  store        Store
+  wooParentId  BigInt?                  @map("woo_parent_id") @db.UnsignedBigInt
+  wooProductId BigInt                   @map("woo_product_id") @db.UnsignedBigInt
+  priceCop     Decimal                  @map("price_cop") @db.Decimal(14, 2)
+  priceUsd     Decimal                  @map("price_usd") @db.Decimal(14, 2)
+  stock        Int
+  status       ProductSyncJobItemStatus @default(PENDING)
+  attempts     Int                      @default(0)
+  errorMessage String?                  @map("error_message") @db.Text
+  processedAt  DateTime?                @map("processed_at")
+  job          ProductSyncJob           @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@unique([jobId, productId])
+  @@index([jobId, status])
+  @@map("product_sync_job_items")
 }
 
 model Session {
