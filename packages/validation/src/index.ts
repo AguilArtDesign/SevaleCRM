@@ -79,8 +79,13 @@ export const skuSchema = z
   .string()
   .trim()
   .min(1, 'Debes ingresar un SKU.')
-  .max(191, 'El SKU no puede superar los 191 caracteres.')
-  .regex(/^[A-Za-z0-9._-]+$/, 'El SKU contiene caracteres no válidos.');
+  .transform((value) => value.normalize('NFC'))
+  .pipe(
+    z
+      .string()
+      .max(191, 'El SKU no puede superar los 191 caracteres.')
+      .regex(/^[A-Za-zÁÉÍÓÚáéíóú0-9_-]+$/, 'El SKU contiene caracteres no válidos.'),
+  );
 
 export const externalProductQuerySchema = z.object({
   sku: skuSchema,

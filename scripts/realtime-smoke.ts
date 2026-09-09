@@ -193,6 +193,16 @@ try {
     throw new Error('Los eventos de actualización no devolvieron los cambios esperados.');
   }
 
+  const productsUpdatedPromise = waitFor<{ count: number; occurredAt: string }>(
+    socket,
+    'products.updated',
+  );
+  realtime.emitProductsUpdated(100);
+  const productsUpdated = await productsUpdatedPromise;
+  if (productsUpdated.count !== 100 || !productsUpdated.occurredAt) {
+    throw new Error('products.updated no devolvió el resumen masivo esperado.');
+  }
+
   const notificationPromise = waitFor<{ notificationId: number; productId: number | null }>(
     socket,
     'notification.created',

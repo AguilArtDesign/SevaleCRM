@@ -87,6 +87,23 @@ try {
   });
   if (!profileResponse.ok) throw new Error('La ruta protegida rechazó una sesión válida.');
 
+  const passwordSession = await authService.auth.api.getSession({
+    headers: new Headers({ cookie: passwordCookie }),
+  });
+  if (!passwordSession) throw new Error('No se encontró la sesión creada con contraseña.');
+  await prisma.session.update({
+    where: { id: passwordSession.session.id },
+    data: { updatedAt: new Date(Date.now() - 6 * 60 * 1000) },
+  });
+  const concurrentProfiles = await Promise.all(
+    Array.from({ length: 20 }, () =>
+      fetch(`${baseUrl}/api/me`, { headers: { cookie: passwordCookie, origin } }),
+    ),
+  );
+  if (concurrentProfiles.some((response) => !response.ok)) {
+    throw new Error('Las consultas concurrentes provocaron una colisión al renovar la sesión.');
+  }
+
   const logoutResponse = await fetch(`${baseUrl}/api/auth/sign-out`, {
     method: 'POST',
     headers: { cookie: passwordCookie, origin },

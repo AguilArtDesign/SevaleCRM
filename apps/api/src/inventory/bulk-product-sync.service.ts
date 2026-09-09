@@ -152,10 +152,12 @@ export class BulkProductSyncService implements OnApplicationBootstrap {
     });
     if (claimed.count !== 1) return;
 
+    let itemCount = 0;
     try {
       const items = await this.prisma.productSyncJobItem.findMany({
         where: { jobId, status: ProductSyncJobItemStatus.PENDING },
       });
+      itemCount = items.length;
       const groups = new Map<string, ProductSyncJobItem[]>();
       for (const item of items) {
         const key = `${item.store}:${item.wooParentId?.toString() ?? 'simple'}`;
@@ -186,6 +188,8 @@ export class BulkProductSyncService implements OnApplicationBootstrap {
           completedAt: new Date(),
         },
       });
+    } finally {
+      if (itemCount > 0) this.realtime.emitProductsUpdated(itemCount);
     }
   }
 
@@ -217,7 +221,7 @@ export class BulkProductSyncService implements OnApplicationBootstrap {
   }
 
   private async completeItem(jobId: string, item: ProductSyncJobItem) {
-    const product = await this.prisma.product.update({
+    await this.prisma.product.update({
       where: { id: item.productId },
       data: {
         wooPriceCop: item.priceCop,
@@ -241,16 +245,10 @@ export class BulkProductSyncService implements OnApplicationBootstrap {
         data: { processed: { increment: 1 }, succeeded: { increment: 1 } },
       }),
     ]);
-    this.realtime.emitProductUpdated(product, {
-      priceCop: null,
-      priceUsd: null,
-      stock: null,
-      syncStatus: null,
-    });
   }
 
   private async failItem(jobId: string, item: ProductSyncJobItem, errorMessage: string) {
-    const product = await this.prisma.product.update({
+    await this.prisma.product.update({
       where: { id: item.productId },
       data: { syncStatus: SyncStatus.ERROR },
     });
@@ -269,12 +267,6 @@ export class BulkProductSyncService implements OnApplicationBootstrap {
         data: { processed: { increment: 1 }, failed: { increment: 1 } },
       }),
     ]);
-    this.realtime.emitProductUpdated(product, {
-      priceCop: null,
-      priceUsd: null,
-      stock: null,
-      syncStatus: null,
-    });
   }
 
   private summary(job: {

@@ -7,6 +7,7 @@ import { hashPassword } from 'better-auth/crypto';
 import { AppModule } from '../apps/api/src/app.module.js';
 import { PrismaService } from '../apps/api/src/database/prisma.service.js';
 import { Role, Store, SyncStatus } from '../apps/api/src/generated/prisma/client.js';
+import { RealtimeGateway } from '../apps/api/src/realtime/realtime.gateway.js';
 
 process.env.BETTER_AUTH_SECRET ||= 'local-product-sync-smoke-secret-at-least-32-characters';
 
@@ -87,6 +88,19 @@ app.setGlobalPrefix('api');
 await app.listen(0, '127.0.0.1');
 
 const prisma = app.get(PrismaService);
+const realtime = app.get(RealtimeGateway);
+const originalEmitProductUpdated = realtime.emitProductUpdated.bind(realtime);
+const originalEmitProductsUpdated = realtime.emitProductsUpdated.bind(realtime);
+let productUpdatedEvents = 0;
+const productsUpdatedCounts: number[] = [];
+realtime.emitProductUpdated = (...args) => {
+  productUpdatedEvents += 1;
+  originalEmitProductUpdated(...args);
+};
+realtime.emitProductsUpdated = (count) => {
+  productsUpdatedCounts.push(count);
+  originalEmitProductsUpdated(count);
+};
 const baseUrl = await app.getUrl();
 const origin = process.env.FRONTEND_URL || 'http://localhost:5173';
 const runId = randomUUID();
@@ -259,6 +273,7 @@ try {
   const bulkResponse = await api('/api/products/sync-jobs', adminCookie, {
     ids: [variation.id, simple.id],
   });
+  productUpdatedEvents = 0;
   expectStatus(bulkResponse, 202, 'Creación de sincronización masiva');
   let bulkJob = (await bulkResponse.json()) as {
     id: string;
@@ -277,6 +292,9 @@ try {
   }
   if (bulkJob.status !== 'COMPLETED' || bulkJob.succeeded !== 2 || bulkJob.failed !== 0) {
     throw new Error('La sincronización masiva no terminó con el resumen esperado.');
+  }
+  if (productUpdatedEvents !== 0 || productsUpdatedCounts.join(',') !== '2') {
+    throw new Error('La sincronización masiva no agrupó su actualización en tiempo real.');
   }
   if (
     !requests.some(

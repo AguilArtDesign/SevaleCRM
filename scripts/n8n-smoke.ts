@@ -21,7 +21,7 @@ const prisma = app.get(PrismaService);
 const baseUrl = await app.getUrl();
 const runId = randomUUID();
 const siigoId = randomUUID();
-const sku = `N8N-${runId}`;
+const sku = `N8N-CAFÉ-${runId}`;
 let productId: number | null = null;
 
 function expectStatus(response: Response, status: number, context: string) {

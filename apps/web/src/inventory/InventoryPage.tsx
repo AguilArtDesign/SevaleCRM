@@ -145,7 +145,7 @@ export function InventoryPage() {
     enabled: selectedId !== null,
   });
   const importStatusQuery = useQuery({
-    queryKey: ['products', 'import-status'],
+    queryKey: ['product-import-status'],
     queryFn: inventoryApi.importStatus,
     enabled: isAdmin,
     staleTime: 60_000,

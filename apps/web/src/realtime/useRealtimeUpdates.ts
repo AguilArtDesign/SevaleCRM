@@ -9,8 +9,13 @@ export function useRealtimeUpdates() {
 
   useEffect(() => {
     const socket = io(apiUrl, { withCredentials: true });
+    let productRefreshTimer: number | undefined;
     const refreshProducts = () => {
-      void queryClient.invalidateQueries({ queryKey: ['products'] });
+      if (productRefreshTimer !== undefined) window.clearTimeout(productRefreshTimer);
+      productRefreshTimer = window.setTimeout(() => {
+        productRefreshTimer = undefined;
+        void queryClient.invalidateQueries({ queryKey: ['products'] });
+      }, 500);
     };
     const refreshNotifications = (notification: { title: string; message: string }) => {
       void queryClient.invalidateQueries({ queryKey: ['notifications'] });
@@ -23,9 +28,11 @@ export function useRealtimeUpdates() {
     socket.on('product.created', refreshProducts);
     socket.on('product.updated', refreshProducts);
     socket.on('product.deleted', refreshProducts);
+    socket.on('products.updated', refreshProducts);
     socket.on('notification.created', refreshNotifications);
 
     return () => {
+      if (productRefreshTimer !== undefined) window.clearTimeout(productRefreshTimer);
       socket.disconnect();
     };
   }, [queryClient]);

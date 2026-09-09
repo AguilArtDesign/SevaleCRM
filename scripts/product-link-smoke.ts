@@ -65,7 +65,10 @@ const upstream = createServer((request, response) => {
 
   const store = url.pathname.includes('/seratus/') ? 'seratus' : 'pali';
   let products: unknown[] = [];
-  if ((sku === 'LINK-OK' || sku?.startsWith('LINK-DUP-')) && store === 'pali') {
+  if (
+    (sku === 'LINK-OK' || sku === 'LINK-CAFÉ' || sku?.startsWith('LINK-DUP-')) &&
+    store === 'pali'
+  ) {
     products = [wooProduct(sku, store)];
   }
   if (sku === 'LINK-INCOMPLETE' && store === 'pali') {
@@ -324,6 +327,35 @@ try {
     !preview.canLink
   ) {
     throw new Error('La vista previa normalizada no contiene los valores esperados.');
+  }
+
+  const unicodePreviewResponse = await api(
+    `/api/products/link-preview?sku=${encodeURIComponent('LINK-CAFE\u0301')}`,
+    commercialCookie,
+  );
+  expectStatus(unicodePreviewResponse, 200, 'Vista previa con SKU acentuado');
+  const unicodePreview = (await unicodePreviewResponse.json()) as { sku: string; canLink: boolean };
+  if (unicodePreview.sku !== 'LINK-CAFÉ' || !unicodePreview.canLink) {
+    throw new Error('El SKU acentuado no se normalizó a Unicode NFC.');
+  }
+  expectStatus(
+    await api(
+      `/api/products/link-preview?sku=${encodeURIComponent('LINK CON ESPACIO')}`,
+      adminCookie,
+    ),
+    400,
+    'SKU con espacios',
+  );
+  for (const [invalidSku, context] of [
+    ['LINK.CON.PUNTOS', 'SKU con puntos'],
+    ['LINK-CAÑE', 'SKU con eñe'],
+    ['LINK-А', 'SKU con alfabeto no latino'],
+  ] as const) {
+    expectStatus(
+      await api(`/api/products/link-preview?sku=${encodeURIComponent(invalidSku)}`, adminCookie),
+      400,
+      context,
+    );
   }
 
   expectStatus(

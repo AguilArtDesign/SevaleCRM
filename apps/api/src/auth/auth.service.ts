@@ -11,6 +11,16 @@ import { MailService } from './mail.service.js';
 
 const DEVELOPMENT_TURNSTILE_SECRET = '1x0000000000000000000000000000000AA';
 
+function isSessionWriteConflict(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false;
+  const candidate = error as { code?: unknown; message?: unknown };
+  return (
+    candidate.code === 'P2039' &&
+    typeof candidate.message === 'string' &&
+    candidate.message.includes('Record has changed since last read')
+  );
+}
+
 function getRequiredAuthSecret(): string | undefined {
   const secret = process.env.BETTER_AUTH_SECRET;
 
@@ -153,6 +163,12 @@ export class AuthService {
   }
 
   async getSession(headers: IncomingHttpHeaders) {
-    return this.auth.api.getSession({ headers: fromNodeHeaders(headers) });
+    const normalizedHeaders = fromNodeHeaders(headers);
+    try {
+      return await this.auth.api.getSession({ headers: normalizedHeaders });
+    } catch (error) {
+      if (!isSessionWriteConflict(error)) throw error;
+      return this.auth.api.getSession({ headers: normalizedHeaders });
+    }
   }
 }
