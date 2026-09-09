@@ -6,6 +6,7 @@ import { hashPassword } from 'better-auth/crypto';
 import { AppModule } from '../apps/api/src/app.module.js';
 import { PrismaService } from '../apps/api/src/database/prisma.service.js';
 import { Role, Store, SyncStatus } from '../apps/api/src/generated/prisma/client.js';
+import { NotificationRetentionService } from '../apps/api/src/notifications/notification-retention.service.js';
 
 process.env.BETTER_AUTH_SECRET ||= 'local-notifications-smoke-secret-at-least-32-characters';
 
@@ -16,6 +17,7 @@ app.setGlobalPrefix('api');
 await app.listen(0, '127.0.0.1');
 
 const prisma = app.get(PrismaService);
+const notificationRetention = app.get(NotificationRetentionService);
 const baseUrl = await app.getUrl();
 const origin = process.env.FRONTEND_URL || 'http://localhost:5173';
 const runId = randomUUID();
@@ -103,6 +105,7 @@ try {
       wooStock: 1,
       syncStatus: SyncStatus.SYNCED,
       productName: 'Producto de notificaciones',
+      imageUrl: 'https://example.invalid/producto-notificaciones.webp',
     },
   });
   productId = product.id;
@@ -118,6 +121,20 @@ try {
     notificationIds.push(notification.id);
   }
 
+  const expiredNotification = await prisma.notification.create({
+    data: {
+      type: 'RETENTION_TEST',
+      title: 'Notificación vencida',
+      message: `Notificación de retención · ${runId}`,
+      productId,
+      createdAt: new Date(Date.now() - 91 * 24 * 60 * 60 * 1000),
+    },
+  });
+  await notificationRetention.removeExpired();
+  if (await prisma.notification.findUnique({ where: { id: expiredNotification.id } })) {
+    throw new Error('La limpieza conservó una notificación con más de 90 días.');
+  }
+
   expectStatus(await api('/api/notifications'), 401, 'Listado anónimo');
   const cookieA = await login(users[0].email);
   const cookieB = await login(users[1].email);
@@ -125,14 +142,20 @@ try {
   const unreadAResponse = await api('/api/notifications?status=unread', cookieA);
   expectStatus(unreadAResponse, 200, 'No leídas del usuario A');
   const unreadA = (await unreadAResponse.json()) as {
-    data: Array<{ id: number; readAt: string | null; product: { sku: string } }>;
+    data: Array<{
+      id: number;
+      readAt: string | null;
+      product: { sku: string; imageUrl: string | null };
+    }>;
     unreadCount: number;
   };
   if (
     unreadA.unreadCount < 2 ||
     !notificationIds.every((id) => unreadA.data.some((notification) => notification.id === id)) ||
     unreadA.data.find((notification) => notification.id === notificationIds[0])?.product.sku !==
-      product.sku
+      product.sku ||
+    unreadA.data.find((notification) => notification.id === notificationIds[0])?.product
+      .imageUrl !== product.imageUrl
   ) {
     throw new Error('El listado no devolvió las notificaciones normalizadas esperadas.');
   }
@@ -182,7 +205,7 @@ try {
   );
 
   process.stdout.write(
-    'Notifications smoke: auth, list filters, unread count, per-user reads and mark-all checks passed.\n',
+    'Notifications smoke: auth, list filters, unread count, per-user reads, mark-all and retention checks passed.\n',
   );
 } finally {
   if (notificationIds.length > 0) {

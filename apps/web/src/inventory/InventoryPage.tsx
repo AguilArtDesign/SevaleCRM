@@ -39,9 +39,9 @@ import {
   inventoryApi,
   type ProductFilters,
   type ProductRecord,
+  type ProductStatusFilter,
   type ProductStore,
   type ProductSyncJob,
-  type ProductSyncStatus,
 } from './api';
 import { LinkProductModal } from './LinkProductModal';
 import { ProductImportModal } from './ProductImportModal';
@@ -52,13 +52,14 @@ const tableCop = new Intl.NumberFormat('es-CO', { maximumFractionDigits: 0 });
 const tableUsd = new Intl.NumberFormat('es-CO', { maximumFractionDigits: 2 });
 
 const statusMeta: Record<
-  ProductSyncStatus,
+  ProductStatusFilter,
   { label: string; color: 'success' | 'warning' | 'danger' | 'default' }
 > = {
   SYNCED: { label: 'Sincronizado', color: 'success' },
   PENDING: { label: 'Pendiente', color: 'warning' },
   OUT_OF_SYNC: { label: 'Desactualizado', color: 'danger' },
   ERROR: { label: 'Con error', color: 'danger' },
+  OUT_OF_STOCK: { label: 'Agotado', color: 'danger' },
 };
 
 const initialFilters: ProductFilters = {
@@ -74,6 +75,10 @@ function dateTime(value: string | null): string {
   return new Intl.DateTimeFormat('es-CO', { dateStyle: 'medium', timeStyle: 'short' }).format(
     new Date(value),
   );
+}
+
+function getProductStatus(product: Pick<ProductRecord, 'siigoStock' | 'syncStatus'>) {
+  return product.siigoStock === 0 ? statusMeta.OUT_OF_STOCK : statusMeta[product.syncStatus];
 }
 
 function InventorySkeleton() {
@@ -253,7 +258,7 @@ export function InventoryPage() {
         accessorKey: 'syncStatus',
         header: 'Estado',
         cell: ({ row }) => {
-          const status = statusMeta[row.original.syncStatus];
+          const status = getProductStatus(row.original);
           return <Chip color={status.color}>{status.label}</Chip>;
         },
       },
@@ -354,7 +359,7 @@ export function InventoryPage() {
     setFilters((current) => ({ ...current, store, page: 1 }));
   };
 
-  const updateStatus = (syncStatus: ProductSyncStatus | '') => {
+  const updateStatus = (syncStatus: ProductStatusFilter | '') => {
     setFilters((current) => ({ ...current, syncStatus, page: 1 }));
   };
 
@@ -503,7 +508,7 @@ export function InventoryPage() {
               variant="primary"
               onChange={(value) =>
                 updateStatus(
-                  value === 'ALL' || value === null ? '' : (String(value) as ProductSyncStatus),
+                  value === 'ALL' || value === null ? '' : (String(value) as ProductStatusFilter),
                 )
               }
             >
@@ -519,6 +524,10 @@ export function InventoryPage() {
                   </ListBox.Item>
                   <ListBox.Item id="SYNCED" textValue="Sincronizado">
                     Sincronizado
+                    <ListBox.ItemIndicator />
+                  </ListBox.Item>
+                  <ListBox.Item id="OUT_OF_STOCK" textValue="Agotado">
+                    Agotado
                     <ListBox.ItemIndicator />
                   </ListBox.Item>
                   <ListBox.Item id="PENDING" textValue="Pendiente">
@@ -911,7 +920,7 @@ export function InventoryPage() {
 }
 
 function ProductDetail({ product }: { product: ProductRecord }) {
-  const status = statusMeta[product.syncStatus];
+  const status = getProductStatus(product);
   return (
     <div className="product-detail-body">
       <div className="product-detail-product">

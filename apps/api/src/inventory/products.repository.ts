@@ -19,7 +19,7 @@ export class ProductsRepository {
           }
         : {}),
       ...(store ? { store } : {}),
-      ...(syncStatus ? { syncStatus } : {}),
+      ...(syncStatus === 'OUT_OF_STOCK' ? { siigoStock: 0 } : syncStatus ? { syncStatus } : {}),
     };
 
     return this.prisma.$transaction([

@@ -8,7 +8,7 @@ export type NotificationRecord = {
   title: string;
   message: string;
   productId: number | null;
-  product: { sku: string; productName: string } | null;
+  product: { sku: string; productName: string; imageUrl: string | null } | null;
   createdAt: string;
   readAt: string | null;
 };

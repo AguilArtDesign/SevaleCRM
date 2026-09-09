@@ -9,6 +9,7 @@ const cop = new Intl.NumberFormat('es-CO', {
   currency: 'COP',
   maximumFractionDigits: 0,
 });
+const compactNumber = new Intl.NumberFormat('es-CO', { maximumFractionDigits: 2 });
 
 const statusLabels: Record<SyncStatus, string> = {
   SYNCED: 'Sincronizado',
@@ -115,6 +116,31 @@ export class NotificationsService {
     }
 
     return Promise.all(notifications.map((notification) => this.create(notification)));
+  }
+
+  async createSiigoProductUpdate(product: Product, changes: ProductUpdateChanges) {
+    const details: string[] = [];
+    if (changes.stock) {
+      details.push(`Stock ${changes.stock.previous} ➝ ${changes.stock.current}`);
+    }
+    if (changes.priceCop) {
+      details.push(
+        `Precio COP $${compactNumber.format(changes.priceCop.previous)} ➝ $${compactNumber.format(changes.priceCop.current)}`,
+      );
+    }
+    if (changes.priceUsd) {
+      details.push(
+        `Precio USD $${compactNumber.format(changes.priceUsd.previous)} ➝ $${compactNumber.format(changes.priceUsd.current)}`,
+      );
+    }
+    if (details.length === 0) return null;
+
+    return this.create({
+      type: 'SIIGO_PRODUCT_UPDATED',
+      title: 'Producto actualizado',
+      message: [product.productName, ...details].join('\n'),
+      productId: product.id,
+    });
   }
 
   private async create(data: { type: string; title: string; message: string; productId: number }) {

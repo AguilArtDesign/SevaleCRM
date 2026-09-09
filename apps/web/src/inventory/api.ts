@@ -2,6 +2,7 @@ import { apiUrl } from '../config/api-url';
 
 export type ProductStore = 'SERATUS' | 'PALI';
 export type ProductSyncStatus = 'PENDING' | 'SYNCED' | 'OUT_OF_SYNC' | 'ERROR';
+export type ProductStatusFilter = ProductSyncStatus | 'OUT_OF_STOCK';
 
 export type ProductRecord = {
   id: number;
@@ -29,7 +30,7 @@ export type ProductRecord = {
 export type ProductFilters = {
   search: string;
   store: ProductStore | '';
-  syncStatus: ProductSyncStatus | '';
+  syncStatus: ProductStatusFilter | '';
   page: number;
   pageSize: number;
 };

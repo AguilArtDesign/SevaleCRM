@@ -66,7 +66,7 @@ export class SiigoWebhookService {
           ? null
           : { previous: previous.syncStatus, current: syncStatus },
     };
-    await this.notifications.createProductChanges(updated, changes);
+    await this.notifications.createSiigoProductUpdate(updated, changes);
     this.realtime.emitProductUpdated(updated, changes);
 
     return {

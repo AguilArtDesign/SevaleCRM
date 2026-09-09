@@ -22,7 +22,7 @@ export class NotificationsRepository {
         skip: (query.page - 1) * query.pageSize,
         take: query.pageSize,
         include: {
-          product: { select: { sku: true, productName: true } },
+          product: { select: { sku: true, productName: true, imageUrl: true } },
           reads: { where: { userId }, select: { readAt: true } },
         },
       }),
@@ -58,5 +58,9 @@ export class NotificationsRepository {
 
   create(data: Prisma.NotificationUncheckedCreateInput) {
     return this.prisma.notification.create({ data });
+  }
+
+  deleteCreatedBefore(cutoff: Date) {
+    return this.prisma.notification.deleteMany({ where: { createdAt: { lt: cutoff } } });
   }
 }

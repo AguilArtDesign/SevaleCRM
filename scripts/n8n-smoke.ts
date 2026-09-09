@@ -150,8 +150,19 @@ try {
   ) {
     throw new Error('La actualización modificó campos incorrectos o alteró WooCommerce.');
   }
-  if ((await prisma.notification.count({ where: { productId: product.id } })) !== 3) {
-    throw new Error('Los cambios de stock, precio y estado no crearon sus notificaciones.');
+  if ((await prisma.notification.count({ where: { productId: product.id } })) !== 1) {
+    throw new Error('La actualización de Siigo no creó una única notificación consolidada.');
+  }
+  const updateNotification = await prisma.notification.findFirstOrThrow({
+    where: { productId: product.id },
+  });
+  if (
+    updateNotification.type !== 'SIIGO_PRODUCT_UPDATED' ||
+    updateNotification.title !== 'Producto actualizado' ||
+    updateNotification.message !==
+      'Producto webhook n8n\nStock 10 ➝ 7\nPrecio COP $90.000 ➝ $95.000\nPrecio USD $22 ➝ $24,5'
+  ) {
+    throw new Error('La notificación de Siigo no conservó el formato o los cambios esperados.');
   }
 
   const matchingPayload = {

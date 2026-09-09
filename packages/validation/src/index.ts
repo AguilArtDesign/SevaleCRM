@@ -51,11 +51,18 @@ export const userIdSchema = z.string().uuid('El identificador del usuario no es 
 
 export const storeSchema = z.enum(['SERATUS', 'PALI']);
 export const syncStatusSchema = z.enum(['PENDING', 'SYNCED', 'OUT_OF_SYNC', 'ERROR']);
+export const productStatusFilterSchema = z.enum([
+  'PENDING',
+  'SYNCED',
+  'OUT_OF_SYNC',
+  'ERROR',
+  'OUT_OF_STOCK',
+]);
 
 export const productListQuerySchema = z.object({
   search: z.string().trim().max(191, 'La búsqueda es demasiado larga.').default(''),
   store: storeSchema.optional(),
-  syncStatus: syncStatusSchema.optional(),
+  syncStatus: productStatusFilterSchema.optional(),
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(20),
 });

@@ -67,7 +67,7 @@ try {
 
   const fixtures = [
     { store: Store.SERATUS, syncStatus: SyncStatus.SYNCED, name: 'Producto Alfa' },
-    { store: Store.PALI, syncStatus: SyncStatus.PENDING, name: 'Producto Beta' },
+    { store: Store.PALI, syncStatus: SyncStatus.PENDING, name: 'Producto Beta', stock: 0 },
     { store: Store.SERATUS, syncStatus: SyncStatus.ERROR, name: 'Producto Gamma' },
   ];
   for (const [index, fixture] of fixtures.entries()) {
@@ -77,7 +77,7 @@ try {
         sku: `S7-${runId}-${index}`,
         siigoPriceCop: 150000 + index,
         siigoPriceUsd: 40 + index,
-        siigoStock: 8 + index,
+        siigoStock: fixture.stock ?? 8 + index,
         store: fixture.store,
         wooParentId: BigInt(9_000_000 + index),
         wooVariationId: BigInt(9_100_000 + index),
@@ -131,6 +131,16 @@ try {
   const filteredBody = (await filteredResponse.json()) as { data: Array<{ id: number }> };
   if (filteredBody.data.length !== 1 || filteredBody.data[0]?.id !== productIds[2]) {
     throw new Error('Los filtros no devolvieron el producto esperado.');
+  }
+
+  const outOfStockResponse = await api(
+    `/api/products?search=${encodeURIComponent(runId)}&syncStatus=OUT_OF_STOCK`,
+    cookie,
+  );
+  expectStatus(outOfStockResponse, 200, 'Filtro por productos agotados');
+  const outOfStockBody = (await outOfStockResponse.json()) as { data: Array<{ id: number }> };
+  if (outOfStockBody.data.length !== 1 || outOfStockBody.data[0]?.id !== productIds[1]) {
+    throw new Error('El filtro de agotados no devolvió el producto con stock cero.');
   }
 
   const pageResponse = await api(
