@@ -645,14 +645,14 @@ export function InventoryPage() {
         }}
       >
         <Modal.Backdrop>
-          <Modal.Container size="sm" placement="center" scroll="inside">
+          <Modal.Container size="md" placement="center" scroll="inside">
             <Modal.Dialog className="product-detail-modal">
               <Modal.CloseTrigger aria-label="Cerrar detalle" />
               <Modal.Header>
                 <div>
                   <Modal.Heading>Detalle del producto</Modal.Heading>
                   <Typography.Paragraph color="muted" size="sm">
-                    Información almacenada localmente
+                    Consultar precios y existencias
                   </Typography.Paragraph>
                 </div>
               </Modal.Header>
@@ -804,7 +804,6 @@ function ProductDetail({ product }: { product: ProductRecord }) {
         <ProductSource
           title="Siigo"
           source="siigo"
-          sku={product.sku}
           priceCop={product.siigoPriceCop}
           priceUsd={product.siigoPriceUsd}
           stock={product.siigoStock}
@@ -812,7 +811,6 @@ function ProductDetail({ product }: { product: ProductRecord }) {
         <ProductSource
           title="WooCommerce"
           source={product.store.toLowerCase() as 'pali' | 'seratus'}
-          sku={product.wooSku}
           priceCop={product.wooPriceCop}
           priceUsd={product.wooPriceUsd}
           stock={product.wooStock}
@@ -830,7 +828,6 @@ function ProductDetail({ product }: { product: ProductRecord }) {
 function ProductSource({
   title,
   source,
-  sku,
   priceCop,
   priceUsd,
   stock,
@@ -838,7 +835,6 @@ function ProductSource({
 }: {
   title: string;
   source: 'siigo' | 'pali' | 'seratus';
-  sku: string;
   priceCop: number;
   priceUsd: number;
   stock: number;
@@ -848,16 +844,6 @@ function ProductSource({
     <section className={`product-source-${source}`}>
       <span>{title}</span>
       <dl>
-        <div>
-          <dt>SKU</dt>
-          <dd>{sku}</dd>
-        </div>
-        <div>
-          <dt>Stock</dt>
-          <dd>
-            <SourceValue hasMismatch={mismatches?.stock}>{stock}</SourceValue>
-          </dd>
-        </div>
         <div>
           <dt>Precio COP</dt>
           <dd>
@@ -872,6 +858,12 @@ function ProductSource({
             <SourceValue hasMismatch={mismatches?.priceUsd}>
               ${tableCop.format(priceUsd)}
             </SourceValue>
+          </dd>
+        </div>
+        <div>
+          <dt>Stock</dt>
+          <dd>
+            <SourceValue hasMismatch={mismatches?.stock}>{stock}</SourceValue>
           </dd>
         </div>
       </dl>

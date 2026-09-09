@@ -1,19 +1,12 @@
-import { useState, type FormEvent } from 'react';
+import { useState, type FormEvent, type ReactNode } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { Alert, Button, Label, Modal, Skeleton, TextField, Typography } from '@heroui/react';
-import { Boxes3, Link, Magnifier, Xmark } from '@gravity-ui/icons';
+import { Alert, Button, Modal, Skeleton, Spinner, TextField, Typography } from '@heroui/react';
+import { Boxes3, Link, Magnifier, TriangleExclamation, Xmark } from '@gravity-ui/icons';
 import { Chip } from '../components/Chip';
 import { Input } from '../components/Input';
-import {
-  inventoryApi,
-  type ProductLinkPreview,
-  type ProductRecord,
-  type ProductSyncStatus,
-} from './api';
+import { inventoryApi, type ProductLinkPreview, type ProductSyncStatus } from './api';
 
-const currencyCop = new Intl.NumberFormat('es-CO', {
-  style: 'currency',
-  currency: 'COP',
+const currencyNumber = new Intl.NumberFormat('es-CO', {
   maximumFractionDigits: 0,
 });
 
@@ -39,67 +32,95 @@ function LinkPreviewSkeleton() {
         <Skeleton />
         <Skeleton />
       </div>
-      <span>Consultando Siigo, Seratus y Pali…</span>
     </div>
   );
 }
 
 function nullableCurrency(value: number | null): string {
-  return value === null ? 'Sin dato' : currencyCop.format(value);
+  return value === null ? 'Sin dato' : `$${currencyNumber.format(value)}`;
 }
 
 function nullableUsd(value: number | null): string {
-  return value === null ? 'Sin dato' : `USD ${value.toFixed(2)}`;
+  return value === null ? 'Sin dato' : `$${currencyNumber.format(value)}`;
 }
 
 function nullableStock(value: number | null): string {
-  return value === null ? 'Sin dato' : `${value} unidades`;
+  return value === null ? 'Sin dato' : currencyNumber.format(value);
 }
 
 function SourcePanel({
   title,
-  sku,
+  source,
   priceCop,
   priceUsd,
   stock,
+  mismatches,
 }: {
   title: string;
-  sku: string;
+  source: 'siigo' | 'pali' | 'seratus';
   priceCop: number | null;
   priceUsd: number | null;
   stock: number | null;
+  mismatches?: Partial<Record<'stock' | 'priceCop' | 'priceUsd', boolean>>;
 }) {
   return (
-    <section className="link-preview-source">
-      <strong>{title}</strong>
+    <section className={`product-source-${source}`}>
+      <span>{title}</span>
       <dl>
         <div>
-          <dt>SKU</dt>
-          <dd>{sku}</dd>
-        </div>
-        <div>
           <dt>Precio COP</dt>
-          <dd>{nullableCurrency(priceCop)}</dd>
+          <dd>
+            <SourceValue hasMismatch={mismatches?.priceCop}>
+              {nullableCurrency(priceCop)}
+            </SourceValue>
+          </dd>
         </div>
         <div>
           <dt>Precio USD</dt>
-          <dd>{nullableUsd(priceUsd)}</dd>
+          <dd>
+            <SourceValue hasMismatch={mismatches?.priceUsd}>{nullableUsd(priceUsd)}</SourceValue>
+          </dd>
         </div>
         <div>
           <dt>Stock</dt>
-          <dd>{nullableStock(stock)}</dd>
+          <dd>
+            <SourceValue hasMismatch={mismatches?.stock}>{nullableStock(stock)}</SourceValue>
+          </dd>
         </div>
       </dl>
     </section>
   );
 }
 
+function SourceValue({
+  children,
+  hasMismatch = false,
+}: {
+  children: ReactNode;
+  hasMismatch?: boolean;
+}) {
+  return (
+    <span className="product-source-value">
+      {children}
+      {hasMismatch && (
+        <TriangleExclamation
+          className="product-source-mismatch-icon"
+          width={14}
+          height={14}
+          role="img"
+          aria-label="No coincide con Siigo"
+        />
+      )}
+    </span>
+  );
+}
+
 function Preview({ preview }: { preview: ProductLinkPreview }) {
   const status = statusMeta[preview.syncStatus];
   return (
-    <div className="link-preview">
-      <div className="link-preview-product">
-        <span className="link-preview-image" aria-hidden="true">
+    <div className="link-preview product-detail-body">
+      <div className="product-detail-product">
+        <span className="product-detail-image" aria-hidden="true">
           {preview.store.imageUrl ? (
             <img src={preview.store.imageUrl} alt="" />
           ) : (
@@ -107,12 +128,15 @@ function Preview({ preview }: { preview: ProductLinkPreview }) {
           )}
         </span>
         <div>
-          <Typography.Heading level={3}>
-            {preview.store.productName || preview.siigo.name}
-          </Typography.Heading>
-          <span>{preview.sku}</span>
+          <strong>{preview.store.productName || preview.siigo.name}</strong>
+          <span className="product-detail-sku">{preview.sku}</span>
           <div className="link-preview-chips">
-            <Chip color="default">{preview.store.store === 'SERATUS' ? 'Seratus' : 'Pali'}</Chip>
+            <Chip
+              className={`inventory-store-chip-${preview.store.store.toLowerCase()}`}
+              color="default"
+            >
+              {preview.store.store === 'SERATUS' ? 'Seratus' : 'Pali'}
+            </Chip>
             <Chip color={status.color}>{status.label}</Chip>
           </div>
         </div>
@@ -131,41 +155,27 @@ function Preview({ preview }: { preview: ProductLinkPreview }) {
         </Alert>
       )}
 
-      <div className="link-preview-sources">
+      <div className="product-source-panels">
         <SourcePanel
           title="Siigo"
-          sku={preview.siigo.sku}
+          source="siigo"
           priceCop={preview.siigo.priceCop}
           priceUsd={preview.siigo.priceUsd}
           stock={preview.siigo.stock}
         />
         <SourcePanel
-          title={`WooCommerce · ${preview.store.store === 'SERATUS' ? 'Seratus' : 'Pali'}`}
-          sku={preview.store.sku}
+          title="WooCommerce"
+          source={preview.store.store.toLowerCase() as 'pali' | 'seratus'}
           priceCop={preview.store.priceCop}
           priceUsd={preview.store.priceUsd}
           stock={preview.store.stock}
+          mismatches={{
+            priceCop: preview.store.priceCop !== preview.siigo.priceCop,
+            priceUsd: preview.store.priceUsd !== preview.siigo.priceUsd,
+            stock: preview.store.stock !== preview.siigo.stock,
+          }}
         />
       </div>
-    </div>
-  );
-}
-
-function SuccessfulLink({ product, isUpdate }: { product: ProductRecord; isUpdate: boolean }) {
-  return (
-    <div className="link-success">
-      <span className="link-success-icon" aria-hidden="true">
-        <Link width={26} height={26} />
-      </span>
-      <Typography.Heading level={3}>
-        {isUpdate ? 'Enlace actualizado' : 'Producto vinculado'}
-      </Typography.Heading>
-      <Typography.Paragraph color="muted">
-        {isUpdate
-          ? `${product.productName} se actualizó con la información más reciente.`
-          : `${product.productName} ya está disponible en el inventario.`}
-      </Typography.Paragraph>
-      <Chip color="success">{product.sku}</Chip>
     </div>
   );
 }
@@ -180,8 +190,6 @@ export function LinkProductModal({
   const queryClient = useQueryClient();
   const [sku, setSku] = useState('');
   const [preview, setPreview] = useState<ProductLinkPreview | null>(null);
-  const [created, setCreated] = useState<ProductRecord | null>(null);
-  const [updatedExistingLink, setUpdatedExistingLink] = useState(false);
   const previewMutation = useMutation({
     mutationFn: inventoryApi.linkPreview,
     onSuccess: setPreview,
@@ -189,18 +197,15 @@ export function LinkProductModal({
   const createMutation = useMutation({
     mutationFn: ({ sku: productSku, isLinked }: { sku: string; isLinked: boolean }) =>
       isLinked ? inventoryApi.updateLink(productSku) : inventoryApi.createLink(productSku),
-    onSuccess: async (product, variables) => {
-      setUpdatedExistingLink(variables.isLinked);
-      setCreated(product);
+    onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ['products'] });
+      changeOpen(false);
     },
   });
 
   const reset = () => {
     setSku('');
     setPreview(null);
-    setCreated(null);
-    setUpdatedExistingLink(false);
     previewMutation.reset();
     createMutation.reset();
   };
@@ -214,28 +219,22 @@ export function LinkProductModal({
     event.preventDefault();
     const normalizedSku = sku.trim();
     if (!normalizedSku) return;
-    setCreated(null);
-    setUpdatedExistingLink(false);
     setPreview(null);
     createMutation.reset();
     previewMutation.mutate(normalizedSku);
   };
 
-  const startNewSearch = () => {
-    setPreview(null);
-    previewMutation.reset();
-    createMutation.reset();
-  };
-
   return (
     <Modal isOpen={isOpen} onOpenChange={changeOpen}>
       <Modal.Backdrop>
-        <Modal.Container size="lg" placement="center" scroll="inside">
-          <Modal.Dialog>
+        <Modal.Container size="md" placement="center" scroll="inside">
+          <Modal.Dialog className="link-product-modal">
             <Modal.Header>
               <div>
                 <Modal.Heading>Vincular producto</Modal.Heading>
-                <p>Comprueba el SKU antes de agregarlo al inventario.</p>
+                <Typography.Paragraph color="muted" size="sm">
+                  Comprobar datos antes de vincular
+                </Typography.Paragraph>
               </div>
               <Modal.CloseTrigger aria-label="Cerrar">
                 <Xmark width={18} height={18} />
@@ -243,30 +242,39 @@ export function LinkProductModal({
             </Modal.Header>
 
             <Modal.Body className="link-product-modal-body">
-              {!created && (
-                <form className="link-product-search" onSubmit={search}>
-                  <TextField fullWidth name="link-product-sku">
-                    <Label>SKU</Label>
-                    <Input
-                      variant="secondary"
-                      value={sku}
-                      onChange={(event) => setSku(event.target.value)}
-                      placeholder="Ej. 40204-ROJO-S"
-                      autoFocus
-                      disabled={previewMutation.isPending || createMutation.isPending}
-                    />
-                  </TextField>
-                  <Button
-                    type="submit"
-                    variant="primary"
-                    isPending={previewMutation.isPending}
-                    isDisabled={!sku.trim() || createMutation.isPending}
-                  >
-                    <Magnifier width={17} height={17} />
-                    Buscar
-                  </Button>
-                </form>
-              )}
+              <form className="link-product-search" onSubmit={search} autoComplete="off">
+                <TextField fullWidth name="product-link-sku-search">
+                  <Input
+                    aria-label="SKU"
+                    variant="secondary"
+                    value={sku}
+                    onChange={(event) => setSku(event.target.value)}
+                    placeholder="Ej. 40204-ROJO-S"
+                    autoComplete="off"
+                    autoCorrect="off"
+                    spellCheck={false}
+                    autoFocus
+                    disabled={previewMutation.isPending || createMutation.isPending}
+                  />
+                </TextField>
+                <Button
+                  type="submit"
+                  variant="primary"
+                  isPending={previewMutation.isPending}
+                  isDisabled={!sku.trim() || createMutation.isPending}
+                >
+                  {({ isPending }) => (
+                    <>
+                      {isPending ? (
+                        <Spinner color="current" size="sm" />
+                      ) : (
+                        <Magnifier width={17} height={17} />
+                      )}
+                      {isPending ? 'Buscando' : 'Buscar'}
+                    </>
+                  )}
+                </Button>
+              </form>
 
               {previewMutation.isPending ? (
                 <LinkPreviewSkeleton />
@@ -277,8 +285,6 @@ export function LinkProductModal({
                     <Alert.Description>{previewMutation.error.message}</Alert.Description>
                   </Alert.Content>
                 </Alert>
-              ) : created ? (
-                <SuccessfulLink product={created} isUpdate={updatedExistingLink} />
               ) : preview ? (
                 <Preview preview={preview} />
               ) : (
@@ -286,8 +292,8 @@ export function LinkProductModal({
                   <span aria-hidden="true">
                     <Link width={24} height={24} />
                   </span>
-                  <strong>Busca un SKU para comenzar</strong>
-                  <p>La consulta revisará Siigo y las dos tiendas sin modificar sus datos.</p>
+                  <strong>Buscar un SKU</strong>
+                  <p>Se validara en Siigo y tiendas virtuales sin modificar sus datos</p>
                 </div>
               )}
 
@@ -306,34 +312,32 @@ export function LinkProductModal({
             </Modal.Body>
 
             <Modal.Footer>
-              {created ? (
-                <Button variant="primary" onPress={() => changeOpen(false)}>
-                  Cerrar
-                </Button>
-              ) : (
-                <>
-                  <Button variant="secondary" onPress={() => changeOpen(false)}>
-                    Cancelar
-                  </Button>
-                  {preview && (
-                    <Button variant="ghost" onPress={startNewSearch}>
-                      Buscar otro SKU
-                    </Button>
-                  )}
-                  <Button
-                    variant="primary"
-                    isPending={createMutation.isPending}
-                    isDisabled={!preview?.canLink || previewMutation.isPending}
-                    onPress={() =>
-                      preview &&
-                      createMutation.mutate({ sku: preview.sku, isLinked: preview.isLinked })
-                    }
-                  >
-                    <Link width={17} height={17} />
-                    {preview?.isLinked ? 'Actualizar enlace' : 'Crear enlace'}
-                  </Button>
-                </>
-              )}
+              <Button variant="secondary" onPress={() => changeOpen(false)}>
+                Cancelar
+              </Button>
+              <Button
+                variant="primary"
+                isPending={createMutation.isPending}
+                isDisabled={!preview?.canLink || previewMutation.isPending}
+                onPress={() =>
+                  preview && createMutation.mutate({ sku: preview.sku, isLinked: preview.isLinked })
+                }
+              >
+                {({ isPending }) => (
+                  <>
+                    {isPending ? (
+                      <Spinner color="current" size="sm" />
+                    ) : (
+                      <Link width={17} height={17} />
+                    )}
+                    {isPending
+                      ? 'Vinculando'
+                      : preview?.isLinked
+                        ? 'Actualizar enlace'
+                        : 'Crear enlace'}
+                  </>
+                )}
+              </Button>
             </Modal.Footer>
           </Modal.Dialog>
         </Modal.Container>
