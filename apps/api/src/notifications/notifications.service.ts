@@ -72,8 +72,15 @@ export class NotificationsService {
     return this.createProductUpdate('PRODUCT_LINK_UPDATED', product, changes, true);
   }
 
-  createSiigoProductUpdate(product: Product, changes: ProductUpdateChanges) {
-    return this.createProductUpdate('SIIGO_PRODUCT_UPDATED', product, changes, false);
+  createSiigoProductUpdate(product: Product, changes: ProductUpdateChanges, syncConfirmed = false) {
+    if (!changes.stock && !changes.priceCop && !changes.priceUsd && !syncConfirmed) return null;
+
+    return this.create({
+      type: 'SIIGO_PRODUCT_UPDATED',
+      title: 'Producto actualizado',
+      message: product.productName,
+      productId: product.id,
+    });
   }
 
   private createProductUpdate(

@@ -8,7 +8,12 @@ export type NotificationRecord = {
   title: string;
   message: string;
   productId: number | null;
-  product: { sku: string; productName: string; imageUrl: string | null } | null;
+  product: {
+    sku: string;
+    productName: string;
+    imageUrl: string | null;
+    store: 'PALI' | 'SERATUS';
+  } | null;
   createdAt: string;
   readAt: string | null;
 };

@@ -111,7 +111,11 @@ export class SiigoWebhookService {
           ? null
           : { previous: previous.syncStatus, current: syncStatus },
     };
-    await this.notifications.createSiigoProductUpdate(updated, changes);
+    await this.notifications.createSiigoProductUpdate(
+      updated,
+      changes,
+      input.woo_sync?.success === true,
+    );
     this.realtime.emitProductUpdated(updated, changes);
 
     return {

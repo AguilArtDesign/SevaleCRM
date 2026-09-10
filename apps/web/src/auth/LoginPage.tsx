@@ -10,6 +10,7 @@ import { TurnstileField } from './TurnstileField';
 import { Input } from '../components/Input';
 
 type LoginMode = 'email' | 'password' | 'otp';
+const CAPTCHA_REQUIRED = import.meta.env.PROD;
 
 function maskEmail(email: string): string {
   const [local = '', domain = ''] = email.split('@');
@@ -71,7 +72,9 @@ export function LoginPage() {
   const requestCode = async () => {
     const parsedEmail = emailSchema.safeParse(email);
     if (!parsedEmail.success) throw new Error(parsedEmail.error.issues[0]?.message);
-    if (!captchaToken) throw new Error('Completa la verificación de seguridad.');
+    if (CAPTCHA_REQUIRED && !captchaToken) {
+      throw new Error('Completa la verificación de seguridad.');
+    }
 
     const result = await authClient.emailOtp.sendVerificationOtp({
       email: parsedEmail.data,
@@ -114,7 +117,7 @@ export function LoginPage() {
       );
       return;
     }
-    if (!captchaToken) {
+    if (CAPTCHA_REQUIRED && !captchaToken) {
       setError('Completa la verificación de seguridad.');
       return;
     }

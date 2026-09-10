@@ -234,8 +234,7 @@ try {
   if (
     updateNotification.type !== 'SIIGO_PRODUCT_UPDATED' ||
     updateNotification.title !== 'Producto actualizado' ||
-    updateNotification.message !==
-      'Producto webhook n8n\nStock 10 ➝ 7\nPrecio COP $90.000 ➝ $95.000\nPrecio USD $22 ➝ $24,5'
+    updateNotification.message !== 'Producto webhook n8n'
   ) {
     throw new Error('La notificación de Siigo no conservó el formato o los cambios esperados.');
   }
@@ -276,9 +275,20 @@ try {
   }
   if (
     (await prisma.notification.count({ where: { productId: product.id } })) !==
-    notificationsBeforeUnchanged
+    notificationsBeforeUnchanged + 1
   ) {
-    throw new Error('La actualización idéntica creó una notificación falsa.');
+    throw new Error('La sincronización confirmada no creó su notificación informativa.');
+  }
+  const syncConfirmationNotification = await prisma.notification.findFirstOrThrow({
+    where: { productId: product.id },
+    orderBy: { id: 'desc' },
+  });
+  if (
+    syncConfirmationNotification.type !== 'SIIGO_PRODUCT_UPDATED' ||
+    syncConfirmationNotification.title !== 'Producto actualizado' ||
+    syncConfirmationNotification.message !== 'Producto webhook n8n'
+  ) {
+    throw new Error('La notificación de sincronización confirmada no tiene el formato esperado.');
   }
 
   expectStatus(

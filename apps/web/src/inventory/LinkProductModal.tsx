@@ -279,12 +279,13 @@ export function LinkProductModal({
               {previewMutation.isPending ? (
                 <LinkPreviewSkeleton />
               ) : previewMutation.isError ? (
-                <Alert status="danger">
-                  <Alert.Content>
-                    <Alert.Title>No pudimos preparar el producto</Alert.Title>
-                    <Alert.Description>{previewMutation.error.message}</Alert.Description>
-                  </Alert.Content>
-                </Alert>
+                <div className="link-product-empty link-product-error">
+                  <span aria-hidden="true">
+                    <TriangleExclamation width={24} height={24} />
+                  </span>
+                  <strong>Error de búsqueda</strong>
+                  <p>{previewMutation.error.message}</p>
+                </div>
               ) : preview ? (
                 <Preview preview={preview} />
               ) : (

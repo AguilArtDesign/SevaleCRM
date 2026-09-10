@@ -36,12 +36,7 @@ function notificationDescription(notification: NotificationRecord) {
 }
 
 function notificationChanges(notification: NotificationRecord) {
-  if (
-    notification.type !== 'SIIGO_PRODUCT_UPDATED' &&
-    notification.type !== 'PRODUCT_LINK_UPDATED'
-  ) {
-    return null;
-  }
+  if (notification.type !== 'PRODUCT_LINK_UPDATED') return null;
   const [, ...changes] = notification.message.split('\n');
   return changes.join('\n') || null;
 }
@@ -108,9 +103,19 @@ export function NotificationCenter() {
               <div className="notification-title-row">
                 <strong>{notification.title}</strong>
                 {notification.type === 'SIIGO_PRODUCT_UPDATED' && (
-                  <Chip className="notification-siigo-chip" color="default">
-                    Siigo
-                  </Chip>
+                  <>
+                    <Chip className="notification-siigo-chip" color="default">
+                      Siigo
+                    </Chip>
+                    {notification.product?.store && (
+                      <Chip
+                        className={`inventory-store-chip-${notification.product.store.toLowerCase()}`}
+                        color="default"
+                      >
+                        {notification.product.store === 'PALI' ? 'Pali' : 'Seratus'}
+                      </Chip>
+                    )}
+                  </>
                 )}
               </div>
               <p>{notificationDescription(notification)}</p>

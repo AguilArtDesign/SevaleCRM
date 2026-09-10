@@ -142,11 +142,15 @@ export class AuthService {
             if (type === 'sign-in') await mail.sendSignInCode(email, otp);
           },
         }),
-        captcha({
-          provider: 'cloudflare-turnstile',
-          secretKey: getTurnstileSecret(),
-          endpoints: ['/sign-in/email', '/email-otp/send-verification-otp'],
-        }),
+        ...(process.env.NODE_ENV === 'production'
+          ? [
+              captcha({
+                provider: 'cloudflare-turnstile',
+                secretKey: getTurnstileSecret(),
+                endpoints: ['/sign-in/email', '/email-otp/send-verification-otp'],
+              }),
+            ]
+          : []),
       ],
       advanced: {
         useSecureCookies: process.env.NODE_ENV === 'production',

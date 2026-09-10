@@ -22,7 +22,7 @@ export class NotificationsRepository {
         skip: (query.page - 1) * query.pageSize,
         take: query.pageSize,
         include: {
-          product: { select: { sku: true, productName: true, imageUrl: true } },
+          product: { select: { sku: true, productName: true, imageUrl: true, store: true } },
           reads: { where: { userId }, select: { readAt: true } },
         },
       }),

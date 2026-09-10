@@ -634,11 +634,6 @@ export function InventoryPage() {
                 ? 'Ajusta la búsqueda o limpia los filtros para ver más resultados.'
                 : 'El inventario utilizará los productos guardados en la base de datos local.'}
             </Typography.Paragraph>
-            {hasFilters && (
-              <Button variant="secondary" onPress={clearFilters}>
-                Limpiar filtros
-              </Button>
-            )}
           </div>
         ) : (
           <Table className="inventory-products-table">

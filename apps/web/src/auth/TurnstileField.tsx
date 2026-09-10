@@ -1,14 +1,14 @@
 import { Turnstile } from 'react-turnstile';
 import { useTheme } from '../theme/ThemeProvider';
 
-const DEVELOPMENT_SITE_KEY = '1x00000000000000000000AA';
-
 type TurnstileFieldProps = { onTokenChange: (token: string) => void; resetKey: number };
 
 export function TurnstileField({ onTokenChange, resetKey }: TurnstileFieldProps) {
   const { theme } = useTheme();
-  const configuredSiteKey = import.meta.env.VITE_TURNSTILE_SITE_KEY;
-  const siteKey = configuredSiteKey || (import.meta.env.DEV ? DEVELOPMENT_SITE_KEY : '');
+
+  if (import.meta.env.DEV) return null;
+
+  const siteKey = import.meta.env.VITE_TURNSTILE_SITE_KEY || '';
 
   if (!siteKey) {
     return (
@@ -24,9 +24,16 @@ export function TurnstileField({ onTokenChange, resetKey }: TurnstileFieldProps)
         key={resetKey}
         sitekey={siteKey}
         theme={theme}
-        size="flexible"
+        size="invisible"
+        execution="execute"
+        retry="never"
+        onLoad={(_widgetId, turnstile) => turnstile.execute()}
         onVerify={onTokenChange}
-        onExpire={() => onTokenChange('')}
+        onExpire={(_token, turnstile) => {
+          onTokenChange('');
+          turnstile.reset();
+          turnstile.execute();
+        }}
         onError={() => onTokenChange('')}
       />
     </div>
