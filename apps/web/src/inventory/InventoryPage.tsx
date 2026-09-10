@@ -1,13 +1,14 @@
 import { useMemo, useState, type ReactNode } from 'react';
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { tableFeatures, useTable, type ColumnDef } from '@tanstack/react-table';
-import type { Selection } from '@heroui/react';
+import type { Selection, SortDescriptor } from '@heroui/react';
 import {
   Alert,
   AlertDialog,
   Button,
   Checkbox,
   Dropdown,
+  EmptyState,
   Label,
   ListBox,
   Modal,
@@ -66,6 +67,7 @@ const initialFilters: ProductFilters = {
   search: '',
   store: '',
   syncStatus: '',
+  stockSort: '',
   page: 1,
   pageSize: 20,
 };
@@ -133,6 +135,7 @@ export function InventoryPage() {
   const isAdmin = user?.role === 'ADMIN';
   const [searchDraft, setSearchDraft] = useState('');
   const [filters, setFilters] = useState<ProductFilters>(initialFilters);
+  const [sortDescriptor, setSortDescriptor] = useState<SortDescriptor | undefined>();
   const [selectedKeys, setSelectedKeys] = useState<Selection>(new Set());
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
   const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -384,7 +387,18 @@ export function InventoryPage() {
 
   const clearFilters = () => {
     setSearchDraft('');
+    setSortDescriptor(undefined);
     setFilters(initialFilters);
+  };
+
+  const updateStockSort = (descriptor: SortDescriptor) => {
+    if (descriptor.column !== 'stock') return;
+    setSortDescriptor(descriptor);
+    setFilters((current) => ({
+      ...current,
+      stockSort: descriptor.direction === 'ascending' ? 'asc' : 'desc',
+      page: 1,
+    }));
   };
 
   const changePage = (page: number) => {
@@ -646,20 +660,6 @@ export function InventoryPage() {
           </div>
         ) : productsQuery.isPending ? (
           <InventorySkeleton />
-        ) : productsQuery.data.data.length === 0 ? (
-          <div className="inventory-empty">
-            <span className="inventory-empty-icon" aria-hidden="true">
-              <Boxes3 width={28} height={28} />
-            </span>
-            <Typography.Heading level={2}>
-              {hasFilters ? 'No encontramos coincidencias' : 'Aún no hay productos vinculados'}
-            </Typography.Heading>
-            <Typography.Paragraph color="muted">
-              {hasFilters
-                ? 'Ajusta la búsqueda o limpia los filtros para ver más resultados.'
-                : 'El inventario utilizará los productos guardados en la base de datos local.'}
-            </Typography.Paragraph>
-          </div>
         ) : (
           <Table className="inventory-products-table">
             <Table.ScrollContainer>
@@ -668,6 +668,8 @@ export function InventoryPage() {
                 selectionMode={isAdmin ? 'multiple' : 'none'}
                 selectedKeys={isAdmin ? currentPageSelection : new Set()}
                 onSelectionChange={isAdmin ? updatePageSelection : undefined}
+                sortDescriptor={sortDescriptor}
+                onSortChange={updateStockSort}
               >
                 <Table.Header>
                   {isAdmin && (
@@ -684,18 +686,52 @@ export function InventoryPage() {
                       </Checkbox>
                     </Table.Column>
                   )}
-                  {table.getHeaderGroups()[0]?.headers.map((header) => (
-                    <Table.Column
-                      key={header.id}
-                      id={header.id}
-                      className={header.id === 'actions' ? 'inventory-actions-column' : undefined}
-                      isRowHeader={header.id === 'product'}
-                    >
-                      {header.isPlaceholder ? null : <table.FlexRender header={header} />}
-                    </Table.Column>
-                  ))}
+                  {table.getHeaderGroups()[0]?.headers.map((header) => {
+                    const content = header.isPlaceholder ? null : (
+                      <table.FlexRender header={header} />
+                    );
+                    if (header.id === 'stock') {
+                      return (
+                        <Table.Column key={header.id} id={header.id} allowsSorting>
+                          {({ sortDirection }) => (
+                            <Table.SortableColumnHeader sortDirection={sortDirection}>
+                              {content}
+                            </Table.SortableColumnHeader>
+                          )}
+                        </Table.Column>
+                      );
+                    }
+                    return (
+                      <Table.Column
+                        key={header.id}
+                        id={header.id}
+                        className={header.id === 'actions' ? 'inventory-actions-column' : undefined}
+                        isRowHeader={header.id === 'product'}
+                      >
+                        {content}
+                      </Table.Column>
+                    );
+                  })}
                 </Table.Header>
-                <Table.Body>
+                <Table.Body
+                  renderEmptyState={() => (
+                    <EmptyState className="inventory-empty">
+                      <span className="inventory-empty-icon" aria-hidden="true">
+                        <Boxes3 width={28} height={28} />
+                      </span>
+                      <Typography.Heading level={2}>
+                        {hasFilters
+                          ? 'Sin resultados'
+                          : 'No hay productos vinculados'}
+                      </Typography.Heading>
+                      <Typography.Paragraph color="muted">
+                        {hasFilters
+                          ? 'Ajusta la búsqueda o limpia los filtros para ver más resultados.'
+                          : 'El inventario utilizará los productos guardados en la base de datos.'}
+                      </Typography.Paragraph>
+                    </EmptyState>
+                  )}
+                >
                   {table.getRowModel().rows.map((row) => (
                     <Table.Row key={row.original.id} id={row.original.id}>
                       {isAdmin && (
@@ -729,7 +765,7 @@ export function InventoryPage() {
                 </Table.Body>
               </Table.Content>
             </Table.ScrollContainer>
-            <Table.Footer>
+            {productsQuery.data.data.length > 0 && <Table.Footer>
               <Pagination aria-label="Paginación del inventario">
                 <Pagination.Summary>
                   <div className="inventory-page-size-control">
@@ -803,7 +839,7 @@ export function InventoryPage() {
                   </Pagination.Item>
                 </Pagination.Content>
               </Pagination>
-            </Table.Footer>
+            </Table.Footer>}
           </Table>
         )}
       </div>

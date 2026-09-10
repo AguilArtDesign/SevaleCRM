@@ -143,6 +143,39 @@ try {
     throw new Error('El filtro de agotados no devolvió el producto con stock cero.');
   }
 
+  const stockSortResponse = await api(
+    `/api/products?search=${encodeURIComponent(runId)}&stockSort=asc&page=1&pageSize=20`,
+    cookie,
+  );
+  expectStatus(stockSortResponse, 200, 'Orden ascendente por stock');
+  const stockSortBody = (await stockSortResponse.json()) as {
+    data: Array<{ id: number; siigoStock: number }>;
+  };
+  if (
+    stockSortBody.data.map((product) => product.id).join(',') !==
+      [productIds[1], productIds[0], productIds[2]].join(',') ||
+    stockSortBody.data.some(
+      (product, index, products) => index > 0 && product.siigoStock < products[index - 1]!.siigoStock,
+    )
+  ) {
+    throw new Error('El inventario no se ordenó globalmente por stock ascendente.');
+  }
+
+  const descendingStockResponse = await api(
+    `/api/products?search=${encodeURIComponent(runId)}&stockSort=desc&page=1&pageSize=20`,
+    cookie,
+  );
+  expectStatus(descendingStockResponse, 200, 'Orden descendente por stock');
+  const descendingStockBody = (await descendingStockResponse.json()) as {
+    data: Array<{ id: number }>;
+  };
+  if (
+    descendingStockBody.data.map((product) => product.id).join(',') !==
+    [productIds[2], productIds[0], productIds[1]].join(',')
+  ) {
+    throw new Error('El inventario no se ordenó globalmente por stock descendente.');
+  }
+
   const pageResponse = await api(
     `/api/products?search=${encodeURIComponent(runId)}&page=2&pageSize=1`,
     cookie,
@@ -197,6 +230,7 @@ try {
   }
 
   expectStatus(await api('/api/products?store=INVALID', cookie), 400, 'Filtro inválido');
+  expectStatus(await api('/api/products?stockSort=INVALID', cookie), 400, 'Orden inválido');
   expectStatus(await api('/api/products/not-a-number', cookie), 400, 'Identificador inválido');
   expectStatus(await api('/api/products/2147483647', cookie), 404, 'Producto inexistente');
 

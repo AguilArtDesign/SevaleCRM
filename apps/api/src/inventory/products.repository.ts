@@ -7,7 +7,7 @@ import type { Prisma } from '../generated/prisma/client.js';
 export class ProductsRepository {
   constructor(private readonly prisma: PrismaService) {}
 
-  list({ search, store, syncStatus, page, pageSize }: ProductListQuery) {
+  list({ search, store, syncStatus, stockSort, page, pageSize }: ProductListQuery) {
     const where: Prisma.ProductWhereInput = {
       ...(search
         ? {
@@ -25,7 +25,9 @@ export class ProductsRepository {
     return this.prisma.$transaction([
       this.prisma.product.findMany({
         where,
-        orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }],
+        orderBy: stockSort
+          ? [{ siigoStock: stockSort }, { id: 'asc' }]
+          : [{ updatedAt: 'desc' }, { id: 'desc' }],
         skip: (page - 1) * pageSize,
         take: pageSize,
       }),
