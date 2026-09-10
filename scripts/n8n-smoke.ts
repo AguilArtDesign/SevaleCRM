@@ -23,6 +23,7 @@ const runId = randomUUID();
 const siigoId = randomUUID();
 const sku = `N8N-CAFÉ-${runId}`;
 let productId: number | null = null;
+let simpleProductId: number | null = null;
 
 function expectStatus(response: Response, status: number, context: string) {
   if (response.status !== status) {
@@ -76,6 +77,26 @@ try {
     },
   });
   productId = product.id;
+  const simpleSiigoId = randomUUID();
+  const simpleProduct = await prisma.product.create({
+    data: {
+      siigoId: simpleSiigoId,
+      sku: `N8N-SIMPLE-${runId}`,
+      siigoPriceCop: 50000,
+      siigoPriceUsd: 20,
+      siigoStock: 5,
+      store: Store.PALI,
+      wooParentId: null,
+      wooVariationId: 703n,
+      wooSku: `N8N-SIMPLE-${runId}`,
+      wooPriceCop: 50000,
+      wooPriceUsd: 20,
+      wooStock: 5,
+      syncStatus: SyncStatus.SYNCED,
+      productName: 'Producto simple webhook n8n',
+    },
+  });
+  simpleProductId = simpleProduct.id;
 
   expectStatus(await get(siigoId), 401, 'Consulta sin API key');
   const missingLookupResponse = await get(randomUUID(), `Bearer ${apiKey}`);
@@ -96,7 +117,7 @@ try {
       siigoId: string;
       sku: string;
       store: string;
-      wooCommerce: { type: string; parentId: string | null; productId: string | null };
+      wooCommerce: { type: string; productId: string | null; variationId: string | null };
     } | null;
   };
   if (
@@ -106,10 +127,22 @@ try {
     lookup.product.sku !== sku ||
     lookup.product.store !== 'SERATUS' ||
     lookup.product.wooCommerce.type !== 'VARIATION' ||
-    lookup.product.wooCommerce.parentId !== '701' ||
-    lookup.product.wooCommerce.productId !== '702'
+    lookup.product.wooCommerce.productId !== '701' ||
+    lookup.product.wooCommerce.variationId !== '702'
   ) {
     throw new Error('La consulta no devolvió la ruta WooCommerce vinculada al producto.');
+  }
+  const simpleLookupResponse = await get(simpleSiigoId, `Bearer ${apiKey}`);
+  expectStatus(simpleLookupResponse, 200, 'Consulta de producto simple');
+  const simpleLookup = (await simpleLookupResponse.json()) as typeof lookup;
+  if (
+    !simpleLookup.exists ||
+    simpleLookup.product?.id !== simpleProduct.id ||
+    simpleLookup.product.wooCommerce.type !== 'SIMPLE' ||
+    simpleLookup.product.wooCommerce.productId !== '703' ||
+    simpleLookup.product.wooCommerce.variationId !== null
+  ) {
+    throw new Error('La consulta no devolvió la ruta del producto simple esperada.');
   }
 
   expectStatus(await post(validPayload), 401, 'Solicitud sin API key');
@@ -291,8 +324,10 @@ try {
 } finally {
   if (productId !== null) {
     await prisma.notification.deleteMany({ where: { productId } });
-    await prisma.product.deleteMany({ where: { id: productId } });
   }
+  await prisma.product.deleteMany({
+    where: { id: { in: [productId, simpleProductId].filter((id): id is number => id !== null) } },
+  });
   await app.close();
   if (originalApiKey === undefined) delete process.env.N8N_API_KEY;
   else process.env.N8N_API_KEY = originalApiKey;

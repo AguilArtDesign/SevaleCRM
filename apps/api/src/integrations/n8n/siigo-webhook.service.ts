@@ -46,8 +46,9 @@ export class SiigoWebhookService {
         store: product.store,
         wooCommerce: {
           type: product.wooParentId === null ? ('SIMPLE' as const) : ('VARIATION' as const),
-          parentId: product.wooParentId?.toString() ?? null,
-          productId: product.wooVariationId?.toString() ?? null,
+          productId: (product.wooParentId ?? product.wooVariationId)?.toString() ?? null,
+          variationId:
+            product.wooParentId === null ? null : (product.wooVariationId?.toString() ?? null),
         },
       },
     };
