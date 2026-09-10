@@ -129,6 +129,21 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return response.json() as Promise<T>;
 }
 
+async function download(path: string, init: RequestInit) {
+  const response = await fetch(`${apiUrl}${path}`, {
+    ...init,
+    credentials: 'include',
+    headers: { 'content-type': 'application/json', ...init.headers },
+  });
+  if (!response.ok) {
+    const body = (await response.json().catch(() => ({}))) as ApiErrorBody;
+    throw new Error(body.error?.message || body.message || 'No pudimos exportar los productos.');
+  }
+  const disposition = response.headers.get('content-disposition') || '';
+  const filename = disposition.match(/filename="?([^";]+)"?/i)?.[1] || 'inventario.xlsx';
+  return { blob: await response.blob(), filename };
+}
+
 export const inventoryApi = {
   list: (filters: ProductFilters) => {
     const query = new URLSearchParams({
@@ -176,5 +191,7 @@ export const inventoryApi = {
       body: JSON.stringify({ ids }),
     }),
   syncJob: (jobId: string) => request<ProductSyncJob>(`/api/products/sync-jobs/${jobId}`),
+  exportProducts: (ids: number[]) =>
+    download('/api/products/export', { method: 'POST', body: JSON.stringify({ ids }) }),
   remove: (id: number) => request<ProductRecord>(`/api/products/${id}`, { method: 'DELETE' }),
 };

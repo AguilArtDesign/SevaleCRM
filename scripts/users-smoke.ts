@@ -130,6 +130,10 @@ try {
   });
   expectStatus(createResponse, 201, 'Creación de usuario');
   const created = (await createResponse.json()) as { id: string };
+  const provisionedUser = await prisma.user.findUniqueOrThrow({ where: { id: created.id } });
+  if (!provisionedUser.emailVerified) {
+    throw new Error('El usuario provisionado por el administrador quedó sin verificar.');
+  }
 
   const duplicateResponse = await api('/api/users', adminCookie, {
     method: 'POST',

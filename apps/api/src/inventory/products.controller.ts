@@ -11,12 +11,14 @@ import {
   Put,
   Query,
   Req,
+  StreamableFile,
 } from '@nestjs/common';
 import {
   bulkProductSyncSchema,
   createProductLinkSchema,
   externalProductQuerySchema,
   productIdSchema,
+  productExportSchema,
   productImportCsvSchema,
   productListQuerySchema,
   productSyncJobIdSchema,
@@ -92,6 +94,18 @@ export class ProductsController {
   @RequirePermissions('inventory.update')
   updateLink(@Body() body: unknown) {
     return this.productLinkService.update(parseInput(createProductLinkSchema, body));
+  }
+
+  @Post('export')
+  @HttpCode(HttpStatus.OK)
+  async export(@Body() body: unknown) {
+    const { ids } = parseInput(productExportSchema, body);
+    const exported = await this.productsService.export(ids);
+    return new StreamableFile(exported.buffer, {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      disposition: `attachment; filename="${exported.filename}"`,
+      length: exported.buffer.length,
+    });
   }
 
   @Post(':id/sync')

@@ -167,6 +167,25 @@ export function InventoryPage() {
     },
     onError: () => queryClient.invalidateQueries({ queryKey: ['products'] }),
   });
+  const exportSelectedProducts = useMutation({
+    mutationFn: inventoryApi.exportProducts,
+    onSuccess: ({ blob, filename }, ids) => {
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = filename;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 0);
+      Toast.toast.success('Productos exportados', {
+        description: `${ids.length} ${ids.length === 1 ? 'producto exportado' : 'productos exportados'} en formato Excel.`,
+      });
+    },
+    onError: (error) => {
+      Toast.toast.danger('No pudimos exportar los productos', { description: error.message });
+    },
+  });
   const deleteProduct = useMutation({
     mutationFn: (product: ProductRecord) => inventoryApi.remove(product.id),
     onSuccess: async (_, product) => {
@@ -577,7 +596,13 @@ export function InventoryPage() {
         {isAdmin && selectedCount > 0 && (
           <div className="inventory-bulk-actions" role="toolbar" aria-label="Acciones en lote">
             <span className="inventory-bulk-count">{selectedCount}</span>
-            <Button size="sm" variant="ghost" isDisabled>
+            <Button
+              size="sm"
+              variant="ghost"
+              isPending={exportSelectedProducts.isPending}
+              isDisabled={exportSelectedProducts.isPending}
+              onPress={() => exportSelectedProducts.mutate(selectedProductIds)}
+            >
               <ArrowDownToLine width={16} height={16} />
               Exportar
             </Button>

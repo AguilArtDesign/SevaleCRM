@@ -4,6 +4,7 @@ import { SyncStatus, type Product } from '../generated/prisma/client.js';
 import { WooCommerceService } from '../integrations/woocommerce/woocommerce.service.js';
 import { RealtimeGateway } from '../realtime/realtime.gateway.js';
 import { ProductsRepository } from './products.repository.js';
+import { createInventoryWorkbook } from './product-export.js';
 
 export function serializeProduct(product: Product) {
   return {
@@ -47,6 +48,23 @@ export class ProductsService {
       });
     }
     return serializeProduct(product);
+  }
+
+  async export(ids: number[]) {
+    const products = await this.productsRepository.findByIds(ids);
+    if (products.length !== ids.length) {
+      throw new NotFoundException({
+        success: false,
+        error: {
+          code: 'PRODUCTS_NOT_FOUND',
+          message: 'Uno o más productos seleccionados ya no existen.',
+        },
+      });
+    }
+
+    const buffer = createInventoryWorkbook(products);
+    const date = new Date().toISOString().slice(0, 10);
+    return { buffer, filename: `inventario-seleccionado-${date}.xlsx` };
   }
 
   async remove(id: number) {

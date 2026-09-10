@@ -37,6 +37,13 @@ export class ProductsRepository {
     return this.prisma.product.findUnique({ where: { id } });
   }
 
+  findByIds(ids: number[]) {
+    return this.prisma.product.findMany({
+      where: { id: { in: ids } },
+      orderBy: [{ sku: 'asc' }, { id: 'asc' }],
+    });
+  }
+
   findBySku(sku: string) {
     return this.prisma.product.findUnique({ where: { sku } });
   }

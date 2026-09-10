@@ -61,7 +61,9 @@ export class UsersService {
           email: input.email,
           role: input.role,
           active: input.active,
-          emailVerified: false,
+          // Los usuarios del CRM son provisionados por un administrador y el
+          // acceso sigue requiriendo demostrar posesión del correo mediante OTP.
+          emailVerified: true,
         },
         select: userSelect,
       });

@@ -23,6 +23,13 @@ function getErrorMessage(error: unknown): string {
     : 'No pudimos completar la solicitud. Inténtalo nuevamente.';
 }
 
+function isServerAuthError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false;
+  const candidate = error as { status?: unknown; statusCode?: unknown };
+  const status = Number(candidate.status ?? candidate.statusCode);
+  return Number.isFinite(status) && status >= 500;
+}
+
 export function LoginPage() {
   const session = authClient.useSession();
   const navigate = useNavigate();
@@ -150,7 +157,11 @@ export function LoginPage() {
     const result = await authClient.signIn.emailOtp({ email, otp: parsedOtp.data });
     setIsSubmitting(false);
     if (result.error) {
-      setError('El código no es válido o ya expiró.');
+      setError(
+        isServerAuthError(result.error)
+          ? 'No pudimos iniciar sesión por un error del servidor. Inténtalo nuevamente.'
+          : 'El código no es válido o ya expiró.',
+      );
       return;
     }
     void navigate('/app', { replace: true });

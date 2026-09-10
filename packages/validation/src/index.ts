@@ -80,6 +80,14 @@ export const bulkProductSyncSchema = z.object({
     .transform((ids) => [...new Set(ids)]),
 });
 
+export const productExportSchema = z.object({
+  ids: z
+    .array(productIdSchema)
+    .min(1, 'Selecciona al menos un producto.')
+    .max(10_000, 'No puedes exportar más de 10.000 productos a la vez.')
+    .transform((ids) => [...new Set(ids)]),
+});
+
 export const productSyncJobIdSchema = z.string().uuid('La sincronización no es válida.');
 
 export const skuSchema = z

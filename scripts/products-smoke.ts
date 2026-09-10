@@ -176,12 +176,32 @@ try {
     throw new Error('El detalle no serializó correctamente el producto.');
   }
 
+  const exportResponse = await fetch(`${baseUrl}/api/products/export`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', origin, cookie },
+    body: JSON.stringify({ ids: [productIds[0], productIds[2]] }),
+  });
+  expectStatus(exportResponse, 200, 'Exportación de productos seleccionados');
+  const exportBuffer = Buffer.from(await exportResponse.arrayBuffer());
+  const exportContents = exportBuffer.toString('utf8');
+  if (
+    exportResponse.headers.get('content-type') !==
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
+    !exportResponse.headers.get('content-disposition')?.includes('.xlsx') ||
+    exportBuffer.readUInt32LE(0) !== 0x04034b50 ||
+    !exportContents.includes(`Producto Alfa ${runId}`) ||
+    !exportContents.includes(`Producto Gamma ${runId}`) ||
+    exportContents.includes(`Producto Beta ${runId}`)
+  ) {
+    throw new Error('El archivo XLSX no contiene exclusivamente los productos seleccionados.');
+  }
+
   expectStatus(await api('/api/products?store=INVALID', cookie), 400, 'Filtro inválido');
   expectStatus(await api('/api/products/not-a-number', cookie), 400, 'Identificador inválido');
   expectStatus(await api('/api/products/2147483647', cookie), 404, 'Producto inexistente');
 
   process.stdout.write(
-    'Products smoke: authentication, list, search, filters, pagination, detail, serialization and validation checks passed.\n',
+    'Products smoke: authentication, list, search, filters, pagination, detail, XLSX export, serialization and validation checks passed.\n',
   );
 } finally {
   if (productIds.length > 0) {

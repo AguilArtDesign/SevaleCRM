@@ -23,7 +23,9 @@ await app.listen(0, '127.0.0.1');
 const prisma = app.get(PrismaService);
 const authService = app.get(AuthService);
 const testId = randomUUID();
+const provisionedUserId = randomUUID();
 const testEmail = `auth-smoke-${testId}@example.invalid`;
+const provisionedEmail = `auth-provisioned-${provisionedUserId}@example.invalid`;
 const testPassword = `S-${randomUUID()}-9a!`;
 const origin = process.env.FRONTEND_URL || 'http://localhost:5173';
 const directHeaders = new Headers({ origin });
@@ -131,6 +133,32 @@ try {
   });
   if (otpSession?.user.id !== testId) throw new Error('La sesión con OTP no es válida.');
 
+  await prisma.user.create({
+    data: {
+      id: provisionedUserId,
+      name: 'Commercial OTP Smoke Test',
+      email: provisionedEmail,
+      emailVerified: true,
+      role: Role.COMMERCIAL,
+      active: true,
+    },
+  });
+  const provisionedOtp = await authService.auth.api.createVerificationOTP({
+    body: { email: provisionedEmail, type: 'sign-in' },
+  });
+  const provisionedOtpResponse = await authService.auth.api.signInEmailOTP({
+    body: { email: provisionedEmail, otp: provisionedOtp },
+    headers: directHeaders,
+    asResponse: true,
+  });
+  assertSessionCookieAttributes(provisionedOtpResponse);
+  const provisionedUser = await prisma.user.findUniqueOrThrow({
+    where: { id: provisionedUserId },
+  });
+  if (!provisionedUser.emailVerified || provisionedUser.role !== Role.COMMERCIAL) {
+    throw new Error('El primer acceso OTP no conservó correctamente al usuario comercial.');
+  }
+
   await prisma.session.update({
     where: { id: otpSession.session.id },
     data: { createdAt: new Date(Date.now() - 8 * 60 * 60 * 1000 - 1_000) },
@@ -169,6 +197,6 @@ try {
     'Auth smoke: password, OTP, one-time use, session, protected route, logout and inactive-user checks passed.\n',
   );
 } finally {
-  await prisma.user.deleteMany({ where: { id: testId } });
+  await prisma.user.deleteMany({ where: { id: { in: [testId, provisionedUserId] } } });
   await app.close();
 }
