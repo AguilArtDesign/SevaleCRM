@@ -41,6 +41,13 @@ async function post(payload: unknown, authorization?: string) {
   });
 }
 
+async function get(siigoId: string, authorization?: string) {
+  return fetch(
+    `${baseUrl}/api/integrations/siigo/product?${new URLSearchParams({ siigo_id: siigoId })}`,
+    { headers: authorization ? { authorization } : {} },
+  );
+}
+
 const validPayload = {
   siigo_id: siigoId,
   sku,
@@ -69,6 +76,41 @@ try {
     },
   });
   productId = product.id;
+
+  expectStatus(await get(siigoId), 401, 'Consulta sin API key');
+  const missingLookupResponse = await get(randomUUID(), `Bearer ${apiKey}`);
+  expectStatus(missingLookupResponse, 200, 'Consulta de producto inexistente');
+  const missingLookup = (await missingLookupResponse.json()) as {
+    exists: boolean;
+    product: unknown;
+  };
+  if (missingLookup.exists || missingLookup.product !== null) {
+    throw new Error('La consulta no respondió false para un siigo_id inexistente.');
+  }
+  const lookupResponse = await get(siigoId, `Bearer ${apiKey}`);
+  expectStatus(lookupResponse, 200, 'Consulta de producto existente');
+  const lookup = (await lookupResponse.json()) as {
+    exists: boolean;
+    product: {
+      id: number;
+      siigoId: string;
+      sku: string;
+      store: string;
+      wooCommerce: { type: string; parentId: string | null; productId: string | null };
+    } | null;
+  };
+  if (
+    !lookup.exists ||
+    lookup.product?.id !== product.id ||
+    lookup.product.siigoId !== siigoId ||
+    lookup.product.sku !== sku ||
+    lookup.product.store !== 'SERATUS' ||
+    lookup.product.wooCommerce.type !== 'VARIATION' ||
+    lookup.product.wooCommerce.parentId !== '701' ||
+    lookup.product.wooCommerce.productId !== '702'
+  ) {
+    throw new Error('La consulta no devolvió la ruta WooCommerce vinculada al producto.');
+  }
 
   expectStatus(await post(validPayload), 401, 'Solicitud sin API key');
   const wrongKeyResponse = await post(validPayload, 'Bearer incorrecta');
@@ -170,12 +212,21 @@ try {
     siigo_price_cop: 100000,
     siigo_price_usd: 25,
     siigo_stock: 8,
+    woo_sync: {
+      success: true,
+      store: 'SERATUS',
+      price_cop: 100000,
+      price_usd: 25,
+      stock: 8,
+    },
   };
   const matchingResponse = await post(matchingPayload, `Bearer ${apiKey}`);
   expectStatus(matchingResponse, 200, 'Actualización sincronizada');
-  const matching = (await matchingResponse.json()) as { product: { syncStatus: string } };
-  if (matching.product.syncStatus !== 'SYNCED') {
-    throw new Error('El estado no cambió a SYNCED cuando los valores coincidieron.');
+  const matching = (await matchingResponse.json()) as {
+    product: { syncStatus: string; lastSyncAt: string | null };
+  };
+  if (matching.product.syncStatus !== 'SYNCED' || !matching.product.lastSyncAt) {
+    throw new Error('El resultado WooCommerce no guardó la sincronización confirmada.');
   }
 
   const notificationsBeforeUnchanged = await prisma.notification.count({
@@ -195,6 +246,43 @@ try {
     notificationsBeforeUnchanged
   ) {
     throw new Error('La actualización idéntica creó una notificación falsa.');
+  }
+
+  expectStatus(
+    await post(
+      { ...matchingPayload, woo_sync: { ...matchingPayload.woo_sync, store: 'PALI' } },
+      `Bearer ${apiKey}`,
+    ),
+    409,
+    'Tienda WooCommerce diferente',
+  );
+
+  const beforeFailedSync = await prisma.product.findUniqueOrThrow({ where: { id: product.id } });
+  const failedSyncResponse = await post(
+    {
+      ...matchingPayload,
+      woo_sync: {
+        success: false,
+        store: 'SERATUS',
+        error: 'WooCommerce no respondió dentro del tiempo esperado',
+      },
+    },
+    `Bearer ${apiKey}`,
+  );
+  expectStatus(failedSyncResponse, 200, 'Resultado WooCommerce fallido');
+  const failedSync = (await failedSyncResponse.json()) as {
+    product: { syncStatus: string; lastSyncAt: string | null };
+  };
+  const afterFailedSync = await prisma.product.findUniqueOrThrow({ where: { id: product.id } });
+  if (
+    failedSync.product.syncStatus !== 'ERROR' ||
+    !failedSync.product.lastSyncAt ||
+    afterFailedSync.lastSyncAt?.getTime() !== beforeFailedSync.lastSyncAt?.getTime() ||
+    Number(afterFailedSync.wooPriceCop) !== Number(beforeFailedSync.wooPriceCop) ||
+    Number(afterFailedSync.wooPriceUsd) !== Number(beforeFailedSync.wooPriceUsd) ||
+    afterFailedSync.wooStock !== beforeFailedSync.wooStock
+  ) {
+    throw new Error('El fallo WooCommerce alteró datos confirmados o la última sincronización.');
   }
 
   process.stdout.write(

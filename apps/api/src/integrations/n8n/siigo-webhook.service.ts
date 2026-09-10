@@ -1,5 +1,5 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import type { SiigoProductUpdateInput } from '@sevale/validation';
+import type { SiigoProductLookupQuery, SiigoProductUpdateInput } from '@sevale/validation';
 import type { Product, SyncStatus } from '../../generated/prisma/client.js';
 import { SiigoWebhookRepository } from './siigo-webhook.repository.js';
 import { RealtimeGateway } from '../../realtime/realtime.gateway.js';
@@ -12,9 +12,14 @@ function numericChange(previous: number, current: number): NumericChange {
 }
 
 function calculateSyncStatus(input: SiigoProductUpdateInput, product: Product): SyncStatus {
-  return input.siigo_price_cop === Number(product.wooPriceCop) &&
-    input.siigo_price_usd === Number(product.wooPriceUsd) &&
-    input.siigo_stock === product.wooStock
+  if (input.woo_sync?.success === false) return 'ERROR';
+  const wooSync = input.woo_sync?.success === true ? input.woo_sync : null;
+  const wooPriceCop = wooSync?.price_cop ?? Number(product.wooPriceCop);
+  const wooPriceUsd = wooSync?.price_usd ?? Number(product.wooPriceUsd);
+  const wooStock = wooSync?.stock ?? product.wooStock;
+  return input.siigo_price_cop === wooPriceCop &&
+    input.siigo_price_usd === wooPriceUsd &&
+    input.siigo_stock === wooStock
     ? 'SYNCED'
     : 'OUT_OF_SYNC';
 }
@@ -26,6 +31,27 @@ export class SiigoWebhookService {
     private readonly realtime: RealtimeGateway,
     private readonly notifications: NotificationsService,
   ) {}
+
+  async findProduct({ siigo_id }: SiigoProductLookupQuery) {
+    const product = await this.repository.findBySiigoId(siigo_id);
+    if (!product) return { success: true, exists: false, product: null };
+
+    return {
+      success: true,
+      exists: true,
+      product: {
+        id: product.id,
+        siigoId: product.siigoId,
+        sku: product.sku,
+        store: product.store,
+        wooCommerce: {
+          type: product.wooParentId === null ? ('SIMPLE' as const) : ('VARIATION' as const),
+          parentId: product.wooParentId?.toString() ?? null,
+          productId: product.wooVariationId?.toString() ?? null,
+        },
+      },
+    };
+  }
 
   async updateProduct(input: SiigoProductUpdateInput) {
     const previous = await this.repository.findBySiigoId(input.siigo_id);
@@ -47,13 +73,31 @@ export class SiigoWebhookService {
         },
       });
     }
+    if (input.woo_sync && input.woo_sync.store !== previous.store) {
+      throw new ConflictException({
+        success: false,
+        error: {
+          code: 'WOOCOMMERCE_STORE_MISMATCH',
+          message: 'La tienda recibida no coincide con el producto vinculado.',
+        },
+      });
+    }
 
     const syncStatus = calculateSyncStatus(input, previous);
+    const checkedAt = new Date();
     const updated = await this.repository.update(input.siigo_id, {
       siigoPriceCop: input.siigo_price_cop,
       siigoPriceUsd: input.siigo_price_usd,
       siigoStock: input.siigo_stock,
-      lastCheckAt: new Date(),
+      lastCheckAt: checkedAt,
+      ...(input.woo_sync?.success
+        ? {
+            wooPriceCop: input.woo_sync.price_cop,
+            wooPriceUsd: input.woo_sync.price_usd,
+            wooStock: input.woo_sync.stock,
+            lastSyncAt: checkedAt,
+          }
+        : {}),
       syncStatus,
     });
 
@@ -79,6 +123,7 @@ export class SiigoWebhookService {
         siigoPriceUsd: Number(updated.siigoPriceUsd),
         siigoStock: updated.siigoStock,
         lastCheckAt: updated.lastCheckAt,
+        lastSyncAt: updated.lastSyncAt,
         syncStatus: updated.syncStatus,
       },
       changes,

@@ -111,6 +111,29 @@ export const productImportCsvSchema = z.object({
 
 export type ProductImportCsvInput = z.infer<typeof productImportCsvSchema>;
 
+export const siigoProductLookupQuerySchema = z.object({
+  siigo_id: z.string().trim().min(1).max(191),
+});
+
+const wooSyncResultSchema = z.discriminatedUnion('success', [
+  z
+    .object({
+      success: z.literal(true),
+      store: storeSchema,
+      price_cop: z.number().finite().nonnegative(),
+      price_usd: z.number().finite().nonnegative(),
+      stock: z.number().int().nonnegative(),
+    })
+    .strict(),
+  z
+    .object({
+      success: z.literal(false),
+      store: storeSchema,
+      error: z.string().trim().min(1).max(500),
+    })
+    .strict(),
+]);
+
 export const siigoProductUpdateSchema = z
   .object({
     siigo_id: z.string().trim().min(1).max(191),
@@ -118,6 +141,7 @@ export const siigoProductUpdateSchema = z
     siigo_price_cop: z.number().finite().nonnegative(),
     siigo_price_usd: z.number().finite().nonnegative(),
     siigo_stock: z.number().int().nonnegative(),
+    woo_sync: wooSyncResultSchema.optional(),
   })
   .strict();
 
@@ -134,6 +158,7 @@ export const notificationIdSchema = z.coerce
 
 export type ExternalProductQuery = z.infer<typeof externalProductQuerySchema>;
 export type CreateProductLinkInput = z.infer<typeof createProductLinkSchema>;
+export type SiigoProductLookupQuery = z.infer<typeof siigoProductLookupQuerySchema>;
 export type SiigoProductUpdateInput = z.infer<typeof siigoProductUpdateSchema>;
 export type NotificationListQuery = z.infer<typeof notificationListQuerySchema>;
 

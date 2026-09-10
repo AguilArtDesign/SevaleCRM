@@ -1,5 +1,14 @@
-import { BadRequestException, Body, Controller, HttpCode, Post, UseGuards } from '@nestjs/common';
-import { siigoProductUpdateSchema } from '@sevale/validation';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  Post,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
+import { siigoProductLookupQuerySchema, siigoProductUpdateSchema } from '@sevale/validation';
 import { Public } from '../../auth/public.decorator.js';
 import { N8nApiKeyGuard } from './n8n-api-key.guard.js';
 import { SiigoWebhookService } from './siigo-webhook.service.js';
@@ -7,6 +16,23 @@ import { SiigoWebhookService } from './siigo-webhook.service.js';
 @Controller('integrations/siigo')
 export class SiigoWebhookController {
   constructor(private readonly webhookService: SiigoWebhookService) {}
+
+  @Get('product')
+  @Public()
+  @UseGuards(N8nApiKeyGuard)
+  findProduct(@Query() query: unknown) {
+    const result = siigoProductLookupQuerySchema.safeParse(query);
+    if (!result.success) {
+      throw new BadRequestException({
+        success: false,
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: result.error.issues[0]?.message || 'El siigo_id no es válido.',
+        },
+      });
+    }
+    return this.webhookService.findProduct(result.data);
+  }
 
   @Post('product')
   @HttpCode(200)
