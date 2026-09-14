@@ -5,6 +5,8 @@ import { InventoryPage } from './inventory/InventoryPage';
 import { AppShell } from './shell/AppShell';
 import { AdminRoute } from './users/AdminRoute';
 import { UsersPage } from './users/UsersPage';
+import { CustomersPage } from './customers/CustomersPage';
+import { CustomersRoute } from './customers/CustomersRoute';
 
 export function App() {
   return (
@@ -18,6 +20,14 @@ export function App() {
         }
       >
         <Route path="/inventory" element={<InventoryPage />} />
+        <Route
+          path="/customers"
+          element={
+            <CustomersRoute>
+              <CustomersPage />
+            </CustomersRoute>
+          }
+        />
         <Route
           path="/users"
           element={

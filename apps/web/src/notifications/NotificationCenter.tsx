@@ -23,6 +23,9 @@ function capitalize(value: string) {
 }
 
 function notificationDescription(notification: NotificationRecord) {
+  if (notification.type.startsWith('CUSTOMER_')) {
+    return notification.message.split('\n')[0] || notification.customer?.displayName || '';
+  }
   if (
     notification.type === 'SIIGO_PRODUCT_UPDATED' ||
     notification.type === 'PRODUCT_LINK_UPDATED'
@@ -36,7 +39,9 @@ function notificationDescription(notification: NotificationRecord) {
 }
 
 function notificationChanges(notification: NotificationRecord) {
-  if (notification.type !== 'PRODUCT_LINK_UPDATED') return null;
+  if (notification.type !== 'PRODUCT_LINK_UPDATED' && !notification.type.startsWith('CUSTOMER_')) {
+    return null;
+  }
   const [, ...changes] = notification.message.split('\n');
   return changes.join('\n') || null;
 }
@@ -81,7 +86,7 @@ export function NotificationCenter() {
           <strong>{status === 'unread' ? 'Todo está al día' : 'Sin notificaciones leídas'}</strong>
           <span>
             {status === 'unread'
-              ? 'Las novedades del inventario aparecerán aquí.'
+              ? 'Las novedades del inventario y clientes aparecerán aquí.'
               : 'Las notificaciones que marques como leídas aparecerán aquí.'}
           </span>
         </div>
@@ -93,7 +98,11 @@ export function NotificationCenter() {
           >
             <span className="notification-dot" aria-hidden="true" />
             <span className="notification-product-image" aria-hidden="true">
-              {notification.product?.imageUrl ? (
+              {notification.customer ? (
+                <span className="notification-customer-avatar">
+                  {notification.customer.displayName.slice(0, 1).toUpperCase()}
+                </span>
+              ) : notification.product?.imageUrl ? (
                 <img src={notification.product.imageUrl} alt="" />
               ) : (
                 <Boxes3 width={20} height={20} />
@@ -116,6 +125,19 @@ export function NotificationCenter() {
                       </Chip>
                     )}
                   </>
+                )}
+                {notification.type.startsWith('CUSTOMER_') && (
+                  <Chip
+                    color={
+                      notification.type === 'CUSTOMER_SYNC_ERROR'
+                        ? 'danger'
+                        : notification.type === 'CUSTOMER_SYNC_PARTIAL'
+                          ? 'warning'
+                          : 'default'
+                    }
+                  >
+                    Clientes
+                  </Chip>
                 )}
               </div>
               <p>{notificationDescription(notification)}</p>

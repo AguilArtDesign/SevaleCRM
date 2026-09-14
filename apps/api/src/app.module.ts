@@ -8,6 +8,7 @@ import { InventoryModule } from './inventory/inventory.module.js';
 import { IntegrationsModule } from './integrations/integrations.module.js';
 import { RealtimeModule } from './realtime/realtime.module.js';
 import { NotificationsModule } from './notifications/notifications.module.js';
+import { CustomersModule } from './customers/customers.module.js';
 
 @Module({
   imports: [
@@ -18,6 +19,7 @@ import { NotificationsModule } from './notifications/notifications.module.js';
     UsersModule,
     InventoryModule,
     IntegrationsModule,
+    CustomersModule,
   ],
   controllers: [HealthController],
   providers: [HealthService],

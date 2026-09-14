@@ -1,7 +1,13 @@
 import { Injectable } from '@nestjs/common';
-import { WebSocketGateway, WebSocketServer, type OnGatewayInit } from '@nestjs/websockets';
+import {
+  WebSocketGateway,
+  WebSocketServer,
+  type OnGatewayConnection,
+  type OnGatewayInit,
+} from '@nestjs/websockets';
+import { rolePermissions, roles, type Permission, type Role } from '@sevale/permissions';
 import type { IncomingHttpHeaders } from 'node:http';
-import type { Server } from 'socket.io';
+import type { Server, Socket } from 'socket.io';
 import { AuthService } from '../auth/auth.service.js';
 import { getFrontendOrigin } from '../config/environment.js';
 import { PrismaService } from '../database/prisma.service.js';
@@ -22,6 +28,18 @@ type ProductEventBase = {
   occurredAt: string;
 };
 
+type CustomerEventBase = {
+  customerId: number;
+  displayName: string;
+  occurredAt: string;
+};
+
+const permissionRoom = (permission: Permission) => `permission:${permission}`;
+
+function isRole(value: unknown): value is Role {
+  return typeof value === 'string' && roles.some((role) => role === value);
+}
+
 @Injectable()
 @WebSocketGateway({
   cors: {
@@ -29,9 +47,10 @@ type ProductEventBase = {
     credentials: true,
   },
 })
-export class RealtimeGateway implements OnGatewayInit {
+export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection {
   @WebSocketServer()
   private server!: Server;
+  private readonly socketPermissions = new WeakMap<Socket, Permission[]>();
 
   constructor(
     private readonly authService: AuthService,
@@ -41,10 +60,18 @@ export class RealtimeGateway implements OnGatewayInit {
   afterInit(server: Server) {
     server.use((socket, next) => {
       void this.authenticate(socket.handshake.headers).then(
-        () => next(),
+        (permissions) => {
+          this.socketPermissions.set(socket, permissions);
+          next();
+        },
         () => next(new Error('UNAUTHORIZED')),
       );
     });
+  }
+
+  handleConnection(socket: Socket) {
+    const permissions = this.socketPermissions.get(socket) ?? [];
+    for (const permission of permissions) void socket.join(permissionRoom(permission));
   }
 
   private async authenticate(headers: IncomingHttpHeaders) {
@@ -54,7 +81,8 @@ export class RealtimeGateway implements OnGatewayInit {
       where: { id: session.user.id },
       select: { active: true },
     });
-    if (!user?.active) throw new Error('UNAUTHORIZED');
+    if (!user?.active || !isRole(session.user.role)) throw new Error('UNAUTHORIZED');
+    return [...rolePermissions[session.user.role]] as Permission[];
   }
 
   emitProductCreated(product: { id: number; sku: string }) {
@@ -98,25 +126,65 @@ export class RealtimeGateway implements OnGatewayInit {
     });
   }
 
+  emitCustomerCreated(customer: { id: number; displayName: string }) {
+    this.customerAudience().emit('customer.created', this.customerEvent(customer));
+  }
+
+  emitCustomerUpdated(customer: { id: number; displayName: string }) {
+    this.customerAudience().emit('customer.updated', this.customerEvent(customer));
+  }
+
+  emitCustomerDeleted(customer: { id: number; displayName: string }) {
+    this.customerAudience().emit('customer.deleted', this.customerEvent(customer));
+  }
+
+  emitCustomerIntegrationUpdated(
+    customer: { id: number; displayName: string },
+    integration: { provider: string; status: string },
+  ) {
+    this.customerAudience().emit('customer.integration.updated', {
+      ...this.customerEvent(customer),
+      provider: integration.provider,
+      status: integration.status,
+    });
+  }
+
   emitNotificationCreated(notification: {
     id: number;
     type: string;
     title: string;
     message: string;
     productId: number | null;
+    customerId: number | null;
+    requiredPermission: string | null;
     createdAt: Date;
   }) {
-    this.server.emit('notification.created', {
+    const audience =
+      notification.requiredPermission === 'customers.read' ? this.customerAudience() : this.server;
+    audience.emit('notification.created', {
       notificationId: notification.id,
       type: notification.type,
       title: notification.title,
       message: notification.message,
       productId: notification.productId,
+      customerId: notification.customerId,
       occurredAt: notification.createdAt.toISOString(),
     });
   }
 
   private productEvent(product: { id: number; sku: string }): ProductEventBase {
     return { productId: product.id, sku: product.sku, occurredAt: new Date().toISOString() };
+  }
+
+  private customerEvent(customer: { id: number; displayName: string }): CustomerEventBase {
+    return {
+      customerId: customer.id,
+      displayName: customer.displayName,
+      occurredAt: new Date().toISOString(),
+    };
+  }
+
+  private customerAudience() {
+    return this.server.to(permissionRoom('customers.read'));
   }
 }

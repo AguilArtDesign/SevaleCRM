@@ -22,12 +22,12 @@ export class NotificationsController {
         result.error.issues[0]?.message || 'Los filtros de notificaciones no son válidos.',
       );
     }
-    return this.notifications.list(request.auth.user.id, result.data);
+    return this.notifications.list(request.auth.user.id, request.auth.user.role, result.data);
   }
 
   @Patch('read-all')
   markAllRead(@Req() request: AuthenticatedRequest) {
-    return this.notifications.markAllRead(request.auth.user.id);
+    return this.notifications.markAllRead(request.auth.user.id, request.auth.user.role);
   }
 
   @Patch(':id/read')
@@ -38,6 +38,6 @@ export class NotificationsController {
         result.error.issues[0]?.message || 'El identificador de la notificación no es válido.',
       );
     }
-    return this.notifications.markRead(result.data, request.auth.user.id);
+    return this.notifications.markRead(result.data, request.auth.user.id, request.auth.user.role);
   }
 }

@@ -7,6 +7,7 @@ import {
   LayoutSideContentLeft,
   Moon,
   Persons,
+  PersonMagnifier,
   Sun,
   Xmark,
 } from '@gravity-ui/icons';
@@ -199,6 +200,18 @@ export function AppShell() {
             </span>
             <span>Inventario</span>
           </NavLink>
+
+          {(user?.role === 'ADMIN' || user?.role === 'COMMERCIAL') && (
+            <NavLink
+              to="/customers"
+              className={({ isActive }) => `sidebar-link${isActive ? ' sidebar-link-active' : ''}`}
+            >
+              <span className="sidebar-menu-icon" aria-hidden="true">
+                <PersonMagnifier />
+              </span>
+              <span>Clientes</span>
+            </NavLink>
+          )}
 
           {user?.role === 'ADMIN' && (
             <>

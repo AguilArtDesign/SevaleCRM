@@ -130,8 +130,9 @@ export function integrationGet(
   url: URL,
   headers: HeadersInit,
   integration: string,
+  options?: IntegrationRequestOptions,
 ): Promise<unknown> {
-  return integrationRequest(url, integration, { method: 'GET', headers });
+  return integrationRequest(url, integration, { method: 'GET', headers }, options);
 }
 
 export function integrationPost(

@@ -203,6 +203,39 @@ try {
     throw new Error('products.updated no devolvió el resumen masivo esperado.');
   }
 
+  const customerCreatedPromise = waitFor<{ customerId: number; displayName: string }>(
+    socket,
+    'customer.created',
+  );
+  realtime.emitCustomerCreated({ id: 701, displayName: 'Cliente Socket' });
+  const customerCreated = await customerCreatedPromise;
+  if (customerCreated.customerId !== 701 || customerCreated.displayName !== 'Cliente Socket') {
+    throw new Error('customer.created no devolvió el payload normalizado esperado.');
+  }
+
+  const customerDeletedPromise = waitFor<{ customerId: number; displayName: string }>(
+    socket,
+    'customer.deleted',
+  );
+  realtime.emitCustomerDeleted({ id: 701, displayName: 'Cliente Socket' });
+  const customerDeleted = await customerDeletedPromise;
+  if (customerDeleted.customerId !== 701 || customerDeleted.displayName !== 'Cliente Socket') {
+    throw new Error('customer.deleted no devolvió el payload normalizado esperado.');
+  }
+
+  const integrationPromise = waitFor<{ provider: string; status: string }>(
+    socket,
+    'customer.integration.updated',
+  );
+  realtime.emitCustomerIntegrationUpdated(
+    { id: 701, displayName: 'Cliente Socket' },
+    { provider: 'PALI', status: 'ERROR' },
+  );
+  const integration = await integrationPromise;
+  if (integration.provider !== 'PALI' || integration.status !== 'ERROR') {
+    throw new Error('customer.integration.updated no devolvió el estado esperado.');
+  }
+
   const notificationPromise = waitFor<{ notificationId: number; productId: number | null }>(
     socket,
     'notification.created',
@@ -213,6 +246,8 @@ try {
     title: 'Notificación de prueba',
     message: 'Contenido normalizado',
     productId: 501,
+    customerId: null,
+    requiredPermission: null,
     createdAt: new Date(),
   });
   const notification = await notificationPromise;

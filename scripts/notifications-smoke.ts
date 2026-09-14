@@ -5,7 +5,12 @@ import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fa
 import { hashPassword } from 'better-auth/crypto';
 import { AppModule } from '../apps/api/src/app.module.js';
 import { PrismaService } from '../apps/api/src/database/prisma.service.js';
-import { Role, Store, SyncStatus } from '../apps/api/src/generated/prisma/client.js';
+import {
+  CustomerPersonType,
+  Role,
+  Store,
+  SyncStatus,
+} from '../apps/api/src/generated/prisma/client.js';
 import { NotificationRetentionService } from '../apps/api/src/notifications/notification-retention.service.js';
 
 process.env.BETTER_AUTH_SECRET ||= 'local-notifications-smoke-secret-at-least-32-characters';
@@ -27,14 +32,24 @@ const users = [
     id: randomUUID(),
     email: `notifications-a-${runId}@example.invalid`,
     name: 'Notifications User A',
+    role: Role.COMMERCIAL,
   },
   {
     id: randomUUID(),
     email: `notifications-b-${runId}@example.invalid`,
     name: 'Notifications User B',
+    role: Role.COMMERCIAL,
+  },
+  {
+    id: randomUUID(),
+    email: `notifications-logistics-${runId}@example.invalid`,
+    name: 'Notifications Logistics',
+    role: Role.LOGISTICS,
   },
 ] as const;
 let productId: number | null = null;
+let customerId: number | null = null;
+let customerNotificationId: number | null = null;
 const notificationIds: number[] = [];
 
 function expectStatus(response: Response, status: number, context: string) {
@@ -75,7 +90,7 @@ try {
         name: user.name,
         email: user.email,
         emailVerified: true,
-        role: Role.COMMERCIAL,
+        role: user.role,
         active: true,
         accounts: {
           create: {
@@ -109,6 +124,23 @@ try {
     },
   });
   productId = product.id;
+  const customer = await prisma.customer.create({
+    data: {
+      personType: CustomerPersonType.PERSON,
+      firstName: 'Cliente',
+      lastName: 'Notificaciones',
+      displayName: 'Cliente de notificaciones',
+      documentType: '13',
+      documentNumber: runId.replaceAll('-', '').slice(0, 20),
+      email: `customer-${runId}@example.invalid`,
+      country: 'CO',
+      region: 'CO-ANT',
+      cityCode: '05001',
+      addressLine1: 'Dirección de prueba',
+      fiscalResponsibilities: ['R-99-PN'],
+    },
+  });
+  customerId = customer.id;
   for (const [index, title] of ['Stock actualizado', 'Precio actualizado'].entries()) {
     const notification = await prisma.notification.create({
       data: {
@@ -120,6 +152,16 @@ try {
     });
     notificationIds.push(notification.id);
   }
+  const customerNotification = await prisma.notification.create({
+    data: {
+      type: 'CUSTOMER_SYNC_PARTIAL',
+      title: 'Sincronización parcial',
+      message: `${customer.displayName}\nPali requiere atención.`,
+      customerId,
+      requiredPermission: 'customers.read',
+    },
+  });
+  customerNotificationId = customerNotification.id;
 
   const expiredNotification = await prisma.notification.create({
     data: {
@@ -138,6 +180,7 @@ try {
   expectStatus(await api('/api/notifications'), 401, 'Listado anónimo');
   const cookieA = await login(users[0].email);
   const cookieB = await login(users[1].email);
+  const logisticsCookie = await login(users[2].email);
 
   const unreadAResponse = await api('/api/notifications?status=unread', cookieA);
   expectStatus(unreadAResponse, 200, 'No leídas del usuario A');
@@ -159,6 +202,24 @@ try {
   ) {
     throw new Error('El listado no devolvió las notificaciones normalizadas esperadas.');
   }
+  const customerItem = unreadA.data.find(
+    (notification) => notification.id === customerNotificationId,
+  ) as (typeof unreadA.data)[number] & { customer?: { displayName: string } | null };
+  if (customerItem?.customer?.displayName !== customer.displayName) {
+    throw new Error('La notificación de cliente no devolvió su resumen relacionado.');
+  }
+
+  const logisticsUnreadResponse = await api('/api/notifications?status=unread', logisticsCookie);
+  expectStatus(logisticsUnreadResponse, 200, 'Notificaciones de Logística');
+  const logisticsUnread = (await logisticsUnreadResponse.json()) as { data: Array<{ id: number }> };
+  if (logisticsUnread.data.some((notification) => notification.id === customerNotificationId)) {
+    throw new Error('Logística recibió una notificación restringida a customers.read.');
+  }
+  expectStatus(
+    await api(`/api/notifications/${customerNotificationId}/read`, logisticsCookie, 'PATCH'),
+    404,
+    'Lectura de notificación de cliente por Logística',
+  );
 
   expectStatus(
     await api(`/api/notifications/${notificationIds[0]}/read`, cookieA, 'PATCH'),
@@ -211,6 +272,10 @@ try {
   if (notificationIds.length > 0) {
     await prisma.notification.deleteMany({ where: { id: { in: notificationIds } } });
   }
+  if (customerNotificationId !== null) {
+    await prisma.notification.deleteMany({ where: { id: customerNotificationId } });
+  }
+  if (customerId !== null) await prisma.customer.deleteMany({ where: { id: customerId } });
   if (productId !== null) await prisma.product.deleteMany({ where: { id: productId } });
   await prisma.user.deleteMany({ where: { id: { in: users.map((user) => user.id) } } });
   await app.close();

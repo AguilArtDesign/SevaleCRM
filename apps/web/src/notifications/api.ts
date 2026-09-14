@@ -14,6 +14,11 @@ export type NotificationRecord = {
     imageUrl: string | null;
     store: 'PALI' | 'SERATUS';
   } | null;
+  customerId: number | null;
+  customer: {
+    displayName: string;
+    email: string;
+  } | null;
   createdAt: string;
   readAt: string | null;
 };

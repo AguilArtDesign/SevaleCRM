@@ -155,7 +155,8 @@ try {
     stockSortBody.data.map((product) => product.id).join(',') !==
       [productIds[1], productIds[0], productIds[2]].join(',') ||
     stockSortBody.data.some(
-      (product, index, products) => index > 0 && product.siigoStock < products[index - 1]!.siigoStock,
+      (product, index, products) =>
+        index > 0 && product.siigoStock < products[index - 1]!.siigoStock,
     )
   ) {
     throw new Error('El inventario no se ordenó globalmente por stock ascendente.');

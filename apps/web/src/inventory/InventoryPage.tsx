@@ -720,9 +720,7 @@ export function InventoryPage() {
                         <Boxes3 width={28} height={28} />
                       </span>
                       <Typography.Heading level={2}>
-                        {hasFilters
-                          ? 'Sin resultados'
-                          : 'No hay productos vinculados'}
+                        {hasFilters ? 'Sin resultados' : 'No hay productos vinculados'}
                       </Typography.Heading>
                       <Typography.Paragraph color="muted">
                         {hasFilters
@@ -765,81 +763,83 @@ export function InventoryPage() {
                 </Table.Body>
               </Table.Content>
             </Table.ScrollContainer>
-            {productsQuery.data.data.length > 0 && <Table.Footer>
-              <Pagination aria-label="Paginación del inventario">
-                <Pagination.Summary>
-                  <div className="inventory-page-size-control">
-                    <span>Filas por página</span>
-                    <Select
-                      aria-label="Filas por página"
-                      className="inventory-page-size"
-                      value={String(filters.pageSize)}
-                      onChange={(value) => value && changePageSize(Number(value))}
-                    >
-                      <Select.Trigger>
-                        <Select.Value />
-                        <Select.Indicator />
-                      </Select.Trigger>
-                      <Select.Popover>
-                        <ListBox>
-                          {[20, 50, 100].map((size) => (
-                            <ListBox.Item key={size} id={String(size)} textValue={String(size)}>
-                              {size}
-                              <ListBox.ItemIndicator />
-                            </ListBox.Item>
-                          ))}
-                        </ListBox>
-                      </Select.Popover>
-                    </Select>
-                  </div>
-                </Pagination.Summary>
-                <Pagination.Content>
-                  <Pagination.Item>
-                    <Pagination.Previous
-                      isDisabled={!pagination || pagination.page <= 1 || productsQuery.isFetching}
-                      onPress={() => changePage(Math.max(1, (pagination?.page ?? 1) - 1))}
-                    >
-                      <Pagination.PreviousIcon />
-                      Anterior
-                    </Pagination.Previous>
-                  </Pagination.Item>
-                  {pageItems.map((item, index) =>
-                    item === 'ellipsis' ? (
-                      <Pagination.Item key={`ellipsis-${index}`}>
-                        <Pagination.Ellipsis />
-                      </Pagination.Item>
-                    ) : (
-                      <Pagination.Item key={item}>
-                        <Pagination.Link
-                          isActive={item === (pagination?.page ?? 1)}
-                          isDisabled={productsQuery.isFetching}
-                          onPress={() => changePage(item)}
-                        >
-                          {item}
-                        </Pagination.Link>
-                      </Pagination.Item>
-                    ),
-                  )}
-                  <Pagination.Item>
-                    <Pagination.Next
-                      isDisabled={
-                        !pagination ||
-                        pagination.page >= pagination.totalPages ||
-                        productsQuery.isFetching
-                      }
-                      onPress={() =>
-                        changePage(
-                          Math.min(pagination?.totalPages ?? 1, (pagination?.page ?? 1) + 1),
-                        )
-                      }
-                    >
-                      Siguiente
-                      <Pagination.NextIcon />
-                    </Pagination.Next>
-                  </Pagination.Item>
-                </Pagination.Content>
-              </Pagination>
-            </Table.Footer>}
+            {productsQuery.data.data.length > 0 && (
+              <Table.Footer>
+                <Pagination aria-label="Paginación del inventario">
+                  <Pagination.Summary>
+                    <div className="inventory-page-size-control">
+                      <span>Filas por página</span>
+                      <Select
+                        aria-label="Filas por página"
+                        className="inventory-page-size"
+                        value={String(filters.pageSize)}
+                        onChange={(value) => value && changePageSize(Number(value))}
+                      >
+                        <Select.Trigger>
+                          <Select.Value />
+                          <Select.Indicator />
+                        </Select.Trigger>
+                        <Select.Popover>
+                          <ListBox>
+                            {[20, 50, 100].map((size) => (
+                              <ListBox.Item key={size} id={String(size)} textValue={String(size)}>
+                                {size}
+                                <ListBox.ItemIndicator />
+                              </ListBox.Item>
+                            ))}
+                          </ListBox>
+                        </Select.Popover>
+                      </Select>
+                    </div>
+                  </Pagination.Summary>
+                  <Pagination.Content>
+                    <Pagination.Item>
+                      <Pagination.Previous
+                        isDisabled={!pagination || pagination.page <= 1 || productsQuery.isFetching}
+                        onPress={() => changePage(Math.max(1, (pagination?.page ?? 1) - 1))}
+                      >
+                        <Pagination.PreviousIcon />
+                        Anterior
+                      </Pagination.Previous>
+                    </Pagination.Item>
+                    {pageItems.map((item, index) =>
+                      item === 'ellipsis' ? (
+                        <Pagination.Item key={`ellipsis-${index}`}>
+                          <Pagination.Ellipsis />
+                        </Pagination.Item>
+                      ) : (
+                        <Pagination.Item key={item}>
+                          <Pagination.Link
+                            isActive={item === (pagination?.page ?? 1)}
+                            isDisabled={productsQuery.isFetching}
+                            onPress={() => changePage(item)}
+                          >
+                            {item}
+                          </Pagination.Link>
+                        </Pagination.Item>
+                      ),
+                    )}
+                    <Pagination.Item>
+                      <Pagination.Next
+                        isDisabled={
+                          !pagination ||
+                          pagination.page >= pagination.totalPages ||
+                          productsQuery.isFetching
+                        }
+                        onPress={() =>
+                          changePage(
+                            Math.min(pagination?.totalPages ?? 1, (pagination?.page ?? 1) + 1),
+                          )
+                        }
+                      >
+                        Siguiente
+                        <Pagination.NextIcon />
+                      </Pagination.Next>
+                    </Pagination.Item>
+                  </Pagination.Content>
+                </Pagination>
+              </Table.Footer>
+            )}
           </Table>
         )}
       </div>

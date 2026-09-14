@@ -6,8 +6,11 @@ import {
   integrationPut,
   integrationUrl,
   invalidIntegrationResponse,
-  requireIntegrationValue,
 } from '../integration-http.js';
+import {
+  wooCommerceAuthorizationHeaders,
+  wooCommerceConfiguration,
+} from './woocommerce-configuration.js';
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -127,30 +130,16 @@ function normalizeProduct(
   };
 }
 
-function storeConfiguration(store: Store) {
-  const prefix = store === 'SERATUS' ? 'SERATUS' : 'PALI';
-  const label = store === 'SERATUS' ? 'Seratus' : 'Pali';
-  return {
-    label,
-    apiUrl: requireIntegrationValue(`${prefix}_API_URL`, label),
-    consumerKey: requireIntegrationValue(`WOOCOMMERCE_${prefix}_CK`, label),
-    consumerSecret: requireIntegrationValue(`WOOCOMMERCE_${prefix}_CS`, label),
-  };
-}
-
 @Injectable()
 export class WooCommerceService {
   async searchProductBySku(store: Store, sku: string): Promise<WooCommerceProduct | null> {
-    const config = storeConfiguration(store);
+    const config = wooCommerceConfiguration(store);
     const url = integrationUrl(config.apiUrl, 'products');
     url.searchParams.set('sku', sku);
     url.searchParams.set('per_page', '2');
-    const credentials = Buffer.from(`${config.consumerKey}:${config.consumerSecret}`).toString(
-      'base64',
-    );
     const payload = await integrationGet(
       url,
-      { Authorization: `Basic ${credentials}` },
+      wooCommerceAuthorizationHeaders(config),
       config.label,
     );
     if (!Array.isArray(payload)) throw invalidIntegrationResponse(config.label);
@@ -172,7 +161,7 @@ export class WooCommerceService {
     priceUsd,
     stock,
   }: WooCommerceProductUpdate): Promise<void> {
-    const config = storeConfiguration(store);
+    const config = wooCommerceConfiguration(store);
     const normalizedProductId = identifier(productId);
     const normalizedParentId = parentId === null ? null : identifier(parentId);
     if (!normalizedProductId || (parentId !== null && !normalizedParentId)) {
@@ -183,12 +172,9 @@ export class WooCommerceService {
       ? `products/${normalizedParentId}/variations/${normalizedProductId}`
       : `products/${normalizedProductId}`;
     const url = integrationUrl(config.apiUrl, path);
-    const credentials = Buffer.from(`${config.consumerKey}:${config.consumerSecret}`).toString(
-      'base64',
-    );
     const payload = await integrationPut(
       url,
-      { Authorization: `Basic ${credentials}` },
+      wooCommerceAuthorizationHeaders(config),
       updateBody({ productId, priceCop, priceUsd, stock }),
       config.label,
       { timeoutMs: 20_000, retryCount: 1 },
@@ -208,7 +194,7 @@ export class WooCommerceService {
     parentId: string | null;
     updates: WooCommerceBatchProductUpdate[];
   }): Promise<WooCommerceBatchUpdateResult[]> {
-    const config = storeConfiguration(store);
+    const config = wooCommerceConfiguration(store);
     const normalizedParentId = parentId === null ? null : identifier(parentId);
     if (parentId !== null && !normalizedParentId) throw invalidIntegrationResponse(config.label);
 
@@ -223,12 +209,9 @@ export class WooCommerceService {
     const path = normalizedParentId
       ? `products/${normalizedParentId}/variations/batch`
       : 'products/batch';
-    const credentials = Buffer.from(`${config.consumerKey}:${config.consumerSecret}`).toString(
-      'base64',
-    );
     const payload = await integrationPost(
       integrationUrl(config.apiUrl, path),
-      { Authorization: `Basic ${credentials}` },
+      wooCommerceAuthorizationHeaders(config),
       {
         update: normalizedUpdates.map((update) => ({
           id: update.numericId,

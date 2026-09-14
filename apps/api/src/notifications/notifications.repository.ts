@@ -7,32 +7,49 @@ import { PrismaService } from '../database/prisma.service.js';
 export class NotificationsRepository {
   constructor(private readonly prisma: PrismaService) {}
 
-  list(userId: string, query: NotificationListQuery) {
+  private visibleTo(requiredPermissions: readonly string[]): Prisma.NotificationWhereInput {
+    return {
+      OR: [{ requiredPermission: null }, { requiredPermission: { in: [...requiredPermissions] } }],
+    };
+  }
+
+  list(userId: string, query: NotificationListQuery, requiredPermissions: readonly string[]) {
     const statusFilter: Prisma.NotificationWhereInput =
       query.status === 'unread'
         ? { reads: { none: { userId } } }
         : query.status === 'read'
           ? { reads: { some: { userId } } }
           : {};
+    const where: Prisma.NotificationWhereInput = {
+      AND: [this.visibleTo(requiredPermissions), statusFilter],
+    };
 
     return this.prisma.$transaction([
       this.prisma.notification.findMany({
-        where: statusFilter,
+        where,
         orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
         skip: (query.page - 1) * query.pageSize,
         take: query.pageSize,
         include: {
           product: { select: { sku: true, productName: true, imageUrl: true, store: true } },
+          customer: { select: { displayName: true, email: true } },
           reads: { where: { userId }, select: { readAt: true } },
         },
       }),
-      this.prisma.notification.count({ where: statusFilter }),
-      this.prisma.notification.count({ where: { reads: { none: { userId } } } }),
+      this.prisma.notification.count({ where }),
+      this.prisma.notification.count({
+        where: {
+          AND: [this.visibleTo(requiredPermissions), { reads: { none: { userId } } }],
+        },
+      }),
     ]);
   }
 
-  findById(id: number) {
-    return this.prisma.notification.findUnique({ where: { id }, select: { id: true } });
+  findById(id: number, requiredPermissions: readonly string[]) {
+    return this.prisma.notification.findFirst({
+      where: { id, ...this.visibleTo(requiredPermissions) },
+      select: { id: true },
+    });
   }
 
   markRead(notificationId: number, userId: string) {
@@ -43,9 +60,11 @@ export class NotificationsRepository {
     });
   }
 
-  async markAllRead(userId: string) {
+  async markAllRead(userId: string, requiredPermissions: readonly string[]) {
     const unread = await this.prisma.notification.findMany({
-      where: { reads: { none: { userId } } },
+      where: {
+        AND: [this.visibleTo(requiredPermissions), { reads: { none: { userId } } }],
+      },
       select: { id: true },
     });
     if (unread.length === 0) return 0;
