@@ -349,6 +349,7 @@ try {
     body: JSON.stringify({
       ...payload,
       documentNumber: incompleteDocumentNumber,
+      documentType: '22',
       displayName: '',
       email: null,
       phone: null,
@@ -469,15 +470,23 @@ try {
 
   const updateResponse = await api(`/api/customers/${created.id}`, adminCookie, {
     method: 'PATCH',
-    body: JSON.stringify({ phone: '+573001112233', displayName: `Cliente actualizado ${runId}` }),
+    body: JSON.stringify({
+      documentType: '22',
+      phone: '+573001112233',
+      displayName: `Cliente actualizado ${runId}`,
+    }),
   });
   expectStatus(updateResponse, 200, 'Edición local');
   const updated = (await updateResponse.json()) as {
+    documentType: string;
+    checkDigit: string | null;
     phone: string;
     integrations: Array<{ status: string }>;
   };
   if (
     updated.phone !== '+573001112233' ||
+    updated.documentType !== '22' ||
+    updated.checkDigit !== null ||
     updated.integrations.filter((integration) => integration.status === 'PENDING').length !== 3 ||
     siigoUpdateCalls !== 0 ||
     wooUpdateCalls !== 0

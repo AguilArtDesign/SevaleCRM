@@ -280,14 +280,13 @@ export function CustomerForm({
                         id: option.value,
                         name: option.label,
                       }))}
-                      isDisabled={isEdit}
                       onChange={(documentType) => {
                         if (!documentType) return;
-                        setLookupResult(null);
-                        setLookupError('');
                         setValue((current) => ({
                           ...current,
                           documentType: documentType as CreateCustomerInput['documentType'],
+                          checkDigit:
+                            documentType === current.documentType ? current.checkDigit : null,
                         }));
                       }}
                     />

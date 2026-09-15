@@ -340,14 +340,8 @@ export class CustomersService {
       sanitized.documentType,
       sanitized.documentNumber,
     );
-    if (
-      siigoMatch &&
-      (siigoMatch.prefill.documentType !== sanitized.documentType ||
-        siigoMatch.prefill.personType !== sanitized.personType)
-    ) {
-      throw new ConflictException(
-        'El documento existe en Siigo con un tipo de documento o persona diferente.',
-      );
+    if (siigoMatch && siigoMatch.prefill.personType !== sanitized.personType) {
+      throw new ConflictException('El documento existe en Siigo con un tipo de persona diferente.');
     }
     try {
       const customer = await this.customers.create({
@@ -391,14 +385,14 @@ export class CustomersService {
     const current = await this.customers.findById(id);
     if (!current) throw new NotFoundException('El cliente no existe.');
 
-    if (
-      (input.documentType !== undefined && input.documentType !== current.documentType) ||
-      (input.documentNumber !== undefined && input.documentNumber !== current.documentNumber)
-    ) {
+    if (input.documentNumber !== undefined && input.documentNumber !== current.documentNumber) {
       throw new BadRequestException(
-        'El documento no puede cambiarse hasta habilitar la sincronización con las integraciones.',
+        'El número de documento no puede cambiarse hasta habilitar la sincronización con las integraciones.',
       );
     }
+
+    const documentType = input.documentType ?? current.documentType;
+    const documentTypeChanged = documentType !== current.documentType;
 
     const merged = createCustomerSchema.safeParse({
       personType: input.personType ?? current.personType,
@@ -406,9 +400,13 @@ export class CustomersService {
       lastName: input.lastName === undefined ? current.lastName : input.lastName,
       displayName: input.displayName ?? current.displayName,
       company: input.company === undefined ? current.company : input.company,
-      documentType: current.documentType,
+      documentType,
       documentNumber: current.documentNumber,
-      checkDigit: input.checkDigit === undefined ? current.checkDigit : input.checkDigit,
+      checkDigit: documentTypeChanged
+        ? null
+        : input.checkDigit === undefined
+          ? current.checkDigit
+          : input.checkDigit,
       email: input.email === undefined ? current.email : input.email,
       phone: input.phone === undefined ? current.phone : input.phone,
       country: input.country === undefined ? current.country : input.country,

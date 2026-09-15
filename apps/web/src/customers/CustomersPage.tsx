@@ -258,12 +258,21 @@ function CustomerDetail({
                     <Button
                       size="sm"
                       variant="secondary"
+                      isIconOnly
                       isPending={isRetrying}
                       isDisabled={isRetrying}
+                      aria-label={
+                        integration.externalId
+                          ? `Reintentar en ${providerLabels[integration.provider]}`
+                          : `Crear en ${providerLabels[integration.provider]}`
+                      }
                       onPress={() => onRetry(integration.provider)}
                     >
-                      <ArrowRotateRight width={15} height={15} />
-                      {isRetrying ? 'Reintentando' : 'Reintentar'}
+                      {integration.externalId ? (
+                        <ArrowRotateRight width={15} height={15} />
+                      ) : (
+                        <PersonPlus width={15} height={15} />
+                      )}
                     </Button>
                   )}
                 </div>
@@ -272,7 +281,9 @@ function CustomerDetail({
                     ? integration.lastErrorMessage || 'La integración no pudo completarse.'
                     : integration.status === 'SYNCED'
                       ? `Última sincronización: ${dateTime(integration.lastSyncedAt)}`
-                      : 'Esta integración está pendiente de sincronización.'}
+                      : integration.externalId
+                        ? 'Esta integración está pendiente de sincronización.'
+                        : `El cliente todavía no está creado en ${providerLabels[integration.provider]}.`}
                 </p>
                 {integration.status === 'ERROR' && integration.lastAttemptAt && (
                   <span>Último intento: {dateTime(integration.lastAttemptAt)}</span>
