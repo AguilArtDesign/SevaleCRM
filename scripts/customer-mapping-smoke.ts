@@ -116,6 +116,21 @@ if (!parsedCustomer.success || parsedCustomer.data.phone !== '+573006003345') {
   throw new Error('El schema no normalizó los separadores permitidos del teléfono.');
 }
 
+const customerWithoutDocument = createCustomerSchema.safeParse({
+  ...customer,
+  documentType: '',
+  documentNumber: '',
+});
+if (
+  customerWithoutDocument.success ||
+  customerWithoutDocument.error.issues.find((issue) => issue.path[0] === 'documentType')
+    ?.message !== 'Selecciona el tipo de documento.' ||
+  customerWithoutDocument.error.issues.find((issue) => issue.path[0] === 'documentNumber')
+    ?.message !== 'Ingresa el número de documento.'
+) {
+  throw new Error('El schema no presentó mensajes claros para el documento obligatorio.');
+}
+
 const customerWithoutPublicName = createCustomerSchema.safeParse({
   ...customer,
   displayName: undefined,

@@ -124,6 +124,7 @@ const customerDocumentTypeSchema = z.enum(
     (typeof customerDocumentTypes)[number]['value'],
     ...(typeof customerDocumentTypes)[number]['value'][],
   ],
+  { error: 'Selecciona el tipo de documento.' },
 );
 const fiscalResponsibilitySchema = z.enum(
   customerFiscalResponsibilities.map(({ value }) => value) as [

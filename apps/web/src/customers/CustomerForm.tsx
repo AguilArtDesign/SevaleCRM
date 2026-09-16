@@ -44,6 +44,8 @@ type CustomerFormValue = Omit<CreateCustomerInput, 'documentType'> & {
   documentType: CreateCustomerInput['documentType'] | '';
 };
 
+type DocumentFieldErrors = Partial<Record<'documentType' | 'documentNumber', string>>;
+
 const emptyCustomer: CustomerFormValue = {
   personType: 'PERSON',
   firstName: null,
@@ -156,6 +158,7 @@ export function CustomerForm({
 }) {
   const [value, setValue] = useState<CustomerFormValue>(() => initialValue(customer));
   const [error, setError] = useState('');
+  const [documentErrors, setDocumentErrors] = useState<DocumentFieldErrors>({});
   const [lookupError, setLookupError] = useState('');
   const [lookupResult, setLookupResult] = useState<CustomerResolveResponse | null>(null);
   const [isLookingUp, setIsLookingUp] = useState(false);
@@ -208,10 +211,25 @@ export function CustomerForm({
     }
     const parsed = createCustomerSchema.safeParse(value);
     if (!parsed.success) {
-      setError(parsed.error.issues[0]?.message || 'Revisa los datos ingresados.');
+      const nextDocumentErrors: DocumentFieldErrors = {};
+      for (const issue of parsed.error.issues) {
+        const field = issue.path[0];
+        if (
+          (field === 'documentType' || field === 'documentNumber') &&
+          !nextDocumentErrors[field]
+        ) {
+          nextDocumentErrors[field] = issue.message;
+        }
+      }
+      setDocumentErrors(nextDocumentErrors);
+      const formIssue = parsed.error.issues.find(
+        (issue) => issue.path[0] !== 'documentType' && issue.path[0] !== 'documentNumber',
+      );
+      setError(formIssue?.message ?? '');
       return;
     }
     setError('');
+    setDocumentErrors({});
     try {
       await onSubmit(parsed.data);
     } catch {
@@ -222,6 +240,7 @@ export function CustomerForm({
   const changeDocument = (documentNumber: string) => {
     setLookupResult(null);
     setLookupError('');
+    setDocumentErrors((current) => ({ ...current, documentNumber: undefined }));
     setValue((current) => ({ ...current, documentNumber }));
   };
 
@@ -401,8 +420,14 @@ export function CustomerForm({
                         id: option.value,
                         name: option.label,
                       }))}
+                      isInvalid={Boolean(documentErrors.documentType)}
+                      isRequired
                       onChange={(documentType) => {
                         if (!documentType) return;
+                        setDocumentErrors((current) => ({
+                          ...current,
+                          documentType: undefined,
+                        }));
                         setValue((current) => ({
                           ...current,
                           documentType: documentType as CreateCustomerInput['documentType'],
@@ -412,17 +437,19 @@ export function CustomerForm({
                       }}
                     />
                     <div className="customer-field">
-                      <Label>Número de documento</Label>
                       <SearchField
                         aria-label="Número de documento"
                         className="customer-document-search"
                         isDisabled={isEdit || isLookingUp}
+                        isInvalid={Boolean(documentErrors.documentNumber)}
+                        isRequired
                         value={value.documentNumber}
                         variant="secondary"
                         onChange={changeDocument}
                         onSubmit={() => void lookupDocument()}
                         onClear={() => changeDocument('')}
                       >
+                        <Label>Número de documento</Label>
                         <SearchField.Group>
                           <SearchField.SearchIcon />
                           <SearchField.Input placeholder="Buscar número de documento…" />

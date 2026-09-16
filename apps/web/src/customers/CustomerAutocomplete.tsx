@@ -12,6 +12,8 @@ export function CustomerAutocomplete({
   value,
   options,
   isDisabled = false,
+  isInvalid = false,
+  isRequired = false,
   onChange,
 }: {
   ariaLabel: string;
@@ -20,6 +22,8 @@ export function CustomerAutocomplete({
   value: string;
   options: CustomerAutocompleteOption[];
   isDisabled?: boolean;
+  isInvalid?: boolean;
+  isRequired?: boolean;
   onChange: (value: string) => void;
 }) {
   const { contains } = useFilter({ sensitivity: 'base' });
@@ -31,6 +35,8 @@ export function CustomerAutocomplete({
       className="customer-autocomplete"
       fullWidth
       isDisabled={isDisabled}
+      isInvalid={isInvalid}
+      isRequired={isRequired}
       placeholder={placeholder}
       value={value || null}
       variant="secondary"

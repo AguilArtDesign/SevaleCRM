@@ -659,10 +659,7 @@ export function CustomersPage() {
                 {(result?.data ?? []).map((customer) => (
                   <Table.Row key={customer.id} id={customer.id}>
                     {isAdmin && (
-                      <Table.Cell
-                        className="inventory-selection-cell"
-                        onPointerDown={(event) => event.stopPropagation()}
-                      >
+                      <Table.Cell className="inventory-selection-cell">
                         <Checkbox
                           slot="selection"
                           aria-label={`Seleccionar ${customerDisplayName(customer)}`}
@@ -676,7 +673,10 @@ export function CustomersPage() {
                         </Checkbox>
                       </Table.Cell>
                     )}
-                    <Table.Cell>
+                    <Table.Cell
+                      onClick={(event) => event.stopPropagation()}
+                      onPointerDown={(event) => event.stopPropagation()}
+                    >
                       <div className="customer-name-cell">
                         <Avatar
                           size="sm"
@@ -690,7 +690,10 @@ export function CustomersPage() {
                         </div>
                       </div>
                     </Table.Cell>
-                    <Table.Cell>
+                    <Table.Cell
+                      onClick={(event) => event.stopPropagation()}
+                      onPointerDown={(event) => event.stopPropagation()}
+                    >
                       <div className="customer-copy">
                         <strong>{customer.documentNumber}</strong>
                         <span>
@@ -698,15 +701,24 @@ export function CustomersPage() {
                         </span>
                       </div>
                     </Table.Cell>
-                    <Table.Cell>
+                    <Table.Cell
+                      onClick={(event) => event.stopPropagation()}
+                      onPointerDown={(event) => event.stopPropagation()}
+                    >
                       <CustomerPhone phone={customer.phone} country={customer.country} />
                     </Table.Cell>
-                    <Table.Cell>
+                    <Table.Cell
+                      onClick={(event) => event.stopPropagation()}
+                      onPointerDown={(event) => event.stopPropagation()}
+                    >
                       <strong className="customer-city-cell">
                         {customer.location.cityName || emptyValue}
                       </strong>
                     </Table.Cell>
-                    <Table.Cell>
+                    <Table.Cell
+                      onClick={(event) => event.stopPropagation()}
+                      onPointerDown={(event) => event.stopPropagation()}
+                    >
                       <div className="customer-country-cell">
                         <div>
                           <strong>
@@ -715,14 +727,22 @@ export function CustomersPage() {
                             )}
                             {customer.location.countryName || emptyValue}
                           </strong>
-                          <span>{customer.location.regionName || emptyValue}</span>
+                          {customer.location.regionName && (
+                            <span>{customer.location.regionName}</span>
+                          )}
                         </div>
                       </div>
                     </Table.Cell>
-                    <Table.Cell>
+                    <Table.Cell
+                      onClick={(event) => event.stopPropagation()}
+                      onPointerDown={(event) => event.stopPropagation()}
+                    >
                       <CustomerStatusChip customer={customer} />
                     </Table.Cell>
-                    <Table.Cell>
+                    <Table.Cell
+                      onClick={(event) => event.stopPropagation()}
+                      onPointerDown={(event) => event.stopPropagation()}
+                    >
                       <div className="inventory-row-actions">
                         <Dropdown>
                           <Button
