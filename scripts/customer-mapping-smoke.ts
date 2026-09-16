@@ -244,12 +244,28 @@ if (
   woo.billing.state !== 'CO-ANT' ||
   woo.billing.country !== 'CO' ||
   woo.billing.phone !== '+573006003345' ||
+  woo.billing.address_1 !== 'CRA. 18 #79A - 42' ||
+  woo.billing.address_2 !== 'APTO 301' ||
   woo.meta_data.find((entry) => entry.key === 'billing_type_document')?.value !== '13' ||
   woo.meta_data.find((entry) => entry.key === 'billing_identification')?.value !== '013832081' ||
   'password' in woo ||
   'shipping' in woo
 ) {
   throw new Error('WooCustomerMapper generó un payload distinto al contrato aprobado.');
+}
+
+const wooWithUppercaseNames = wooMapper.map({
+  ...customer,
+  firstName: 'MARCOS ANDRÉS',
+  lastName: 'CASTILLO GÓMEZ',
+});
+if (
+  wooWithUppercaseNames.first_name !== 'Marcos Andrés' ||
+  wooWithUppercaseNames.last_name !== 'Castillo Gómez' ||
+  wooWithUppercaseNames.billing.first_name !== 'Marcos Andrés' ||
+  wooWithUppercaseNames.billing.last_name !== 'Castillo Gómez'
+) {
+  throw new Error('WooCustomerMapper no convirtió los nombres a Capitalize.');
 }
 
 process.stdout.write(

@@ -27,6 +27,19 @@ export type WooCustomerPayload = {
   >;
 };
 
+function capitalizeWords(value: string): string {
+  return value
+    .toLocaleLowerCase('es-CO')
+    .replace(
+      /\p{L}[\p{L}\p{M}]*/gu,
+      (word) => `${word[0]?.toLocaleUpperCase('es-CO') ?? ''}${word.slice(1)}`,
+    );
+}
+
+function uppercase(value: string): string {
+  return value.toLocaleUpperCase('es-CO');
+}
+
 @Injectable()
 export class WooCustomerMapper {
   constructor(private readonly locations: CustomerLocationsService) {}
@@ -61,14 +74,14 @@ export class WooCustomerMapper {
     return {
       username: customer.documentNumber,
       email: customer.email,
-      ...(customer.firstName ? { first_name: customer.firstName } : {}),
-      ...(customer.lastName ? { last_name: customer.lastName } : {}),
+      ...(customer.firstName ? { first_name: capitalizeWords(customer.firstName) } : {}),
+      ...(customer.lastName ? { last_name: capitalizeWords(customer.lastName) } : {}),
       billing: {
-        ...(customer.firstName ? { first_name: customer.firstName } : {}),
-        ...(customer.lastName ? { last_name: customer.lastName } : {}),
+        ...(customer.firstName ? { first_name: capitalizeWords(customer.firstName) } : {}),
+        ...(customer.lastName ? { last_name: capitalizeWords(customer.lastName) } : {}),
         ...(customer.company ? { company: customer.company } : {}),
-        ...(customer.addressLine1 ? { address_1: customer.addressLine1 } : {}),
-        ...(customer.addressLine2 ? { address_2: customer.addressLine2 } : {}),
+        ...(customer.addressLine1 ? { address_1: uppercase(customer.addressLine1) } : {}),
+        ...(customer.addressLine2 ? { address_2: uppercase(customer.addressLine2) } : {}),
         ...(location ? { city: location.woo.city, state: location.woo.state } : {}),
         ...(customer.postalCode ? { postcode: customer.postalCode } : {}),
         ...(location ? { country: location.woo.country } : {}),

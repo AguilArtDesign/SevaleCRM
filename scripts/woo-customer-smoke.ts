@@ -216,6 +216,8 @@ if (
   billing.city !== 'Medellín' ||
   billing.state !== 'CO-ANT' ||
   billing.country !== 'CO' ||
+  billing.address_1 !== 'CRA. 18 #79A - 42' ||
+  billing.address_2 !== 'APTO 301' ||
   metadata.find((entry) => entry.key === 'billing_type_document')?.value !== '13' ||
   metadata.find((entry) => entry.key === 'billing_identification')?.value !== '13832081' ||
   'password' in payload ||
