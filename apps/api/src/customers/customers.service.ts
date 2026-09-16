@@ -17,6 +17,7 @@ import {
 } from '@sevale/validation';
 import { findCitiesByName, resolveCity, resolveCountry, resolveState } from '@sevale/shared';
 import {
+  capitalizeCustomerName,
   normalizeCustomerName,
   normalizeCustomerPhone,
   sanitizeCustomerEmail,
@@ -115,16 +116,29 @@ function sanitizeCustomerInput(input: CreateCustomerInput): CreateCustomerInput 
     );
   }
   const addressLine1 = sanitizeSiigoAddress(input.addressLine1);
+  const firstName =
+    input.personType === 'PERSON'
+      ? capitalizeCustomerName(input.firstName)
+      : normalizeCustomerName(input.firstName);
+  const lastName =
+    input.personType === 'PERSON'
+      ? capitalizeCustomerName(input.lastName)
+      : normalizeCustomerName(input.lastName);
+  const company = normalizeCustomerName(input.company);
   const canonicalDisplayName =
     input.personType === 'PERSON'
-      ? [input.firstName, input.lastName].filter(Boolean).join(' ')
-      : (input.company ?? '');
+      ? [firstName, lastName].filter(Boolean).join(' ')
+      : (company ?? '');
+  const displayName =
+    input.personType === 'PERSON'
+      ? (capitalizeCustomerName(input.displayName) ?? canonicalDisplayName)
+      : (normalizeCustomerName(input.displayName) ?? canonicalDisplayName);
   return {
     ...input,
-    firstName: normalizeCustomerName(input.firstName),
-    lastName: normalizeCustomerName(input.lastName),
-    displayName: normalizeCustomerName(input.displayName) ?? canonicalDisplayName,
-    company: normalizeCustomerName(input.company),
+    firstName,
+    lastName,
+    displayName,
+    company,
     email,
     phone: normalizedPhone(input.phone, input.country),
     postalCode: sanitizePostalCode(input.postalCode),

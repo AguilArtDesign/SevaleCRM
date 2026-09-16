@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { normalizePhoneE164 } from '@sevale/shared';
+import { capitalizeCustomerName } from '../customer-data-sanitizer.js';
 import type { CustomerMappingSource } from './customer-mapping.types.js';
 import { CustomerLocationsService } from './customer-locations.service.js';
 
@@ -26,15 +27,6 @@ export type WooCustomerPayload = {
     | { key: 'billing_identification'; value: string }
   >;
 };
-
-function capitalizeWords(value: string): string {
-  return value
-    .toLocaleLowerCase('es-CO')
-    .replace(
-      /\p{L}[\p{L}\p{M}]*/gu,
-      (word) => `${word[0]?.toLocaleUpperCase('es-CO') ?? ''}${word.slice(1)}`,
-    );
-}
 
 function uppercase(value: string): string {
   return value.toLocaleUpperCase('es-CO');
@@ -70,15 +62,17 @@ export class WooCustomerMapper {
         },
       });
     }
+    const firstName = capitalizeCustomerName(customer.firstName);
+    const lastName = capitalizeCustomerName(customer.lastName);
 
     return {
       username: customer.documentNumber,
       email: customer.email,
-      ...(customer.firstName ? { first_name: capitalizeWords(customer.firstName) } : {}),
-      ...(customer.lastName ? { last_name: capitalizeWords(customer.lastName) } : {}),
+      ...(firstName ? { first_name: firstName } : {}),
+      ...(lastName ? { last_name: lastName } : {}),
       billing: {
-        ...(customer.firstName ? { first_name: capitalizeWords(customer.firstName) } : {}),
-        ...(customer.lastName ? { last_name: capitalizeWords(customer.lastName) } : {}),
+        ...(firstName ? { first_name: firstName } : {}),
+        ...(lastName ? { last_name: lastName } : {}),
         ...(customer.company ? { company: customer.company } : {}),
         ...(customer.addressLine1 ? { address_1: uppercase(customer.addressLine1) } : {}),
         ...(customer.addressLine2 ? { address_2: uppercase(customer.addressLine2) } : {}),

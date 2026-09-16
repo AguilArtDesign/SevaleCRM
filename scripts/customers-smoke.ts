@@ -513,17 +513,25 @@ try {
     body: JSON.stringify({
       documentType: '22',
       phone: '+573001112233',
-      displayName: `Cliente actualizado ${runId}`,
+      firstName: 'MARCOS ANDRÉS',
+      lastName: 'CASTILLO GÓMEZ',
+      displayName: 'MARCOS ANDRÉS CASTILLO GÓMEZ',
     }),
   });
   expectStatus(updateResponse, 200, 'Edición local');
   const updated = (await updateResponse.json()) as {
+    firstName: string | null;
+    lastName: string | null;
+    displayName: string;
     documentType: string;
     checkDigit: string | null;
     phone: string;
     integrations: Array<{ status: string }>;
   };
   if (
+    updated.firstName !== 'Marcos Andrés' ||
+    updated.lastName !== 'Castillo Gómez' ||
+    updated.displayName !== 'Marcos Andrés Castillo Gómez' ||
     updated.phone !== '+573001112233' ||
     updated.documentType !== '22' ||
     updated.checkDigit !== null ||

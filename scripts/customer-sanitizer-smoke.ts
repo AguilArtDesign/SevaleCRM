@@ -1,4 +1,5 @@
 import {
+  capitalizeCustomerName,
   normalizeCustomerName,
   normalizeCustomerPhone,
   resolveSiigoPhone,
@@ -97,4 +98,9 @@ equal(
   normalizeCustomerName('  YOHANDER   DAVID  '),
   'YOHANDER DAVID',
   'Los nombres solo deben normalizar espacios',
+);
+equal(
+  capitalizeCustomerName('  JOHN   MARIO VEGA HERNÁNDEZ  '),
+  'John Mario Vega Hernández',
+  'Los nombres de personas deben guardarse en Capitalize',
 );

@@ -61,6 +61,17 @@ export function normalizeCustomerName(value: unknown): string | null {
   return typeof value === 'string' && compactWhitespace(value) ? compactWhitespace(value) : null;
 }
 
+export function capitalizeCustomerName(value: unknown): string | null {
+  const normalized = normalizeCustomerName(value);
+  if (!normalized) return null;
+  return normalized
+    .toLocaleLowerCase('es-CO')
+    .replace(
+      /\p{L}[\p{L}\p{M}]*/gu,
+      (word) => `${word[0]?.toLocaleUpperCase('es-CO') ?? ''}${word.slice(1)}`,
+    );
+}
+
 export function normalizeCustomerPhone(
   value: string | null | undefined,
   countryCode: string | null | undefined,
