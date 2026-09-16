@@ -15,7 +15,7 @@ export type SiigoCustomerPayload = {
   vat_responsible: boolean;
   fiscal_responsibilities: Array<{ code: string }>;
   address: {
-    address: string;
+    address?: string;
     city: { country_code: string; state_code: string; city_code: string };
     postal_code?: string;
   };
@@ -28,8 +28,8 @@ export type SiigoCustomerPayload = {
   }>;
 };
 
-function cleanAddress(line1: string, line2: string | null | undefined): string {
-  return [line1.trim(), line2?.trim()].filter(Boolean).join(', ');
+function cleanAddress(line1: string | null | undefined, line2: string | null | undefined): string {
+  return [line1?.trim(), line2?.trim()].filter(Boolean).join(', ');
 }
 
 function uppercase(value: string): string {
@@ -37,7 +37,6 @@ function uppercase(value: string): string {
 }
 
 type SiigoReadyCustomer = CustomerMappingSource & {
-  addressLine1: string;
   country: string;
   region: string;
   cityCode: string;
@@ -46,7 +45,6 @@ type SiigoReadyCustomer = CustomerMappingSource & {
 function requireSiigoData(customer: CustomerMappingSource): asserts customer is SiigoReadyCustomer {
   const missing: string[] = [];
   if (customer.fiscalResponsibilities.length === 0) missing.push('responsabilidad fiscal');
-  if (!customer.addressLine1) missing.push('dirección principal');
   if (!customer.country) missing.push('país');
   if (!customer.region) missing.push('región o departamento');
   if (!customer.cityCode) missing.push('ciudad o municipio');
@@ -85,6 +83,7 @@ export class SiigoCustomerMapper {
         : [customer.company].filter((part): part is string => Boolean(part));
     const canonicalName = nameParts.join(' ');
     const name = nameParts.map(uppercase);
+    const address = cleanAddress(customer.addressLine1, customer.addressLine2);
     const contactFirstName = customer.firstName?.trim();
     const normalizedPhone = customer.phone
       ? normalizePhoneE164(customer.phone, customer.country)
@@ -102,7 +101,7 @@ export class SiigoCustomerMapper {
       vat_responsible: customer.vatResponsible,
       fiscal_responsibilities: customer.fiscalResponsibilities.map((code) => ({ code })),
       address: {
-        address: uppercase(cleanAddress(customer.addressLine1, customer.addressLine2)),
+        ...(address ? { address: uppercase(address) } : {}),
         city: {
           country_code: location.siigo.countryCode,
           state_code: location.siigo.stateCode,

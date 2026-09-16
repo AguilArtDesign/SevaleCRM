@@ -172,6 +172,23 @@ if (!incompleteSiigoRejected) {
   throw new Error('SiigoCustomerMapper permitió sincronizar sin sus campos obligatorios.');
 }
 
+const siigoWithoutStreetAddress = siigoMapper.map({
+  ...customer,
+  addressLine1: null,
+  addressLine2: null,
+  postalCode: null,
+});
+if (
+  'address' in siigoWithoutStreetAddress.address ||
+  siigoWithoutStreetAddress.address.city.country_code !== 'Co' ||
+  siigoWithoutStreetAddress.address.city.state_code !== '05' ||
+  siigoWithoutStreetAddress.address.city.city_code !== '05001'
+) {
+  throw new Error(
+    'SiigoCustomerMapper no generó correctamente la ubicación sin dirección textual.',
+  );
+}
+
 let incompleteWooRejected = false;
 try {
   wooMapper.map(incompleteCustomer.data);
