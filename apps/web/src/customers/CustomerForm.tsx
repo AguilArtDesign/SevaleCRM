@@ -18,20 +18,39 @@ import {
   customerFiscalResponsibilities,
   type CreateCustomerInput,
 } from '@sevale/validation';
-import { getCities, getCountries, getStates } from '@sevale/shared';
+import {
+  getCities,
+  getCountries,
+  getStates,
+  resolveCity,
+  resolveCountry,
+  resolveState,
+} from '@sevale/shared';
 import { Input } from '../components/Input';
 import { PhoneInput } from '../components/PhoneInput';
 import { Select } from '../components/Select';
-import { customersApi, type CustomerRecord, type CustomerSourceLookup } from './api';
+import { Chip } from '../components/Chip';
+import {
+  customersApi,
+  type CustomerDraftAddress,
+  type CustomerDraftConflicts,
+  type CustomerIntegration,
+  type CustomerRecord,
+  type CustomerResolveResponse,
+} from './api';
 import { CustomerAutocomplete } from './CustomerAutocomplete';
 
-const emptyCustomer: CreateCustomerInput = {
+type CustomerFormValue = Omit<CreateCustomerInput, 'documentType'> & {
+  documentType: CreateCustomerInput['documentType'] | '';
+};
+
+const emptyCustomer: CustomerFormValue = {
   personType: 'PERSON',
   firstName: null,
   lastName: null,
   displayName: '',
   company: null,
-  documentType: '13',
+  documentType: '',
   documentNumber: '',
   checkDigit: null,
   email: null,
@@ -46,7 +65,7 @@ const emptyCustomer: CreateCustomerInput = {
   fiscalResponsibilities: ['R-99-PN'],
 };
 
-function initialValue(customer?: CustomerRecord | null): CreateCustomerInput {
+function initialValue(customer?: CustomerRecord | null): CustomerFormValue {
   if (!customer) return { ...emptyCustomer };
   return {
     personType: customer.personType,
@@ -70,12 +89,61 @@ function initialValue(customer?: CustomerRecord | null): CreateCustomerInput {
   };
 }
 
+function formatAddress(address: CustomerDraftAddress): string {
+  const lines = [address.addressLine1, address.addressLine2].filter(Boolean).join(', ');
+  const city =
+    address.country && address.region && address.cityCode
+      ? resolveCity(address.country, address.region, address.cityCode)
+      : null;
+  const region =
+    address.country && address.region
+      ? (resolveState(address.country, address.region)?.name ?? address.region)
+      : null;
+  const country = address.country
+    ? (resolveCountry(address.country)?.name ?? address.country)
+    : null;
+  const location = [city, region, country].filter(Boolean).join(', ');
+  return [lines, location].filter(Boolean).join(' — ');
+}
+
+function CustomerSourceChips({ sources }: { sources: CustomerIntegration['provider'][] }) {
+  const sourceSet = new Set(sources);
+  const chips: Array<{ id: string; label: string; className: string }> = [];
+  if (sourceSet.has('SIIGO')) {
+    chips.push({ id: 'siigo', label: 'Siigo', className: 'customer-source-chip--siigo' });
+  }
+  if (sourceSet.has('SERATUS') && sourceSet.has('PALI')) {
+    chips.push({
+      id: 'woocommerce',
+      label: 'WooCommerce',
+      className: 'customer-source-chip--woocommerce',
+    });
+  } else {
+    if (sourceSet.has('SERATUS')) {
+      chips.push({ id: 'seratus', label: 'Seratus', className: 'customer-source-chip--seratus' });
+    }
+    if (sourceSet.has('PALI')) {
+      chips.push({ id: 'pali', label: 'Pali', className: 'customer-source-chip--pali' });
+    }
+  }
+  return (
+    <span className="customer-source-chips">
+      {chips.map((chip) => (
+        <Chip key={chip.id} className={`customer-source-chip ${chip.className}`} color="default">
+          {chip.label}
+        </Chip>
+      ))}
+    </span>
+  );
+}
+
 export function CustomerForm({
   isOpen,
   customer,
   isSubmitting,
   serverError,
   onClose,
+  onOpenExisting,
   onSubmit,
 }: {
   isOpen: boolean;
@@ -83,16 +151,13 @@ export function CustomerForm({
   isSubmitting: boolean;
   serverError: string;
   onClose: () => void;
+  onOpenExisting: (customerId: number) => void;
   onSubmit: (value: CreateCustomerInput) => Promise<void>;
 }) {
-  const [value, setValue] = useState<CreateCustomerInput>(() => initialValue(customer));
+  const [value, setValue] = useState<CustomerFormValue>(() => initialValue(customer));
   const [error, setError] = useState('');
   const [lookupError, setLookupError] = useState('');
-  const [lookupResult, setLookupResult] = useState<{
-    identification: string;
-    exists: boolean;
-    integrations: CustomerSourceLookup[];
-  } | null>(null);
+  const [lookupResult, setLookupResult] = useState<CustomerResolveResponse | null>(null);
   const [isLookingUp, setIsLookingUp] = useState(false);
   const countries = useMemo(() => getCountries(), []);
   const states = useMemo(() => getStates(value.country ?? ''), [value.country]);
@@ -101,19 +166,44 @@ export function CustomerForm({
     [value.country, value.region],
   );
   const isEdit = Boolean(customer);
+  const hasUnresolvedConflict =
+    !lookupResult?.existsLocally && Boolean(Object.keys(lookupResult?.conflicts ?? {}).length);
+
+  const clearConflict = (conflict: keyof CustomerDraftConflicts) =>
+    setLookupResult((current) => {
+      if (!current || current.existsLocally || !current.conflicts[conflict]) return current;
+      const conflicts = { ...current.conflicts };
+      delete conflicts[conflict];
+      return { ...current, conflicts };
+    });
 
   const text =
-    (field: keyof CreateCustomerInput, nullable = false) =>
-    (event: { target: { value: string } }) =>
+    (field: keyof CustomerFormValue, nullable = false, conflict?: keyof CustomerDraftConflicts) =>
+    (event: { target: { value: string } }) => {
       setValue((current) => ({
         ...current,
         [field]: nullable ? event.target.value || null : event.target.value,
       }));
+      if (conflict) clearConflict(conflict);
+    };
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     if (!isEdit && lookupResult?.identification !== value.documentNumber.trim()) {
-      setError('Busca el documento en Siigo antes de guardar el cliente.');
+      setError('Busca el cliente por número de documento antes de guardarlo.');
+      return;
+    }
+    if (!isEdit && lookupResult?.existsLocally) {
+      setError('Este cliente ya existe en el CRM. Abre su registro para editarlo.');
+      return;
+    }
+    if (
+      !isEdit &&
+      lookupResult &&
+      !lookupResult.existsLocally &&
+      Object.keys(lookupResult.conflicts).length > 0
+    ) {
+      setError('Selecciona o edita los datos que presentan conflicto antes de crear el cliente.');
       return;
     }
     const parsed = createCustomerSchema.safeParse(value);
@@ -145,15 +235,12 @@ export function CustomerForm({
     setError('');
     setIsLookingUp(true);
     try {
-      const result = await customersApi.lookupSiigo(identification);
-      setLookupResult({
-        identification,
-        exists: result.exists,
-        integrations: result.integrations,
-      });
-      if (result.exists) {
+      const result = await customersApi.resolve(identification);
+      setLookupResult(result);
+      if (!result.existsLocally && result.customer) {
         setValue({
           ...result.customer,
+          documentType: result.customer.documentType ?? '',
           fiscalResponsibilities: [result.customer.fiscalResponsibilities[0] ?? 'R-99-PN'],
         });
       }
@@ -162,7 +249,7 @@ export function CustomerForm({
       setLookupError(
         lookupFailure instanceof Error
           ? lookupFailure.message
-          : 'No pudimos consultar el documento en Siigo.',
+          : 'No pudimos buscar el cliente. Inténtalo nuevamente.',
       );
     } finally {
       setIsLookingUp(false);
@@ -243,7 +330,7 @@ export function CustomerForm({
                         variant="secondary"
                         placeholder="John Smith"
                         value={value.firstName ?? ''}
-                        onChange={text('firstName', true)}
+                        onChange={text('firstName', true, 'name')}
                       />
                     </TextField>
                     <TextField isRequired>
@@ -252,7 +339,7 @@ export function CustomerForm({
                         variant="secondary"
                         placeholder="Doe Jones"
                         value={value.lastName ?? ''}
-                        onChange={text('lastName', true)}
+                        onChange={text('lastName', true, 'name')}
                       />
                     </TextField>
                     <TextField className="customer-field-full">
@@ -261,9 +348,44 @@ export function CustomerForm({
                         variant="secondary"
                         placeholder="John Smith Doe Jones"
                         value={value.displayName}
-                        onChange={text('displayName')}
+                        onChange={text('displayName', false, 'name')}
                       />
                     </TextField>
+                    {!isEdit &&
+                      lookupResult &&
+                      !lookupResult.existsLocally &&
+                      lookupResult.conflicts.name && (
+                        <div className="customer-conflict customer-field-full">
+                          <strong>Encontramos nombres diferentes</strong>
+                          <RadioGroup
+                            aria-label="Seleccionar nombre del cliente"
+                            onChange={(selected) => {
+                              const option = lookupResult.conflicts.name?.options[Number(selected)];
+                              if (!option) return;
+                              setValue((current) => ({ ...current, ...option.value }));
+                              clearConflict('name');
+                            }}
+                          >
+                            {lookupResult.conflicts.name.options.map((option, index) => (
+                              <Radio
+                                className="customer-conflict-option"
+                                key={`${option.sources.join('-')}-${index}`}
+                                value={String(index)}
+                              >
+                                <Radio.Content>
+                                  <Radio.Control>
+                                    <Radio.Indicator />
+                                  </Radio.Control>
+                                  <span className="customer-conflict-value">
+                                    {option.value.displayName}
+                                  </span>
+                                  <CustomerSourceChips sources={option.sources} />
+                                </Radio.Content>
+                              </Radio>
+                            ))}
+                          </RadioGroup>
+                        </div>
+                      )}
                   </div>
                 </section>
 
@@ -273,8 +395,7 @@ export function CustomerForm({
                     <CustomerAutocomplete
                       ariaLabel="Tipo de documento"
                       label="Tipo de documento"
-                      placeholder="Selecciona un tipo de documento"
-                      searchPlaceholder="Buscar tipo de documento…"
+                      placeholder="Seleccionar"
                       value={value.documentType}
                       options={customerDocumentTypes.map((option) => ({
                         id: option.value,
@@ -311,38 +432,43 @@ export function CustomerForm({
                     </div>
                   </div>
                   {!isEdit && lookupError && (
-                    <Alert status="danger">
+                    <Alert className="customer-lookup-alert" status="danger">
                       <Alert.Content>
-                        <Alert.Title>No pudimos consultar Siigo</Alert.Title>
+                        <Alert.Title>No pudimos buscar el cliente</Alert.Title>
                         <Alert.Description>{lookupError}</Alert.Description>
                       </Alert.Content>
                     </Alert>
                   )}
-                  {!isEdit && lookupResult && (
-                    <Alert status={lookupResult.exists ? 'success' : 'warning'}>
+                  {!isEdit && lookupResult?.existsLocally && (
+                    <Alert className="customer-lookup-alert" status="warning">
+                      <Alert.Content>
+                        <Alert.Title>Este cliente ya está registrado</Alert.Title>
+                        <Alert.Description>
+                          Puedes abrir su información para revisarla o actualizarla.
+                        </Alert.Description>
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          onPress={() => onOpenExisting(lookupResult.customerId)}
+                        >
+                          Ver cliente
+                        </Button>
+                      </Alert.Content>
+                    </Alert>
+                  )}
+                  {!isEdit && lookupResult && !lookupResult.existsLocally && (
+                    <Alert
+                      className="customer-lookup-alert"
+                      status={lookupResult.found ? 'success' : 'warning'}
+                    >
                       <Alert.Content>
                         <Alert.Title>
-                          {lookupResult.exists
-                            ? 'Cliente encontrado en Siigo'
-                            : 'Cliente no encontrado en Siigo'}
+                          {lookupResult.found ? 'Cliente encontrado' : 'Cliente no encontrado'}
                         </Alert.Title>
                         <Alert.Description>
-                          {lookupResult.exists
-                            ? 'Los datos disponibles fueron cargados desde Siigo. Revisa el formulario antes de guardarlo localmente.'
-                            : 'No se encontraron datos en Siigo. Puedes completar el formulario y guardarlo localmente.'}{' '}
-                          {lookupResult.integrations
-                            .filter((integration) => integration.provider !== 'SIIGO')
-                            .map((integration) => {
-                              const label = integration.provider === 'SERATUS' ? 'Seratus' : 'Pali';
-                              if (integration.status === 'FOUND') {
-                                return `${label}: ID ${integration.externalId}`;
-                              }
-                              if (integration.status === 'ERROR') {
-                                return `${label}: no se pudo consultar`;
-                              }
-                              return `${label}: no encontrado`;
-                            })
-                            .join(' · ')}
+                          {lookupResult.found
+                            ? 'Encontramos información del cliente. Revisa y elige los datos correctos antes de guardarlo.'
+                            : 'No encontramos información previa. Completa los datos para registrar el cliente.'}
                         </Alert.Description>
                       </Alert.Content>
                     </Alert>
@@ -358,90 +484,201 @@ export function CustomerForm({
                         variant="secondary"
                         placeholder="johndoe@mail.com"
                         value={value.email ?? ''}
-                        onChange={text('email', true)}
+                        onChange={text('email', true, 'email')}
                       />
                     </TextField>
+                    {!isEdit &&
+                      lookupResult &&
+                      !lookupResult.existsLocally &&
+                      lookupResult.conflicts.email && (
+                        <div className="customer-conflict customer-field-full">
+                          <strong>Encontramos correos diferentes</strong>
+                          <RadioGroup
+                            aria-label="Seleccionar correo electrónico"
+                            onChange={(selected) => {
+                              setValue((current) => ({ ...current, email: String(selected) }));
+                              clearConflict('email');
+                            }}
+                          >
+                            {lookupResult.conflicts.email.options.map((option) => (
+                              <Radio
+                                className="customer-conflict-option"
+                                key={option.value}
+                                value={option.value}
+                              >
+                                <Radio.Content>
+                                  <Radio.Control>
+                                    <Radio.Indicator />
+                                  </Radio.Control>
+                                  <span className="customer-conflict-value">{option.value}</span>
+                                  <CustomerSourceChips sources={option.sources} />
+                                </Radio.Content>
+                              </Radio>
+                            ))}
+                          </RadioGroup>
+                        </div>
+                      )}
                     <div className="customer-field">
                       <Label>Teléfono</Label>
                       <PhoneInput
                         country={value.country ?? 'CO'}
                         value={value.phone ?? ''}
-                        onChange={(phone) =>
-                          setValue((current) => ({ ...current, phone: phone || null }))
-                        }
+                        onChange={(phone) => {
+                          setValue((current) => ({ ...current, phone: phone || null }));
+                          clearConflict('phone');
+                        }}
                       />
                     </div>
+                    {!isEdit &&
+                      lookupResult &&
+                      !lookupResult.existsLocally &&
+                      lookupResult.conflicts.phone && (
+                        <div className="customer-conflict customer-field-full">
+                          <strong>Encontramos teléfonos diferentes</strong>
+                          <RadioGroup
+                            aria-label="Seleccionar teléfono"
+                            onChange={(selected) => {
+                              setValue((current) => ({ ...current, phone: String(selected) }));
+                              clearConflict('phone');
+                            }}
+                          >
+                            {lookupResult.conflicts.phone.options.map((option) => (
+                              <Radio
+                                className="customer-conflict-option"
+                                key={option.value}
+                                value={option.value}
+                              >
+                                <Radio.Content>
+                                  <Radio.Control>
+                                    <Radio.Indicator />
+                                  </Radio.Control>
+                                  <span className="customer-conflict-value">{option.value}</span>
+                                  <CustomerSourceChips sources={option.sources} />
+                                </Radio.Content>
+                              </Radio>
+                            ))}
+                          </RadioGroup>
+                        </div>
+                      )}
                     <CustomerAutocomplete
                       ariaLabel="País"
                       label="País"
-                      placeholder="Selecciona un país"
-                      searchPlaceholder="Buscar país…"
+                      placeholder="Seleccionar"
                       value={value.country ?? ''}
                       options={countries.map((option) => ({
                         id: option.code,
                         name: option.name,
                       }))}
-                      onChange={(country) =>
+                      onChange={(country) => {
                         setValue((current) => ({
                           ...current,
                           country: country || null,
                           region: null,
                           cityCode: null,
-                        }))
-                      }
+                        }));
+                        clearConflict('address');
+                      }}
                     />
                     <CustomerAutocomplete
                       key={`region:${value.country}`}
                       ariaLabel="Región o provincia"
                       label="Región / Provincia"
-                      placeholder="Selecciona una región"
-                      searchPlaceholder="Buscar región o provincia…"
+                      placeholder="Seleccionar"
                       value={value.region ?? ''}
                       options={states.map((option) => ({
                         id: option.wooCode ?? option.code,
                         name: option.name,
                       }))}
                       isDisabled={!value.country}
-                      onChange={(region) =>
+                      onChange={(region) => {
                         setValue((current) => ({
                           ...current,
                           region: region || null,
                           cityCode: null,
-                        }))
-                      }
+                        }));
+                        clearConflict('address');
+                      }}
                     />
                     <CustomerAutocomplete
                       key={`city:${value.country}:${value.region}`}
                       ariaLabel="Ciudad o municipio"
                       label="Ciudad / Municipio"
-                      placeholder="Selecciona una ciudad"
-                      searchPlaceholder="Buscar ciudad o municipio…"
+                      placeholder="Seleccionar"
                       value={value.cityCode ?? ''}
                       options={cities.map((option) => ({
                         id: option.code,
                         name: option.name,
                       }))}
                       isDisabled={!value.region}
-                      onChange={(cityCode) =>
-                        setValue((current) => ({ ...current, cityCode: cityCode || null }))
-                      }
+                      onChange={(cityCode) => {
+                        setValue((current) => ({ ...current, cityCode: cityCode || null }));
+                        clearConflict('address');
+                      }}
                     />
                     <TextField>
                       <Label>Código postal</Label>
                       <Input
                         variant="secondary"
                         value={value.postalCode ?? ''}
-                        onChange={text('postalCode', true)}
+                        onChange={text('postalCode', true, 'address')}
                       />
                     </TextField>
                     <TextField className="customer-field-full">
                       <Label>Dirección</Label>
                       <Input
                         variant="secondary"
+                        placeholder="Nombre de la calle y número de la casa"
                         value={value.addressLine1 ?? ''}
-                        onChange={text('addressLine1', true)}
+                        onChange={text('addressLine1', true, 'address')}
                       />
                     </TextField>
+                    <TextField
+                      aria-label="Complemento de dirección"
+                      className="customer-field-full"
+                    >
+                      <Input
+                        variant="secondary"
+                        placeholder="Barrio, urbanización, apartamento, habitación, etc"
+                        value={value.addressLine2 ?? ''}
+                        onChange={text('addressLine2', true, 'address')}
+                      />
+                    </TextField>
+                    {!isEdit &&
+                      lookupResult &&
+                      !lookupResult.existsLocally &&
+                      lookupResult.conflicts.address && (
+                        <div className="customer-conflict customer-field-full">
+                          <strong>Encontramos direcciones diferentes</strong>
+                          <RadioGroup
+                            aria-label="Seleccionar dirección"
+                            onChange={(selected) => {
+                              const option =
+                                lookupResult.conflicts.address?.options[Number(selected)];
+                              if (!option) return;
+                              setValue((current) => ({ ...current, ...option.value }));
+                              clearConflict('address');
+                            }}
+                          >
+                            {lookupResult.conflicts.address.options.map((option, index) => (
+                              <Radio
+                                className="customer-conflict-option"
+                                key={`${option.sources.join('-')}-${index}`}
+                                value={String(index)}
+                              >
+                                <Radio.Content>
+                                  <Radio.Control>
+                                    <Radio.Indicator />
+                                  </Radio.Control>
+                                  <span className="customer-conflict-value">
+                                    {formatAddress(option.value)}
+                                  </span>
+                                  <CustomerSourceChips sources={option.sources} />
+                                </Radio.Content>
+                              </Radio>
+                            ))}
+                          </RadioGroup>
+                        </div>
+                      )}
                   </div>
                 </section>
 
@@ -515,7 +752,10 @@ export function CustomerForm({
                   isPending={isSubmitting}
                   isDisabled={
                     isSubmitting ||
-                    (!isEdit && lookupResult?.identification !== value.documentNumber.trim())
+                    (!isEdit &&
+                      (lookupResult?.identification !== value.documentNumber.trim() ||
+                        lookupResult.existsLocally ||
+                        hasUnresolvedConflict))
                   }
                 >
                   {isSubmitting

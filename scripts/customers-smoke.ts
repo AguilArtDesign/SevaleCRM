@@ -263,23 +263,25 @@ try {
   expectStatus(await api('/api/customers', logisticsCookie), 403, 'Listado logística');
   expectStatus(await api('/api/customers', commercialCookie), 200, 'Listado comercial');
   expectStatus(
-    await api(`/api/customers/siigo-lookup?identification=${documentNumber}`, commercialCookie),
+    await api(`/api/customers/resolve?identification=${documentNumber}`, commercialCookie),
     403,
     'Consulta Siigo comercial',
   );
 
   const lookupResponse = await api(
-    `/api/customers/siigo-lookup?identification=${documentNumber}`,
+    `/api/customers/resolve?identification=${documentNumber}`,
     adminCookie,
   );
   expectStatus(lookupResponse, 200, 'Consulta Siigo administrativa');
   const lookup = (await lookupResponse.json()) as {
-    exists: boolean;
+    existsLocally: boolean;
+    found: boolean;
     customer?: { documentNumber: string; cityCode: string; addressLine2: string | null };
     integrations: Array<{ provider: string; status: string; externalId: string | null }>;
   };
   if (
-    !lookup.exists ||
+    lookup.existsLocally ||
+    !lookup.found ||
     lookup.customer?.documentNumber !== documentNumber ||
     lookup.customer.cityCode !== '05001' ||
     lookup.customer.addressLine2 !== null ||
@@ -289,8 +291,30 @@ try {
     throw new Error('La consulta externa no devolvió el formulario y los vínculos esperados.');
   }
 
+  const resolvedResponse = await api(
+    `/api/customers/resolve?identification=${documentNumber}`,
+    adminCookie,
+  );
+  expectStatus(resolvedResponse, 200, 'Resolución canónica administrativa');
+  const resolved = (await resolvedResponse.json()) as {
+    existsLocally: boolean;
+    found: boolean;
+    customer?: { documentNumber: string };
+    conflicts: { address?: { options: unknown[] } };
+    integrations: Array<Record<string, unknown>>;
+  };
+  if (
+    resolved.existsLocally ||
+    !resolved.found ||
+    resolved.customer?.documentNumber !== documentNumber ||
+    resolved.conflicts.address?.options.length !== 2 ||
+    resolved.integrations.some((integration) => 'externalData' in integration)
+  ) {
+    throw new Error('La resolución no devolvió un draft canónico y conflictos temporales.');
+  }
+
   const incompleteLookupResponse = await api(
-    `/api/customers/siigo-lookup?identification=${incompleteDocumentNumber}`,
+    `/api/customers/resolve?identification=${incompleteDocumentNumber}`,
     adminCookie,
   );
   expectStatus(incompleteLookupResponse, 200, 'Consulta con datos incompletos en Siigo');
@@ -318,13 +342,16 @@ try {
   }
 
   const missingLookupResponse = await api(
-    '/api/customers/siigo-lookup?identification=missing-customer',
+    '/api/customers/resolve?identification=missing-customer',
     adminCookie,
   );
   expectStatus(missingLookupResponse, 200, 'Consulta Siigo sin resultado');
-  const missingLookup = (await missingLookupResponse.json()) as { exists: boolean };
-  if (missingLookup.exists)
-    throw new Error('La consulta inexistente de Siigo devolvió un cliente.');
+  const missingLookup = (await missingLookupResponse.json()) as {
+    existsLocally: boolean;
+    found: boolean;
+  };
+  if (missingLookup.existsLocally || missingLookup.found)
+    throw new Error('La consulta inexistente devolvió un cliente.');
 
   const commercialCreate = await api('/api/customers', commercialCookie, {
     method: 'POST',
@@ -402,6 +429,19 @@ try {
     }>;
   };
   customerIds.push(created.id);
+
+  const localResolveResponse = await api(
+    `/api/customers/resolve?identification=${documentNumber}`,
+    adminCookie,
+  );
+  expectStatus(localResolveResponse, 200, 'Resolución de cliente local existente');
+  const localResolve = (await localResolveResponse.json()) as {
+    existsLocally: boolean;
+    customerId?: number;
+  };
+  if (!localResolve.existsLocally || localResolve.customerId !== created.id) {
+    throw new Error('La resolución no detuvo el flujo al encontrar el cliente local.');
+  }
   const seratusIntegration = created.integrations.find(
     (integration) => integration.provider === 'SERATUS',
   );
@@ -416,7 +456,7 @@ try {
     seratusIntegration?.externalData?.username !== documentNumber ||
     seratusIntegration.externalData.billing.address_1 !== 'Cra. 18 #79A - 42' ||
     seratusDocumentType?.id !== 316 ||
-    seratusDocumentType.value !== 'Cédula de ciudadanía' ||
+    seratusDocumentType.value !== 'Documento Extranjero' ||
     created.phone !== '+573006003345' ||
     created.postalCode !== null ||
     siigoCreateCalls !== 0 ||

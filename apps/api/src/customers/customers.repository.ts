@@ -68,6 +68,13 @@ export class CustomersRepository {
     });
   }
 
+  findByDocumentNumber(documentNumber: string) {
+    return this.prisma.customer.findFirst({
+      where: { documentNumber, deletedAt: null },
+      select: { id: true },
+    });
+  }
+
   create(data: Prisma.CustomerCreateInput) {
     return this.prisma.customer.create({ data, include: customerInclude });
   }

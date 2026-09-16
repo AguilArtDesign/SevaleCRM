@@ -47,7 +47,14 @@ export class CustomersController {
   @RequirePermissions('customers.create')
   lookupSiigo(@Query() query: unknown) {
     const input = parseInput(customerSiigoLookupSchema, query);
-    return this.customers.lookupSiigo(input.identification);
+    return this.customers.resolve(input.identification);
+  }
+
+  @Get('resolve')
+  @RequirePermissions('customers.create')
+  resolve(@Query() query: unknown) {
+    const input = parseInput(customerSiigoLookupSchema, query);
+    return this.customers.resolve(input.identification);
   }
 
   @Get(':id')

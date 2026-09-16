@@ -9,7 +9,6 @@ export function CustomerAutocomplete({
   ariaLabel,
   label,
   placeholder,
-  searchPlaceholder,
   value,
   options,
   isDisabled = false,
@@ -18,7 +17,6 @@ export function CustomerAutocomplete({
   ariaLabel: string;
   label?: string;
   placeholder: string;
-  searchPlaceholder: string;
   value: string;
   options: CustomerAutocompleteOption[];
   isDisabled?: boolean;
@@ -45,10 +43,10 @@ export function CustomerAutocomplete({
       </Autocomplete.Trigger>
       <Autocomplete.Popover className="customer-autocomplete-popover">
         <Autocomplete.Filter filter={contains}>
-          <SearchField autoFocus aria-label={searchPlaceholder} variant="secondary">
+          <SearchField autoFocus aria-label={`Buscar ${ariaLabel}`} variant="secondary">
             <SearchField.Group>
               <SearchField.SearchIcon />
-              <SearchField.Input placeholder={searchPlaceholder} />
+              <SearchField.Input placeholder="Buscar" />
               <SearchField.ClearButton />
             </SearchField.Group>
           </SearchField>

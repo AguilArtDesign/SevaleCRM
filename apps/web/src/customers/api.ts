@@ -58,22 +58,44 @@ export type CustomerListResponse = {
   pagination: { page: number; pageSize: number; total: number; totalPages: number };
 };
 
-export type SiigoCustomerDraft = CreateCustomerInput & { active: boolean };
+export type SiigoCustomerDraft = Omit<CreateCustomerInput, 'documentType'> & {
+  documentType: CreateCustomerInput['documentType'] | null;
+  active: boolean;
+};
 
 export type CustomerSourceLookup = {
   provider: CustomerIntegration['provider'];
   status: 'FOUND' | 'NOT_FOUND' | 'ERROR';
   externalId: string | null;
-  externalData: WooCustomerData | null;
 };
 
-export type SiigoCustomerLookupResponse =
-  | { exists: false; identification: string; integrations: CustomerSourceLookup[] }
+export type CustomerDraftAddress = Pick<
+  CreateCustomerInput,
+  'country' | 'region' | 'cityCode' | 'postalCode' | 'addressLine1' | 'addressLine2'
+>;
+export type CustomerDraftName = Pick<CreateCustomerInput, 'firstName' | 'lastName' | 'displayName'>;
+
+type CustomerDraftConflictOption<T> = {
+  value: T;
+  sources: CustomerIntegration['provider'][];
+};
+
+export type CustomerDraftConflicts = {
+  name?: { options: Array<CustomerDraftConflictOption<CustomerDraftName>> };
+  email?: { options: Array<CustomerDraftConflictOption<string>> };
+  phone?: { options: Array<CustomerDraftConflictOption<string>> };
+  address?: { options: Array<CustomerDraftConflictOption<CustomerDraftAddress>> };
+};
+
+export type CustomerResolveResponse =
+  | { existsLocally: true; identification: string; customerId: number }
   | {
-      exists: true;
+      existsLocally: false;
+      found: boolean;
       identification: string;
-      customer: SiigoCustomerDraft;
+      customer: SiigoCustomerDraft | null;
       integrations: CustomerSourceLookup[];
+      conflicts: CustomerDraftConflicts;
     };
 
 type CustomerListInput = {
@@ -116,9 +138,9 @@ export const customersApi = {
     return apiRequest<CustomerListResponse>(`/api/customers?${query}`);
   },
   detail: (id: number) => apiRequest<CustomerRecord>(`/api/customers/${id}`),
-  lookupSiigo: (identification: string) =>
-    apiRequest<SiigoCustomerLookupResponse>(
-      `/api/customers/siigo-lookup?${new URLSearchParams({ identification })}`,
+  resolve: (identification: string) =>
+    apiRequest<CustomerResolveResponse>(
+      `/api/customers/resolve?${new URLSearchParams({ identification })}`,
     ),
   create: (input: CreateCustomerInput) =>
     apiRequest<CustomerRecord>('/api/customers', {

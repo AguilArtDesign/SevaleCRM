@@ -9,20 +9,13 @@ import { Prisma } from '../generated/prisma/client.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
 import { RealtimeGateway } from '../realtime/realtime.gateway.js';
 import {
-  customerDocumentTypes,
   createCustomerSchema,
   type CreateCustomerInput,
   type CustomerListQuery,
   type CustomerSyncInput,
   type UpdateCustomerInput,
 } from '@sevale/validation';
-import {
-  findCitiesByName,
-  getCities,
-  resolveCity,
-  resolveCountry,
-  resolveState,
-} from '@sevale/shared';
+import { findCitiesByName, resolveCity, resolveCountry, resolveState } from '@sevale/shared';
 import {
   normalizeCustomerName,
   normalizeCustomerPhone,
@@ -32,6 +25,8 @@ import {
 } from './customer-data-sanitizer.js';
 import { CustomersRepository } from './customers.repository.js';
 import { CustomerIntegrationService } from './customer-integration.service.js';
+import { CustomerDraftResolverService } from './customer-draft-resolver.service.js';
+import { documentTypeToWoo } from './customer-document-type.mapping.js';
 import { SiigoCustomerService } from './integrations/siigo-customer.service.js';
 import {
   WooCustomerService,
@@ -47,14 +42,6 @@ type CustomerSourceLookup = {
   externalData: WooCustomerData | null;
 };
 
-function firstText(...values: Array<string | null | undefined>): string | null {
-  for (const value of values) {
-    const normalized = value?.trim();
-    if (normalized) return normalized;
-  }
-  return null;
-}
-
 function canonicalWooData(
   customer: WooCustomerReference | WooCustomerData | null,
   documentType: string | null,
@@ -65,7 +52,7 @@ function canonicalWooData(
   const identificationMetadata = customer.meta_data.find(
     ({ key }) => key === 'billing_identification',
   );
-  const documentTypeName = customerDocumentTypes.find(({ value }) => value === documentType)?.label;
+  const documentTypeName = documentTypeToWoo(documentType);
   return {
     ...customer,
     id: Number(customer.id),
@@ -81,77 +68,6 @@ function canonicalWooData(
         value: documentNumber,
       },
     ],
-  };
-}
-
-function mergeWooFallbacks(
-  siigo: NonNullable<Awaited<ReturnType<SiigoCustomerService['lookupCustomer']>>>['prefill'],
-  sources: CustomerSourceLookup[],
-) {
-  const profiles = sources.flatMap(({ externalData }) => (externalData ? [externalData] : []));
-  const billing = profiles.map((profile) => profile.billing);
-  const countryCandidate = firstText(...billing.map(({ country }) => country));
-  const country =
-    siigo.country ??
-    (countryCandidate && resolveCountry(countryCandidate) ? countryCandidate : null);
-  const regionCandidate = firstText(
-    ...billing
-      .filter(({ country: sourceCountry }) => sourceCountry === country)
-      .map(({ state }) => state),
-  );
-  const region =
-    siigo.region ??
-    (country && regionCandidate && resolveState(country, regionCandidate) ? regionCandidate : null);
-  const cityName = firstText(
-    ...billing
-      .filter(({ country: sourceCountry, state }) => sourceCountry === country && state === region)
-      .map(({ city }) => city),
-  );
-  const cityCode =
-    siigo.cityCode ??
-    (country && region && cityName
-      ? (getCities(country, region).find(
-          ({ name }) => name.localeCompare(cityName, 'es', { sensitivity: 'base' }) === 0,
-        )?.code ?? null)
-      : null);
-  const email =
-    siigo.email ??
-    sanitizeCustomerEmail(
-      firstText(
-        ...billing.map(({ email: value }) => value),
-        ...profiles.map(({ email: value }) => value),
-      ),
-    );
-  const wooPhone = firstText(...billing.map(({ phone }) => phone));
-  const siigoHasAddress = Boolean(siigo.addressLine1?.trim());
-  return {
-    ...siigo,
-    firstName:
-      siigo.firstName ??
-      firstText(
-        ...billing.map(({ first_name }) => first_name),
-        ...profiles.map(({ first_name }) => first_name),
-      ),
-    lastName:
-      siigo.lastName ??
-      firstText(
-        ...billing.map(({ last_name }) => last_name),
-        ...profiles.map(({ last_name }) => last_name),
-      ),
-    company: siigo.company ?? firstText(...billing.map(({ company }) => company)),
-    email,
-    phone: siigo.phone ?? (wooPhone ? normalizeCustomerPhone(wooPhone, country ?? '') : null),
-    country,
-    region,
-    cityCode,
-    postalCode:
-      siigo.postalCode ?? sanitizePostalCode(firstText(...billing.map(({ postcode }) => postcode))),
-    addressLine1:
-      siigo.addressLine1 ??
-      sanitizeSiigoAddress(firstText(...billing.map(({ address_1 }) => address_1))),
-    addressLine2:
-      siigo.addressLine2 ??
-      (siigoHasAddress ? null : firstText(...billing.map(({ address_2 }) => address_2))),
   };
 }
 
@@ -256,6 +172,7 @@ export class CustomersService {
     private readonly realtime: RealtimeGateway,
     private readonly siigoCustomers: SiigoCustomerService,
     private readonly wooCustomers: WooCustomerService,
+    private readonly customerDraftResolver: CustomerDraftResolverService,
   ) {}
 
   async list(query: CustomerListQuery) {
@@ -280,50 +197,15 @@ export class CustomersService {
     return serializeCustomer(customer);
   }
 
-  async lookupSiigo(identification: string) {
-    const [match, seratus, pali] = await Promise.all([
-      this.siigoCustomers.lookupCustomer(identification),
-      this.lookupWooCustomer('SERATUS', identification),
-      this.lookupWooCustomer('PALI', identification),
-    ]);
-    const integrations: CustomerSourceLookup[] = [
-      {
-        provider: 'SIIGO',
-        status: match ? 'FOUND' : 'NOT_FOUND',
-        externalId: match?.reference.id ?? null,
-        externalData: null,
-      },
-      {
-        ...seratus,
-        externalData: canonicalWooData(
-          seratus.externalData,
-          match?.prefill.documentType ?? null,
-          identification,
-        ),
-      },
-      {
-        ...pali,
-        externalData: canonicalWooData(
-          pali.externalData,
-          match?.prefill.documentType ?? null,
-          identification,
-        ),
-      },
-    ];
-    if (!match) return { exists: false as const, identification, integrations };
-    return {
-      exists: true as const,
-      identification,
-      customer: mergeWooFallbacks(match.prefill, integrations),
-      integrations,
-    };
+  resolve(identification: string) {
+    return this.customerDraftResolver.resolve(identification);
   }
 
   async create(input: CreateCustomerInput) {
     const sanitized = sanitizeCustomerInput(input);
     validateLocation(sanitized);
-    if (await this.customers.findByDocument(sanitized.documentType, sanitized.documentNumber)) {
-      throw new ConflictException('Ya existe un cliente con ese tipo y número de documento.');
+    if (await this.customers.findByDocumentNumber(sanitized.documentNumber)) {
+      throw new ConflictException('Ya existe un cliente con ese número de documento.');
     }
     const [siigoMatch, seratusLookup, paliLookup] = await Promise.all([
       this.siigoCustomers.lookupCustomer(sanitized.documentNumber),

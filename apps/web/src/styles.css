@@ -26,6 +26,8 @@
   --focus: oklch(62.04% 0.195 253.83);
   --foreground: oklch(21.03% 0.0015 253.83);
   --muted: oklch(55.17% 0.003 253.83);
+  --woocommerce-bg: #873eff26;
+  --woocommerce-text: #873eff;
   --siigo-bg: #009dff26;
   --siigo-text: #009dff;
   --pali-bg: #7e22ce26;
@@ -77,6 +79,8 @@
   --focus: oklch(62.04% 0.195 253.83);
   --foreground: oklch(99.11% 0.0015 253.83);
   --muted: oklch(70.5% 0.003 253.83);
+  --woocommerce-bg: #9a5dff26;
+  --woocommerce-text: #9a5dff;
   --siigo-bg: #009dff26;
   --siigo-text: #009dff;
   --pali-bg: #bf76ff26;
@@ -2001,7 +2005,7 @@ select {
 .customer-field {
   display: grid;
   align-content: start;
-  gap: 0.4rem;
+  gap: var(--spacing);
 }
 
 .customer-person-type-options {
@@ -2053,18 +2057,129 @@ select {
   min-width: 0;
 }
 
+.customer-conflict {
+  display: grid;
+  gap: 0.75rem;
+  margin-block: 0.5rem;
+}
+
+.customer-conflict > strong {
+  color: var(--foreground);
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.customer-conflict .radio-group {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.customer-conflict-option {
+  width: 100%;
+  min-width: 0;
+  margin: 0;
+  padding: 0.75rem;
+  background: var(--surface-secondary);
+  border: 0;
+  border-radius: var(--field-radius);
+}
+
+.customer-conflict-option:first-child {
+  margin-top: 0;
+}
+
+.customer-conflict-option .radio__content {
+  display: grid;
+  width: 100%;
+  min-width: 0;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.customer-conflict-value {
+  min-width: 0;
+  color: var(--foreground);
+  font-size: 0.875rem;
+  font-weight: 500;
+  line-height: 1.35;
+}
+
+.customer-source-chips {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.35rem;
+}
+
+.customer-source-chip--siigo {
+  color: var(--siigo-text);
+  background: var(--siigo-bg);
+}
+
+.customer-source-chip--seratus {
+  color: var(--seratus-text);
+  background: var(--seratus-bg);
+}
+
+.customer-source-chip--pali {
+  color: var(--pali-text);
+  background: var(--pali-bg);
+}
+
+.customer-source-chip--woocommerce {
+  color: var(--woocommerce-text);
+  background: var(--woocommerce-bg);
+}
+
+.customer-lookup-alert {
+  padding: 1rem;
+  background: var(--surface-secondary);
+  border: 0;
+  border-radius: var(--field-radius);
+}
+
 .customer-field .iti {
   width: 100%;
+  color: var(--foreground);
+  --iti-border-color: var(--border);
+  --iti-country-selector-bg: var(--overlay);
+  --iti-hover-color: var(--surface-secondary);
+  --iti-icon-color: var(--muted);
 }
 
 .customer-autocomplete,
 .customer-autocomplete .autocomplete__trigger {
   width: 100%;
+  min-width: 0;
+}
+
+.customer-autocomplete .autocomplete__trigger {
+  overflow: hidden;
+}
+
+.customer-autocomplete .autocomplete__value {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  flex: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.customer-autocomplete .autocomplete__indicator {
+  flex: 0 0 auto;
 }
 
 .customer-autocomplete-popover {
   width: var(--trigger-width);
   max-width: var(--trigger-width);
+}
+
+.customer-autocomplete-popover .list-box-item:focus-visible,
+.customer-autocomplete-popover .list-box-item[data-focus-visible='true'] {
+  box-shadow: none;
+  outline: none;
 }
 
 .customer-autocomplete-empty {
@@ -2076,36 +2191,119 @@ select {
 
 .customer-phone-input {
   width: 100%;
-  height: 2.5rem;
+  height: 2.25rem;
   padding: 0 0.75rem 0 3.25rem;
   color: var(--field-foreground);
-  background: var(--surface-secondary);
-  border: 1px solid transparent;
+  background: var(--default);
+  border: var(--border-width-field) solid var(--field-border);
   border-radius: var(--field-radius);
   font-size: 0.875rem;
   outline: none;
+  transition:
+    background-color 150ms var(--ease-smooth),
+    border-color 150ms var(--ease-smooth),
+    box-shadow 150ms var(--ease-out);
+}
+
+@media (hover: hover) {
+  .customer-phone-input:hover:not(:focus) {
+    background: var(--default-hover);
+    border-color: var(--field-border-hover);
+  }
 }
 
 .customer-phone-input:focus {
+  background: var(--default);
   border-color: var(--focus);
-  box-shadow: 0 0 0 2px color-mix(in oklch, var(--focus) 25%, transparent);
+  box-shadow: 0 0 0 2px var(--focus);
 }
 
 .iti__country-container,
-.iti__dropdown-content {
+.iti__country-selector {
   color: var(--foreground);
 }
 
-.iti__selected-country-primary:hover,
-.iti__selected-country-primary:focus,
-.iti__dropdown-content {
-  background: var(--surface-secondary);
+.customer-field .iti .iti__selected-country-primary,
+.customer-field .iti .iti__selected-country-primary:hover,
+.customer-field .iti .iti__selected-country-primary:focus,
+.customer-field .iti .iti__selected-country[aria-expanded='true'] .iti__selected-country-primary {
+  background: transparent !important;
+  border-radius: var(--field-radius) 0 0 var(--field-radius);
+}
+
+.iti__country-selector {
+  overflow: hidden;
+  background: var(--overlay);
+  border: 0;
+  border-radius: min(2rem, var(--radius-3xl));
+  box-shadow: var(--shadow-overlay);
+}
+
+.iti__search-input-wrapper {
+  height: 2.25rem;
+  margin: 0.5rem 0.75rem 0.25rem;
+  overflow: hidden;
+  background: var(--default);
+  border: var(--border-width-field) solid var(--field-border);
+  border-radius: var(--field-radius);
+  transition:
+    background-color 150ms var(--ease-smooth),
+    border-color 150ms var(--ease-smooth),
+    box-shadow 150ms var(--ease-out);
+}
+
+.iti__search-input-wrapper:focus-within {
+  background: var(--default);
+  border-color: var(--focus);
+  box-shadow: 0 0 0 2px var(--focus);
+}
+
+.iti__country-list {
+  padding: 0.375rem;
+  color: var(--foreground);
+  background: var(--overlay);
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+  scrollbar-gutter: auto;
+}
+
+.iti__country {
+  min-height: 2.25rem;
+  padding: 0.375rem 0.625rem;
+  border-radius: 1rem;
+}
+
+.iti__country.iti__highlight,
+.iti__country:hover {
+  background: var(--default);
 }
 
 .iti__search-input {
+  height: 100%;
   color: var(--field-foreground);
-  background: var(--field-background);
-  border-color: var(--border);
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  outline: none;
+}
+
+.iti__search-input::placeholder,
+.iti__dial-code {
+  color: var(--field-placeholder);
+}
+
+.iti__search-input:focus {
+  box-shadow: none;
+}
+
+.iti__country-check {
+  color: var(--default-foreground);
+}
+
+.iti__country-check [data-slot='list-box-item-indicator--checkmark'] {
+  display: block;
+  width: 0.625rem;
+  height: 0.625rem;
 }
 
 .customer-fiscal-options {

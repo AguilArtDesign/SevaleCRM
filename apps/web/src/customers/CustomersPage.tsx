@@ -533,7 +533,6 @@ export function CustomersPage() {
           <CustomerAutocomplete
             ariaLabel="Filtrar por país"
             placeholder="Todos los países"
-            searchPlaceholder="Buscar país…"
             value={filters.country || 'ALL'}
             options={[
               { id: 'ALL', name: 'Todos los países' },
@@ -887,6 +886,11 @@ export function CustomersPage() {
           onClose={() => {
             setFormOpen(false);
             setEditing(null);
+          }}
+          onOpenExisting={(customerId) => {
+            setFormOpen(false);
+            setEditing(null);
+            setSelectedId(customerId);
           }}
           onSubmit={submitCustomer}
         />
