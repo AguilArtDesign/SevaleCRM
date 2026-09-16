@@ -32,6 +32,10 @@ function cleanAddress(line1: string, line2: string | null | undefined): string {
   return [line1.trim(), line2?.trim()].filter(Boolean).join(', ');
 }
 
+function uppercase(value: string): string {
+  return value.toLocaleUpperCase('es-CO');
+}
+
 type SiigoReadyCustomer = CustomerMappingSource & {
   addressLine1: string;
   country: string;
@@ -75,11 +79,12 @@ export class SiigoCustomerMapper {
       });
     }
 
-    const name =
+    const nameParts =
       customer.personType === 'PERSON'
         ? [customer.firstName, customer.lastName].filter((part): part is string => Boolean(part))
         : [customer.company].filter((part): part is string => Boolean(part));
-    const canonicalName = name.join(' ');
+    const canonicalName = nameParts.join(' ');
+    const name = nameParts.map(uppercase);
     const contactFirstName = customer.firstName?.trim();
     const normalizedPhone = customer.phone
       ? normalizePhoneE164(customer.phone, customer.country)
@@ -97,7 +102,7 @@ export class SiigoCustomerMapper {
       vat_responsible: customer.vatResponsible,
       fiscal_responsibilities: customer.fiscalResponsibilities.map((code) => ({ code })),
       address: {
-        address: cleanAddress(customer.addressLine1, customer.addressLine2),
+        address: uppercase(cleanAddress(customer.addressLine1, customer.addressLine2)),
         city: {
           country_code: location.siigo.countryCode,
           state_code: location.siigo.stateCode,
@@ -110,8 +115,8 @@ export class SiigoCustomerMapper {
         ? {
             contacts: [
               {
-                first_name: contactFirstName,
-                ...(customer.lastName ? { last_name: customer.lastName } : {}),
+                first_name: uppercase(contactFirstName),
+                ...(customer.lastName ? { last_name: uppercase(customer.lastName) } : {}),
                 email: customer.email,
                 ...(phone && normalizedPhone ? { phone } : {}),
               },

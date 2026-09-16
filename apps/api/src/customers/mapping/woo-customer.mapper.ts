@@ -21,6 +21,10 @@ export type WooCustomerPayload = {
     email: string;
     phone?: string;
   };
+  meta_data: Array<
+    | { key: 'billing_type_document'; value: string }
+    | { key: 'billing_identification'; value: string }
+  >;
 };
 
 @Injectable()
@@ -71,6 +75,10 @@ export class WooCustomerMapper {
         email: customer.email,
         ...(phone ? { phone } : {}),
       },
+      meta_data: [
+        { key: 'billing_type_document', value: customer.documentType },
+        { key: 'billing_identification', value: customer.documentNumber },
+      ],
     };
   }
 }

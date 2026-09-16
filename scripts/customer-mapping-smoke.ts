@@ -204,10 +204,12 @@ if (
   siigo.person_type !== 'Person' ||
   siigo.id_type !== '13' ||
   siigo.identification !== '013832081' ||
-  siigo.name.join('|') !== 'Marcos|Castillo' ||
-  siigo.address.address !== 'Cra. 18 #79A - 42, Apto 301' ||
+  siigo.name.join('|') !== 'MARCOS|CASTILLO' ||
+  siigo.address.address !== 'CRA. 18 #79A - 42, APTO 301' ||
   siigo.address.city.state_code !== '05' ||
   siigo.phones?.[0]?.indicative !== '57' ||
+  siigo.contacts?.[0]?.first_name !== 'MARCOS' ||
+  siigo.contacts[0].last_name !== 'CASTILLO' ||
   siigo.fiscal_responsibilities[0]?.code !== 'R-99-PN'
 ) {
   throw new Error('SiigoCustomerMapper generó un payload distinto al contrato aprobado.');
@@ -227,7 +229,7 @@ const company = siigoMapper.map({
 });
 if (
   company.person_type !== 'Company' ||
-  company.name[0] !== 'Sevale S.A.S.' ||
+  company.name[0] !== 'SEVALE S.A.S.' ||
   company.commercial_name !== 'Sevale' ||
   company.contacts !== undefined
 ) {
@@ -242,6 +244,8 @@ if (
   woo.billing.state !== 'CO-ANT' ||
   woo.billing.country !== 'CO' ||
   woo.billing.phone !== '+573006003345' ||
+  woo.meta_data.find((entry) => entry.key === 'billing_type_document')?.value !== '13' ||
+  woo.meta_data.find((entry) => entry.key === 'billing_identification')?.value !== '013832081' ||
   'password' in woo ||
   'shipping' in woo
 ) {

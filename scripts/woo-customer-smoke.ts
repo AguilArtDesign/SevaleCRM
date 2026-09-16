@@ -29,7 +29,7 @@ const customerResponse = (id: number, email = 'marcos.castillo@example.com') => 
   },
   shipping: { address_1: 'Este dato no debe conservarse' },
   meta_data: [
-    { id: 65, key: 'billing_type_document', value: 'Documento Extranjero' },
+    { id: 65, key: 'billing_type_document', value: '13' },
     { id: 66, key: 'billing_identification', value: '13832081' },
     { id: 67, key: 'wc_last_active', value: '1788290866' },
   ],
@@ -209,12 +209,15 @@ if (
 }
 const payload = requestBody(seratusPost?.init?.body);
 const billing = payload.billing as Record<string, unknown>;
+const metadata = payload.meta_data as Array<Record<string, unknown>>;
 if (
   payload.username !== customer.documentNumber ||
   payload.email !== customer.email ||
   billing.city !== 'Medellín' ||
   billing.state !== 'CO-ANT' ||
   billing.country !== 'CO' ||
+  metadata.find((entry) => entry.key === 'billing_type_document')?.value !== '13' ||
+  metadata.find((entry) => entry.key === 'billing_identification')?.value !== '13832081' ||
   'password' in payload ||
   'shipping' in payload
 ) {
