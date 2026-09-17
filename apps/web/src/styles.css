@@ -649,14 +649,7 @@ select {
 }
 
 .notification-customer-avatar {
-  display: grid;
-  width: 100%;
-  height: 100%;
-  color: var(--accent-foreground);
-  background: var(--accent);
-  font-size: 1rem;
-  font-weight: 650;
-  place-items: center;
+  flex: 0 0 auto;
 }
 
 .notification-copy {
@@ -678,10 +671,26 @@ select {
   background: var(--siigo-bg);
 }
 
+.notification-provider-chip--siigo {
+  color: var(--siigo-text);
+  background: var(--siigo-bg);
+}
+
+.notification-provider-chip--pali {
+  color: var(--pali-text);
+  background: var(--pali-bg);
+}
+
+.notification-provider-chip--seratus {
+  color: var(--seratus-text);
+  background: var(--seratus-bg);
+}
+
 .notification-item strong {
   color: var(--foreground);
   font-size: 0.9rem;
   line-height: 1.3;
+  font-weight: 500;
 }
 
 .notification-item p {
@@ -1779,7 +1788,22 @@ select {
 
 .customers-filters .select,
 .customers-filters .customer-autocomplete {
-  min-width: 12rem;
+  width: 12rem;
+  min-width: 0;
+  max-width: 12rem;
+}
+
+.customers-filters .select__trigger {
+  overflow: hidden;
+}
+
+.customers-filters .select__value {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  flex: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .customers-search {
@@ -2594,6 +2618,7 @@ select {
   .customers-filters .select,
   .customers-filters .customer-autocomplete {
     width: 100%;
+    max-width: none;
   }
 }
 

@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Button, Popover, Skeleton, Tabs } from '@heroui/react';
+import { Avatar, Button, Popover, Skeleton, Tabs } from '@heroui/react';
 import { Bell, Boxes3, Check, CheckDouble } from '@gravity-ui/icons';
 import { Chip } from '../components/Chip';
+import { customerAvatarClass, customerInitials } from '../customers/presentation';
 import { notificationsApi, type NotificationRecord, type NotificationStatus } from './api';
 
 const relativeTime = new Intl.RelativeTimeFormat('es', { numeric: 'auto' });
@@ -39,11 +40,47 @@ function notificationDescription(notification: NotificationRecord) {
 }
 
 function notificationChanges(notification: NotificationRecord) {
-  if (notification.type !== 'PRODUCT_LINK_UPDATED' && !notification.type.startsWith('CUSTOMER_')) {
-    return null;
-  }
+  if (notification.type !== 'PRODUCT_LINK_UPDATED') return null;
   const [, ...changes] = notification.message.split('\n');
   return changes.join('\n') || null;
+}
+
+type CustomerProvider = 'SIIGO' | 'PALI' | 'SERATUS';
+
+const customerProviderLabels: Record<CustomerProvider, string> = {
+  SIIGO: 'Siigo',
+  PALI: 'Pali',
+  SERATUS: 'Seratus',
+};
+
+function customerNotificationProvider(notification: NotificationRecord): CustomerProvider | null {
+  const providerFromType = notification.type.match(/_(SIIGO|PALI|SERATUS)$/)?.[1] as
+    CustomerProvider | undefined;
+  if (providerFromType) return providerFromType;
+
+  const details = notification.message.split('\n').slice(1).join(' ');
+  return (
+    (Object.keys(customerProviderLabels) as CustomerProvider[]).find((provider) =>
+      details.toLocaleLowerCase('es-CO').includes(customerProviderLabels[provider].toLowerCase()),
+    ) ?? null
+  );
+}
+
+function customerNotificationPresentation(notification: NotificationRecord) {
+  if (!notification.type.startsWith('CUSTOMER_')) return null;
+  if (notification.type === 'CUSTOMER_CREATED') {
+    return { title: 'Cliente creado', provider: null };
+  }
+  if (notification.type.includes('ERROR') || notification.type === 'CUSTOMER_SYNC_PARTIAL') {
+    return {
+      title: 'Error de sincronización',
+      provider: customerNotificationProvider(notification),
+    };
+  }
+  if (notification.type.includes('SYNCED') || notification.type === 'CUSTOMER_RETRY_SUCCEEDED') {
+    return { title: 'Cliente sincronizado', provider: customerNotificationProvider(notification) };
+  }
+  return { title: notification.title, provider: null };
 }
 
 export function NotificationCenter() {
@@ -91,78 +128,82 @@ export function NotificationCenter() {
           </span>
         </div>
       ) : (
-        notificationsQuery.data.data.map((notification) => (
-          <article
-            className={`notification-item${notification.readAt ? '' : ' notification-item-unread'}`}
-            key={notification.id}
-          >
-            <span className="notification-dot" aria-hidden="true" />
-            <span className="notification-product-image" aria-hidden="true">
+        notificationsQuery.data.data.map((notification) => {
+          const customerPresentation = customerNotificationPresentation(notification);
+          return (
+            <article
+              className={`notification-item${notification.readAt ? '' : ' notification-item-unread'}`}
+              key={notification.id}
+            >
+              <span className="notification-dot" aria-hidden="true" />
               {notification.customer ? (
-                <span className="notification-customer-avatar">
-                  {notification.customer.displayName.slice(0, 1).toUpperCase()}
-                </span>
-              ) : notification.product?.imageUrl ? (
-                <img src={notification.product.imageUrl} alt="" />
+                <Avatar
+                  size="md"
+                  className={`notification-customer-avatar ${customerAvatarClass(notification.customerId ?? notification.id)}`}
+                  aria-hidden="true"
+                >
+                  <Avatar.Fallback>{customerInitials(notification.customer)}</Avatar.Fallback>
+                </Avatar>
               ) : (
-                <Boxes3 width={20} height={20} />
+                <span className="notification-product-image" aria-hidden="true">
+                  {notification.product?.imageUrl ? (
+                    <img src={notification.product.imageUrl} alt="" />
+                  ) : (
+                    <Boxes3 width={20} height={20} />
+                  )}
+                </span>
               )}
-            </span>
-            <div className="notification-copy">
-              <div className="notification-title-row">
-                <strong>{notification.title}</strong>
-                {notification.type === 'SIIGO_PRODUCT_UPDATED' && (
-                  <>
-                    <Chip className="notification-siigo-chip" color="default">
-                      Siigo
-                    </Chip>
-                    {notification.product?.store && (
-                      <Chip
-                        className={`inventory-store-chip-${notification.product.store.toLowerCase()}`}
-                        color="default"
-                      >
-                        {notification.product.store === 'PALI' ? 'Pali' : 'Seratus'}
+              <div className="notification-copy">
+                <div className="notification-title-row">
+                  <strong>{customerPresentation?.title ?? notification.title}</strong>
+                  {notification.type === 'SIIGO_PRODUCT_UPDATED' && (
+                    <>
+                      <Chip className="notification-siigo-chip" color="default">
+                        Siigo
                       </Chip>
-                    )}
-                  </>
+                      {notification.product?.store && (
+                        <Chip
+                          className={`inventory-store-chip-${notification.product.store.toLowerCase()}`}
+                          color="default"
+                        >
+                          {notification.product.store === 'PALI' ? 'Pali' : 'Seratus'}
+                        </Chip>
+                      )}
+                    </>
+                  )}
+                  {customerPresentation?.provider && (
+                    <Chip
+                      className={`notification-provider-chip--${customerPresentation.provider.toLowerCase()}`}
+                      color="default"
+                    >
+                      {customerProviderLabels[customerPresentation.provider]}
+                    </Chip>
+                  )}
+                </div>
+                <p>{notificationDescription(notification)}</p>
+                {notificationChanges(notification) && (
+                  <p className="notification-changes">{notificationChanges(notification)}</p>
                 )}
-                {notification.type.startsWith('CUSTOMER_') && (
-                  <Chip
-                    color={
-                      notification.type === 'CUSTOMER_SYNC_ERROR'
-                        ? 'danger'
-                        : notification.type === 'CUSTOMER_SYNC_PARTIAL'
-                          ? 'warning'
-                          : 'default'
-                    }
-                  >
-                    Clientes
-                  </Chip>
-                )}
+                <time dateTime={notification.createdAt}>
+                  {notificationTime(notification.createdAt)}
+                </time>
               </div>
-              <p>{notificationDescription(notification)}</p>
-              {notificationChanges(notification) && (
-                <p className="notification-changes">{notificationChanges(notification)}</p>
+              {!notification.readAt && (
+                <Button
+                  className="notification-read-button"
+                  isIconOnly
+                  size="sm"
+                  variant="ghost"
+                  aria-label={`Marcar como leída: ${customerPresentation?.title ?? notification.title}`}
+                  isDisabled={markRead.isPending}
+                  onPress={() => markRead.mutate(notification.id)}
+                >
+                  <Check width={15} height={15} />
+                </Button>
               )}
-              <time dateTime={notification.createdAt}>
-                {notificationTime(notification.createdAt)}
-              </time>
-            </div>
-            {!notification.readAt && (
-              <Button
-                className="notification-read-button"
-                isIconOnly
-                size="sm"
-                variant="ghost"
-                aria-label={`Marcar como leída: ${notification.title}`}
-                isDisabled={markRead.isPending}
-                onPress={() => markRead.mutate(notification.id)}
-              >
-                <Check width={15} height={15} />
-              </Button>
-            )}
-          </article>
-        ))
+            </article>
+          );
+        })
       )}
     </div>
   );

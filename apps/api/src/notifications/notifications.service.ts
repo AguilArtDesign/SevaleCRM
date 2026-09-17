@@ -20,8 +20,6 @@ type CustomerSyncResult = {
   message: string | null;
 };
 
-const customerProviderLabels = { SIIGO: 'Siigo', SERATUS: 'Seratus', PALI: 'Pali' } as const;
-
 function permissionsFor(role: unknown): readonly Permission[] {
   const validRole = roles.find((candidate) => candidate === role);
   return validRole ? rolePermissions[validRole] : [];
@@ -103,103 +101,31 @@ export class NotificationsService {
     });
   }
 
-  createCustomerCreated(customer: Customer, results: CustomerSyncResult[]) {
-    return this.createCustomerSummary('CUSTOMER_CREATED', 'Cliente creado', customer, results);
-  }
-
-  createCustomerLocal(customer: Customer, siigoLinked: boolean) {
+  createCustomerLocal(customer: Customer) {
     return this.create({
       type: 'CUSTOMER_CREATED',
-      title: 'Cliente guardado localmente',
-      message: `${customer.displayName}\n${
-        siigoLinked
-          ? 'Vinculado con Siigo. Seratus y Pali continúan pendientes.'
-          : 'Siigo, Seratus y Pali continúan pendientes.'
-      }`,
-      customerId: customer.id,
-      requiredPermission: 'customers.read',
-    });
-  }
-
-  createCustomerUpdated(customer: Customer, results: CustomerSyncResult[]) {
-    return this.createCustomerSummary('CUSTOMER_UPDATED', 'Cliente actualizado', customer, results);
-  }
-
-  createCustomerUpdatedLocal(customer: Customer) {
-    return this.create({
-      type: 'CUSTOMER_UPDATED',
-      title: 'Cliente actualizado localmente',
-      message: `${customer.displayName}\nLas integraciones continúan pendientes de sincronización.`,
+      title: 'Cliente creado',
+      message: customer.displayName,
       customerId: customer.id,
       requiredPermission: 'customers.read',
     });
   }
 
   createCustomerRetry(customer: Customer, result: CustomerSyncResult) {
-    const label = customerProviderLabels[result.provider];
     return this.create({
-      type: result.status === 'SYNCED' ? 'CUSTOMER_RETRY_SUCCEEDED' : 'CUSTOMER_SYNC_ERROR',
-      title: result.status === 'SYNCED' ? 'Sincronización recuperada' : 'Error de sincronización',
-      message:
+      type:
         result.status === 'SYNCED'
-          ? `${customer.displayName}\n${label} volvió a estar sincronizado.`
-          : `${customer.displayName}\n${label} requiere atención.`,
+          ? `CUSTOMER_SYNCED_${result.provider}`
+          : `CUSTOMER_SYNC_ERROR_${result.provider}`,
+      title: result.status === 'SYNCED' ? 'Cliente sincronizado' : 'Error de sincronización',
+      message: customer.displayName,
       customerId: customer.id,
       requiredPermission: 'customers.read',
     });
   }
 
   createCustomerRetrySummary(customer: Customer, results: CustomerSyncResult[]) {
-    if (results.length === 1) return this.createCustomerRetry(customer, results[0]!);
-    const failed = results.filter((result) => result.status === 'ERROR');
-    const labels = failed.map((result) => customerProviderLabels[result.provider]).join(', ');
-    return this.create({
-      type:
-        failed.length === 0
-          ? 'CUSTOMER_RETRY_SUCCEEDED'
-          : failed.length === results.length
-            ? 'CUSTOMER_SYNC_ERROR'
-            : 'CUSTOMER_SYNC_PARTIAL',
-      title:
-        failed.length === 0
-          ? 'Sincronización recuperada'
-          : failed.length === results.length
-            ? 'Error de sincronización'
-            : 'Sincronización parcial',
-      message:
-        failed.length === 0
-          ? `${customer.displayName}\nLas integraciones pendientes volvieron a estar sincronizadas.`
-          : `${customer.displayName}\n${labels} ${failed.length === 1 ? 'requiere' : 'requieren'} atención.`,
-      customerId: customer.id,
-      requiredPermission: 'customers.read',
-    });
-  }
-
-  private createCustomerSummary(
-    successType: 'CUSTOMER_CREATED' | 'CUSTOMER_UPDATED',
-    successTitle: string,
-    customer: Customer,
-    results: CustomerSyncResult[],
-  ) {
-    const failed = results.filter((result) => result.status === 'ERROR');
-    if (failed.length === 0) {
-      return this.create({
-        type: successType,
-        title: successTitle,
-        message: `${customer.displayName}\nSiigo, Seratus y Pali están sincronizados.`,
-        customerId: customer.id,
-        requiredPermission: 'customers.read',
-      });
-    }
-    const labels = failed.map((result) => customerProviderLabels[result.provider]).join(', ');
-    return this.create({
-      type: failed.length === results.length ? 'CUSTOMER_SYNC_ERROR' : 'CUSTOMER_SYNC_PARTIAL',
-      title:
-        failed.length === results.length ? 'Error de sincronización' : 'Sincronización parcial',
-      message: `${customer.displayName}\n${labels} ${failed.length === 1 ? 'requiere' : 'requieren'} atención.`,
-      customerId: customer.id,
-      requiredPermission: 'customers.read',
-    });
+    return Promise.all(results.map((result) => this.createCustomerRetry(customer, result)));
   }
 
   private createProductUpdate(

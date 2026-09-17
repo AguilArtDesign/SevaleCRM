@@ -35,6 +35,7 @@ import { getPaginationItems, Pagination } from '../components/Pagination';
 import { Select } from '../components/Select';
 import { useCurrentUser } from '../users/useCurrentUser';
 import { CustomerForm } from './CustomerForm';
+import { customerAvatarClass, customerDisplayName, customerInitials } from './presentation';
 import { CustomerAutocomplete } from './CustomerAutocomplete';
 import { customersApi, type CustomerRecord } from './api';
 
@@ -105,35 +106,6 @@ const emptyValue = '--';
 
 function messageFrom(error: unknown) {
   return error instanceof Error ? error.message : 'No pudimos completar la solicitud.';
-}
-
-function capitalizeName(value: string) {
-  return value
-    .toLocaleLowerCase('es-CO')
-    .replace(
-      /(^|[\s'-])(\p{L})/gu,
-      (_, separator: string, letter: string) => `${separator}${letter.toLocaleUpperCase('es-CO')}`,
-    );
-}
-
-function customerDisplayName(customer: CustomerRecord) {
-  return customer.personType === 'PERSON'
-    ? capitalizeName(customer.displayName)
-    : customer.displayName;
-}
-
-function customerInitials(customer: CustomerRecord) {
-  const firstName = customer.firstName?.trim().split(/\s+/)[0];
-  const firstLastName = customer.lastName?.trim().split(/\s+/)[0];
-  const fallbackWords = customer.displayName.trim().split(/\s+/);
-  return (
-    firstName && firstLastName
-      ? `${firstName[0]}${firstLastName[0]}`
-      : fallbackWords
-          .slice(0, 2)
-          .map((word) => word[0])
-          .join('')
-  ).toLocaleUpperCase('es-CO');
 }
 
 function CustomerPhone({ phone, country }: { phone: string | null; country: string | null }) {
@@ -678,10 +650,7 @@ export function CustomersPage() {
                       onPointerDown={(event) => event.stopPropagation()}
                     >
                       <div className="customer-name-cell">
-                        <Avatar
-                          size="sm"
-                          className={`customer-table-avatar customer-table-avatar--${customer.id % 6}`}
-                        >
+                        <Avatar size="sm" className={customerAvatarClass(customer.id)}>
                           <Avatar.Fallback>{customerInitials(customer)}</Avatar.Fallback>
                         </Avatar>
                         <div>

@@ -264,10 +264,7 @@ export class CustomersService {
       for (const integration of customer.integrations) {
         this.realtime.emitCustomerIntegrationUpdated(customer, integration);
       }
-      await this.publishNotification(
-        this.notifications.createCustomerLocal(customer, Boolean(siigoMatch)),
-        'creación',
-      );
+      await this.publishNotification(this.notifications.createCustomerLocal(customer), 'creación');
       return serializeCustomer(customer);
     } catch (error) {
       if (isUniqueConstraintError(error)) {
@@ -331,10 +328,6 @@ export class CustomersService {
       for (const integration of customer.integrations) {
         this.realtime.emitCustomerIntegrationUpdated(customer, integration);
       }
-      await this.publishNotification(
-        this.notifications.createCustomerUpdatedLocal(customer),
-        'actualización',
-      );
       return serializeCustomer(customer);
     } catch (error) {
       if (isUniqueConstraintError(error)) {

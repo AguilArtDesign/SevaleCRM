@@ -16,6 +16,9 @@ export type NotificationRecord = {
   } | null;
   customerId: number | null;
   customer: {
+    personType: 'PERSON' | 'COMPANY';
+    firstName: string | null;
+    lastName: string | null;
     displayName: string;
     email: string;
   } | null;
