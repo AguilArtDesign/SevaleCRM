@@ -208,8 +208,11 @@ if (
   throw new Error('Cada tienda no utilizó sus propias credenciales WooCommerce.');
 }
 const payload = requestBody(seratusPost?.init?.body);
+const paliPayload = requestBody(paliPost?.init?.body);
 const billing = payload.billing as Record<string, unknown>;
 const metadata = payload.meta_data as Array<Record<string, unknown>>;
+const password = payload.password;
+const paliPassword = paliPayload.password;
 if (
   payload.username !== customer.documentNumber ||
   payload.email !== customer.email ||
@@ -220,10 +223,26 @@ if (
   billing.address_2 !== 'APTO 301' ||
   metadata.find((entry) => entry.key === 'billing_type_document')?.value !== '13' ||
   metadata.find((entry) => entry.key === 'billing_identification')?.value !== '13832081' ||
-  'password' in payload ||
   'shipping' in payload
 ) {
   throw new Error('WooCustomerMapper envió un payload distinto al contrato aprobado.');
+}
+if (
+  typeof password !== 'string' ||
+  password.length < 32 ||
+  !/[a-z]/.test(password) ||
+  !/[A-Z]/.test(password) ||
+  !/\d/.test(password) ||
+  !/[^A-Za-z0-9]/.test(password) ||
+  typeof paliPassword !== 'string' ||
+  password === paliPassword
+) {
+  throw new Error('La creación no generó una contraseña segura y diferente para cada tienda.');
+}
+for (const request of requests.filter((entry) => entry.init?.method === 'PUT')) {
+  if ('password' in requestBody(request.init?.body)) {
+    throw new Error('La actualización no debe cambiar la contraseña de WooCommerce.');
+  }
 }
 if (
   seratusPost?.init?.method !== 'POST' ||

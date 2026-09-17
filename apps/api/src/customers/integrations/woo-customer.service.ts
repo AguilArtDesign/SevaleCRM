@@ -1,4 +1,5 @@
 import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
+import { randomBytes } from 'node:crypto';
 import type { Store } from '../../generated/prisma/client.js';
 import {
   integrationGet,
@@ -16,6 +17,13 @@ import type { CustomerMappingSource } from '../mapping/customer-mapping.types.js
 import { WooCustomerMapper, type WooCustomerPayload } from '../mapping/woo-customer.mapper.js';
 
 type UnknownRecord = Record<string, unknown>;
+
+type WooCustomerCreatePayload = WooCustomerPayload & { password: string };
+
+function createCustomerPassword(): string {
+  // 192 bits of entropy plus every character class commonly required by WordPress.
+  return `${randomBytes(24).toString('base64url')}aA1!`;
+}
 
 export type WooCustomerReference = {
   id: string;
@@ -157,7 +165,10 @@ export class WooCustomerService {
     customer: CustomerMappingSource,
   ): Promise<WooCustomerReference> {
     const config = wooCommerceConfiguration(store);
-    const body = this.mapper.map(customer);
+    const body: WooCustomerCreatePayload = {
+      ...this.mapper.map(customer),
+      password: createCustomerPassword(),
+    };
     const response = await integrationPost(
       integrationUrl(config.apiUrl, 'customers'),
       wooCommerceAuthorizationHeaders(config),
