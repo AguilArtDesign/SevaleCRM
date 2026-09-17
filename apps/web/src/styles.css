@@ -107,6 +107,8 @@
 
 * {
   box-sizing: border-box;
+  scrollbar-width: var(--scrollbar-width);
+  scrollbar-color: var(--scrollbar-color);
 }
 
 html {
@@ -599,7 +601,7 @@ select {
 .notification-list {
   max-height: min(29rem, calc(100vh - 12rem));
   overflow-y: auto;
-  scrollbar-gutter: stable;
+  scrollbar-gutter: auto;
 }
 
 .notification-item {
@@ -1959,16 +1961,31 @@ select {
 }
 
 .customer-form-modal .modal__header,
-.customer-detail-modal .modal__header {
+.customer-detail-drawer .drawer__header {
   padding-bottom: 1rem;
   border-bottom: 1px solid var(--separator);
 }
 
 .customer-form-modal .modal__header p,
-.customer-detail-modal .modal__header p {
-  margin: 0.25rem 0 0;
+.customer-detail-drawer .drawer__header p {
   color: var(--muted);
   font-size: 0.82rem;
+}
+
+.customer-detail-drawer .drawer__heading {
+  font-size: 1.1rem;
+}
+
+.customer-detail-drawer.drawer__dialog {
+  width: min(32rem, calc(100vw - 2.5rem));
+  max-width: calc(100vw - 2.5rem);
+  height: calc(100dvh - 2.5rem);
+  margin: 1.25rem;
+  border-radius: min(2rem, calc(var(--radius) * 2.5));
+}
+
+.customer-detail-drawer .drawer__body {
+  padding-top: 1rem;
 }
 
 .customer-form-modal form {
@@ -2429,16 +2446,37 @@ select {
   border-radius: var(--field-radius);
 }
 
-.customer-detail-identity .customer-avatar {
-  width: 3rem;
-  height: 3rem;
-  border-radius: 0.9rem;
+.customer-detail-avatar {
+  flex: 0 0 auto;
+}
+
+.customer-detail-phone {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.customer-detail-phone img {
+  width: 1.3rem;
+  height: 0.9rem;
+  border-radius: 0.2rem;
+  object-fit: cover;
 }
 
 .customer-detail-identity span,
 .customer-detail-section p {
   color: var(--muted);
   font-size: 0.82rem;
+}
+
+.customer-detail-identity strong,
+.customer-detail-section dd,
+.customer-detail-section .customer-detail-address {
+  color: var(--foreground);
+}
+
+.customer-detail-section dl .customer-detail-address {
+  grid-column: 1 / -1;
 }
 
 .customer-detail-section p {
@@ -2475,10 +2513,9 @@ select {
 
 .customer-integration-card {
   display: grid;
-  padding: 0.75rem;
+  padding: 0.625rem 0.75rem;
   background: var(--surface-secondary);
   border-radius: var(--field-radius);
-  gap: 0.3rem;
 }
 
 .customer-integration-main,
@@ -2496,16 +2533,15 @@ select {
   gap: 0.5rem;
 }
 
-.customer-integration-card p,
-.customer-integration-card > span {
-  margin: 0;
-  color: var(--muted);
-  font-size: 0.75rem;
-  line-height: 1.35;
+.customer-integration-main strong {
+  color: var(--foreground);
+  font-weight: 500;
 }
 
-.customer-integration-card > span {
-  font-size: 0.7rem;
+.customer-integration-date {
+  color: var(--muted);
+  font-size: 0.72rem;
+  line-height: 1.35;
 }
 
 @media (max-width: 960px) {

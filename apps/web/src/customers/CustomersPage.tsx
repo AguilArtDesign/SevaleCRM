@@ -7,11 +7,11 @@ import {
   Avatar,
   Button,
   Checkbox,
+  Drawer,
   Dropdown,
   EmptyState,
   Label,
   ListBox,
-  Modal,
   SearchField,
   Separator,
   Spinner,
@@ -108,7 +108,15 @@ function messageFrom(error: unknown) {
   return error instanceof Error ? error.message : 'No pudimos completar la solicitud.';
 }
 
-function CustomerPhone({ phone, country }: { phone: string | null; country: string | null }) {
+function CustomerPhone({
+  phone,
+  country,
+  showFlag = false,
+}: {
+  phone: string | null;
+  country: string | null;
+  showFlag?: boolean;
+}) {
   const [formatted, setFormatted] = useState(phone || emptyValue);
 
   useEffect(() => {
@@ -131,7 +139,14 @@ function CustomerPhone({ phone, country }: { phone: string | null; country: stri
     };
   }, [country, phone]);
 
-  return <strong className="customer-phone-cell">{formatted}</strong>;
+  if (!showFlag) return <strong className="customer-phone-cell">{formatted}</strong>;
+
+  return (
+    <span className="customer-detail-phone">
+      {phone && country && <img src={countryFlagPath(country)} alt="" />}
+      <strong className="customer-phone-cell">{formatted}</strong>
+    </span>
+  );
 }
 
 function dateTime(value: string | null) {
@@ -169,7 +184,9 @@ function CustomerDetail({
   return (
     <div className="customer-detail">
       <section className="customer-detail-identity">
-        <span className="customer-avatar">{customer.displayName.slice(0, 1).toUpperCase()}</span>
+        <Avatar size="md" className={`customer-detail-avatar ${customerAvatarClass(customer.id)}`}>
+          <Avatar.Fallback>{customerInitials(customer)}</Avatar.Fallback>
+        </Avatar>
         <div>
           <strong>{customerDisplayName(customer)}</strong>
           <span>{customer.email || emptyValue}</span>
@@ -179,51 +196,71 @@ function CustomerDetail({
         <h3>Información personal</h3>
         <dl>
           <div>
-            <dt>Documento</dt>
+            <dt>{documentLabels.get(customer.documentType) ?? customer.documentType}</dt>
             <dd>
-              {customer.documentType} · {customer.documentNumber}
-              {customer.checkDigit ? `-${customer.checkDigit}` : ''}
+              {customer.documentNumber}
+              {customer.personType === 'COMPANY' && customer.checkDigit
+                ? `-${customer.checkDigit}`
+                : ''}
             </dd>
           </div>
           <div>
             <dt>Tipo</dt>
-            <dd>{customer.personType === 'PERSON' ? 'Persona natural' : 'Empresa'}</dd>
+            <dd>{customer.personType === 'PERSON' ? 'Persona' : 'Empresa'}</dd>
           </div>
           <div>
             <dt>Teléfono</dt>
-            <dd>{customer.phone || emptyValue}</dd>
+            <dd>
+              <CustomerPhone phone={customer.phone} country={customer.country} showFlag />
+            </dd>
           </div>
           <div>
             <dt>Estado</dt>
-            <dd>{customer.active ? 'Activo' : 'Inactivo'}</dd>
+            <dd>
+              <Chip color={customer.active ? 'success' : 'danger'}>
+                {customer.active ? 'Activo' : 'Inactivo'}
+              </Chip>
+            </dd>
+          </div>
+          <div className="customer-detail-address">
+            <dt>Dirección</dt>
+            <dd>
+              {[
+                customer.addressLine1,
+                customer.addressLine2,
+                customer.location.cityName,
+                customer.location.regionName,
+                customer.postalCode,
+                customer.location.countryName,
+              ]
+                .filter(Boolean)
+                .join(', ') || emptyValue}
+            </dd>
           </div>
         </dl>
-      </section>
-      <section className="customer-detail-section">
-        <h3>Dirección</h3>
-        <p>
-          {customer.addressLine1 || emptyValue}
-          {customer.addressLine2 ? `, ${customer.addressLine2}` : ''}
-        </p>
-        <p>
-          {[customer.location.cityName, customer.location.regionName, customer.location.countryName]
-            .filter(Boolean)
-            .join(', ') || emptyValue}
-          {customer.postalCode ? ` · ${customer.postalCode}` : ''}
-        </p>
       </section>
       <section className="customer-detail-section">
         <h3>Integraciones</h3>
         <div className="customer-integrations">
           {customer.integrations.map((integration) => {
             const isRetrying = retryingProviders.has(integration.provider);
+            const activity =
+              integration.status === 'SYNCED' && integration.lastSyncedAt
+                ? `Última sincronización: ${dateTime(integration.lastSyncedAt)}`
+                : integration.lastAttemptAt
+                  ? `Último intento: ${dateTime(integration.lastAttemptAt)}`
+                  : integration.lastSyncedAt
+                    ? `Última sincronización: ${dateTime(integration.lastSyncedAt)}`
+                    : 'Sin actividad de sincronización.';
             return (
               <article key={integration.provider} className="customer-integration-card">
                 <div className="customer-integration-main">
                   <div>
                     <strong>{providerLabels[integration.provider]}</strong>
                     <Chip color={integrationMeta[integration.status].color}>
-                      {integrationMeta[integration.status].label}
+                      {integration.status === 'ERROR'
+                        ? 'Error'
+                        : integrationMeta[integration.status].label}
                     </Chip>
                   </div>
                   {canRetry && integration.status !== 'SYNCED' && (
@@ -248,18 +285,7 @@ function CustomerDetail({
                     </Button>
                   )}
                 </div>
-                <p>
-                  {integration.status === 'ERROR'
-                    ? integration.lastErrorMessage || 'La integración no pudo completarse.'
-                    : integration.status === 'SYNCED'
-                      ? `Última sincronización: ${dateTime(integration.lastSyncedAt)}`
-                      : integration.externalId
-                        ? 'Esta integración está pendiente de sincronización.'
-                        : `El cliente todavía no está creado en ${providerLabels[integration.provider]}.`}
-                </p>
-                {integration.status === 'ERROR' && integration.lastAttemptAt && (
-                  <span>Último intento: {dateTime(integration.lastAttemptAt)}</span>
-                )}
+                <span className="customer-integration-date">{activity}</span>
               </article>
             );
           })}
@@ -885,18 +911,18 @@ export function CustomersPage() {
         />
       )}
 
-      <Modal isOpen={selectedId !== null} onOpenChange={(open) => !open && setSelectedId(null)}>
-        <Modal.Backdrop>
-          <Modal.Container size="md" placement="center" scroll="inside">
-            <Modal.Dialog className="customer-detail-modal">
-              <Modal.CloseTrigger aria-label="Cerrar detalle" />
-              <Modal.Header>
+      <Drawer isOpen={selectedId !== null} onOpenChange={(open) => !open && setSelectedId(null)}>
+        <Drawer.Backdrop>
+          <Drawer.Content placement="right">
+            <Drawer.Dialog className="customer-detail-drawer">
+              <Drawer.CloseTrigger aria-label="Cerrar detalle" />
+              <Drawer.Header>
                 <div>
-                  <Modal.Heading>Detalle del cliente</Modal.Heading>
+                  <Drawer.Heading>Detalle del cliente</Drawer.Heading>
                   <p>Información local e integraciones</p>
                 </div>
-              </Modal.Header>
-              <Modal.Body>
+              </Drawer.Header>
+              <Drawer.Body>
                 {detailQuery.isPending ? (
                   <div className="customers-empty">
                     <Spinner />
@@ -916,11 +942,11 @@ export function CustomersPage() {
                     onRetry={(provider) => void retryProvider(provider)}
                   />
                 ) : null}
-              </Modal.Body>
-            </Modal.Dialog>
-          </Modal.Container>
-        </Modal.Backdrop>
-      </Modal>
+              </Drawer.Body>
+            </Drawer.Dialog>
+          </Drawer.Content>
+        </Drawer.Backdrop>
+      </Drawer>
 
       {isAdmin && (
         <AlertDialog
