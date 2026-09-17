@@ -9,9 +9,11 @@ import {
   Radio,
   RadioGroup,
   SearchField,
+  Spinner,
   Switch,
   TextField,
 } from '@heroui/react';
+import { PersonPlus } from '@gravity-ui/icons';
 import {
   createCustomerSchema,
   customerDocumentTypes,
@@ -286,8 +288,8 @@ export function CustomerForm({
                 <Modal.Heading>{isEdit ? 'Editar cliente' : 'Crear cliente'}</Modal.Heading>
                 <p>
                   {isEdit
-                    ? 'Los cambios se guardarán localmente hasta que decidas sincronizarlos.'
-                    : 'El alta se guardará solo en el CRM, sin crear clientes externos.'}
+                    ? 'Actualiza la información del cliente.'
+                    : 'Registra al cliente para sincronizar.'}
                 </p>
               </div>
             </Modal.Header>
@@ -785,13 +787,22 @@ export function CustomerForm({
                         hasUnresolvedConflict))
                   }
                 >
-                  {isSubmitting
-                    ? isEdit
-                      ? 'Guardando'
-                      : 'Creando'
-                    : isEdit
-                      ? 'Guardar cambios'
-                      : 'Crear cliente'}
+                  {({ isPending }) => (
+                    <>
+                      {isPending ? (
+                        <Spinner color="current" size="sm" />
+                      ) : !isEdit ? (
+                        <PersonPlus width={17} height={17} />
+                      ) : null}
+                      {isPending
+                        ? isEdit
+                          ? 'Guardando'
+                          : 'Creando'
+                        : isEdit
+                          ? 'Guardar cambios'
+                          : 'Crear cliente'}
+                    </>
+                  )}
                 </Button>
               </Modal.Footer>
             </form>

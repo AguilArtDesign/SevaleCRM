@@ -33,6 +33,32 @@ function applyHeroUiCountryCheck(input: HTMLInputElement) {
   check.innerHTML = HERO_UI_COUNTRY_CHECK;
 }
 
+function applyHeroUiCountryArrow(input: HTMLInputElement) {
+  const arrow = input.closest('.iti')?.querySelector<HTMLElement>('.iti__arrow');
+  if (!arrow || arrow.matches('[data-slot="autocomplete-default-indicator"]')) return;
+
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('aria-hidden', 'true');
+  svg.setAttribute('data-slot', 'autocomplete-default-indicator');
+  svg.setAttribute('fill', 'none');
+  svg.setAttribute('height', '16');
+  svg.setAttribute('role', 'presentation');
+  svg.setAttribute('viewBox', '0 0 16 16');
+  svg.setAttribute('width', '16');
+  svg.setAttribute('class', 'iti__arrow customer-phone-country-indicator');
+
+  const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  path.setAttribute('clip-rule', 'evenodd');
+  path.setAttribute(
+    'd',
+    'M2.97 5.47a.75.75 0 0 1 1.06 0L8 9.44l3.97-3.97a.75.75 0 1 1 1.06 1.06l-4.5 4.5a.75.75 0 0 1-1.06 0l-4.5-4.5a.75.75 0 0 1 0-1.06',
+  );
+  path.setAttribute('fill', 'currentColor');
+  path.setAttribute('fill-rule', 'evenodd');
+  svg.appendChild(path);
+  arrow.replaceWith(svg);
+}
+
 export function PhoneInput({
   value,
   country,
@@ -62,6 +88,7 @@ export function PhoneInput({
     instanceRef.current = instance;
     if (value) instance.setNumber(value);
     applyHeroUiCountryCheck(input);
+    applyHeroUiCountryArrow(input);
 
     const syncValue = () =>
       onChangeRef.current(
@@ -69,10 +96,21 @@ export function PhoneInput({
       );
     const syncCountry = () => {
       applyHeroUiCountryCheck(input);
+      applyHeroUiCountryArrow(input);
       syncValue();
+    };
+    const closeCountrySelectorFromOutside = (event: PointerEvent) => {
+      if (!(event.target instanceof Node)) return;
+      const container = input.closest('.iti');
+      const selector = container?.querySelector('.iti__country-selector');
+      const trigger = container?.querySelector('.iti__selected-country');
+      if (!selector || selector.contains(event.target) || trigger?.contains(event.target)) return;
+
+      instance.closeCountrySelector();
     };
     input.addEventListener('input', syncValue);
     input.addEventListener('countrychange', syncCountry);
+    document.addEventListener('pointerdown', closeCountrySelectorFromOutside, true);
     void instance.promise.then(() => {
       if (instanceRef.current !== instance) return;
       utilsReadyRef.current = true;
@@ -81,6 +119,7 @@ export function PhoneInput({
     return () => {
       input.removeEventListener('input', syncValue);
       input.removeEventListener('countrychange', syncCountry);
+      document.removeEventListener('pointerdown', closeCountrySelectorFromOutside, true);
       instance.destroy();
       instanceRef.current = null;
       utilsReadyRef.current = false;
@@ -89,7 +128,10 @@ export function PhoneInput({
 
   useEffect(() => {
     instanceRef.current?.setSelectedCountry(supportedCountry(country));
-    if (inputRef.current) applyHeroUiCountryCheck(inputRef.current);
+    if (inputRef.current) {
+      applyHeroUiCountryCheck(inputRef.current);
+      applyHeroUiCountryArrow(inputRef.current);
+    }
   }, [country]);
 
   useEffect(() => {
