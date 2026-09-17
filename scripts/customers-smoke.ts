@@ -31,8 +31,10 @@ const userIds: string[] = [];
 const customerIds: number[] = [];
 const siigoExternalId = randomUUID();
 const incompleteSiigoExternalId = randomUUID();
+const commercialSiigoExternalId = randomUUID();
 const documentNumber = String(Date.now()).slice(-12);
 const incompleteDocumentNumber = String(Number(documentNumber) + 1);
+const commercialDocumentNumber = String(Number(documentNumber) + 2);
 let siigoCreateCalls = 0;
 let wooCreateCalls = 0;
 let siigoUpdateCalls = 0;
@@ -88,7 +90,9 @@ siigoCustomers.lookupCustomer = (identification) =>
             id:
               identification === incompleteDocumentNumber
                 ? incompleteSiigoExternalId
-                : siigoExternalId,
+                : identification === commercialDocumentNumber
+                  ? commercialSiigoExternalId
+                  : siigoExternalId,
             identification,
             personType: 'Person',
           },
@@ -145,9 +149,13 @@ wooCustomers.findCustomerByDocument = (store, identification) =>
             ? store === 'SERATUS'
               ? '31002'
               : '41002'
-            : store === 'SERATUS'
-              ? '31001'
-              : '41001',
+            : identification === commercialDocumentNumber
+              ? store === 'SERATUS'
+                ? '31003'
+                : '41003'
+              : store === 'SERATUS'
+                ? '31001'
+                : '41001',
           identification,
           `marcos-${runId}@example.invalid`,
         ),
@@ -264,7 +272,7 @@ try {
   expectStatus(await api('/api/customers', commercialCookie), 200, 'Listado comercial');
   expectStatus(
     await api(`/api/customers/resolve?identification=${documentNumber}`, commercialCookie),
-    403,
+    200,
     'Consulta Siigo comercial',
   );
 
@@ -355,9 +363,18 @@ try {
 
   const commercialCreate = await api('/api/customers', commercialCookie, {
     method: 'POST',
-    body: JSON.stringify(payload),
+    body: JSON.stringify({
+      ...payload,
+      documentNumber: commercialDocumentNumber,
+      firstName: 'Cliente',
+      lastName: 'Comercial',
+      displayName: `Cliente Comercial ${commercialDocumentNumber}`,
+      email: `commercial-${commercialDocumentNumber}@example.invalid`,
+    }),
   });
-  expectStatus(commercialCreate, 403, 'Creación comercial');
+  expectStatus(commercialCreate, 201, 'Creación comercial');
+  const commercialCustomer = (await commercialCreate.json()) as { id: number };
+  customerIds.push(commercialCustomer.id);
 
   const invalidLocation = await api('/api/customers', adminCookie, {
     method: 'POST',
@@ -496,7 +513,7 @@ try {
       method: 'PATCH',
       body: JSON.stringify({ phone: '+573001112233' }),
     }),
-    403,
+    200,
     'Edición comercial',
   );
   expectStatus(
@@ -547,7 +564,7 @@ try {
       method: 'POST',
       body: JSON.stringify({ provider: 'PALI' }),
     }),
-    403,
+    201,
     'Reintento comercial',
   );
   expectStatus(

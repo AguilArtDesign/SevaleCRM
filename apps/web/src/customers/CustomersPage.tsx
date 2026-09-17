@@ -303,6 +303,7 @@ export function CustomersPage() {
   const queryClient = useQueryClient();
   const { user } = useCurrentUser();
   const isAdmin = user?.role === 'ADMIN';
+  const canManageCustomers = isAdmin || user?.role === 'COMMERCIAL';
   const [searchDraft, setSearchDraft] = useState('');
   const [filters, setFilters] = useState<Filters>(initialFilters);
   const [formOpen, setFormOpen] = useState(false);
@@ -518,7 +519,7 @@ export function CustomersPage() {
           <h2>Clientes</h2>
           <Chip>{result?.pagination.total ?? 0}</Chip>
         </div>
-        {isAdmin && (
+        {canManageCustomers && (
           <Button variant="primary" onPress={openCreate}>
             <PersonPlus width={17} height={17} />
             Crear cliente
@@ -757,7 +758,8 @@ export function CustomersPage() {
                               aria-label={`Acciones para ${customerDisplayName(customer)}`}
                               onAction={(key) => {
                                 if (String(key) === 'view') setSelectedId(customer.id);
-                                if (String(key) === 'edit' && isAdmin) openEdit(customer);
+                                if (String(key) === 'edit' && canManageCustomers)
+                                  openEdit(customer);
                                 if (String(key) === 'delete' && isAdmin) {
                                   setDeleteTarget(customer);
                                 }
@@ -768,7 +770,7 @@ export function CustomersPage() {
                                   <Eye className="size-4 shrink-0 text-muted" aria-hidden="true" />
                                   <Label>Ver cliente</Label>
                                 </Dropdown.Item>
-                                {isAdmin && (
+                                {canManageCustomers && (
                                   <Dropdown.Item id="edit" textValue="Editar cliente">
                                     <Pencil
                                       className="size-4 shrink-0 text-muted"
@@ -891,7 +893,7 @@ export function CustomersPage() {
         </Table>
       )}
 
-      {isAdmin && (
+      {canManageCustomers && (
         <CustomerForm
           key={`${editing?.id ?? 'new'}-${formOpen}`}
           isOpen={formOpen}
@@ -937,7 +939,7 @@ export function CustomersPage() {
                 ) : detailQuery.data ? (
                   <CustomerDetail
                     customer={detailQuery.data}
-                    canRetry={isAdmin}
+                    canRetry={canManageCustomers}
                     retryingProviders={retryingProviders}
                     onRetry={(provider) => void retryProvider(provider)}
                   />

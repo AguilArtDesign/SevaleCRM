@@ -33,8 +33,11 @@ try {
     !rolePermissions.ADMIN.includes('customers.sync') ||
     !rolePermissions.ADMIN.includes('customers.delete') ||
     !rolePermissions.COMMERCIAL.includes('customers.read') ||
+    !rolePermissions.COMMERCIAL.includes('customers.create') ||
+    !rolePermissions.COMMERCIAL.includes('customers.update') ||
+    !rolePermissions.COMMERCIAL.includes('customers.sync') ||
     rolePermissions.COMMERCIAL.some(
-      (permission) => permission === ('customers.create' as string),
+      (permission) => permission === ('customers.delete' as string),
     ) ||
     rolePermissions.LOGISTICS.some((permission) => permission.startsWith('customers.'))
   ) {

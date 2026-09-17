@@ -22,6 +22,12 @@ export type Permission = (typeof permissions)[number];
 
 export const rolePermissions = {
   ADMIN: permissions,
-  COMMERCIAL: ['inventory.read', 'customers.read'],
+  COMMERCIAL: [
+    'inventory.read',
+    'customers.read',
+    'customers.create',
+    'customers.update',
+    'customers.sync',
+  ],
   LOGISTICS: ['inventory.read'],
 } as const satisfies Record<Role, readonly Permission[]>;
