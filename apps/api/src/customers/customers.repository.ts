@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import type { CustomerListQuery } from '@sevale/validation';
-import type { CityMatch } from '@sevale/shared';
+import type { CustomerCityMatch } from '@sevale/shared';
 import { PrismaService } from '../database/prisma.service.js';
 import type { Prisma } from '../generated/prisma/client.js';
 
@@ -18,7 +18,7 @@ export class CustomersRepository {
 
   list(
     { search, country, page, pageSize, sort, order }: CustomerListQuery,
-    cityMatches: CityMatch[],
+    cityMatches: CustomerCityMatch[],
   ) {
     const where: Prisma.CustomerWhereInput = {
       deletedAt: null,
@@ -33,6 +33,7 @@ export class CustomersRepository {
               { documentNumber: { contains: search } },
               { email: { contains: search } },
               { phone: { contains: search } },
+              { cityName: { contains: search } },
               ...cityMatches.map(({ country: cityCountry, cityCode }) => ({
                 country: cityCountry,
                 cityCode,

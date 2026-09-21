@@ -155,8 +155,8 @@ if (
   lookup.prefill.firstName !== 'YOHANDER DAVID' ||
   lookup.prefill.lastName !== 'AGUILAR GUEVARA' ||
   lookup.prefill.country !== 'CO' ||
-  lookup.prefill.region !== 'CO-ANT' ||
-  lookup.prefill.cityCode !== '05001' ||
+  lookup.prefill.region !== null ||
+  lookup.prefill.cityCode !== null ||
   lookup.prefill.phone !== '+573044251788'
 ) {
   throw new Error('lookupCustomer no normalizó el formulario recibido desde Siigo.');
@@ -176,6 +176,7 @@ const company: CreateCustomerInput = {
   country: 'CO',
   region: 'CO-ATL',
   cityCode: '08001',
+  cityName: null,
   postalCode: null,
   addressLine1: 'Calle 16 No 45 85',
   addressLine2: null,

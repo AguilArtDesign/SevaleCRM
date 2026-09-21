@@ -8,6 +8,7 @@ import {
   resolveCity,
 } from '../packages/shared/src/index.js';
 import { PrismaService } from '../apps/api/src/database/prisma.service.js';
+import { CustomerIntegrationsRepository } from '../apps/api/src/customers/customer-integrations.repository.js';
 import {
   CustomerIntegrationProvider,
   CustomerIntegrationStatus,
@@ -15,6 +16,7 @@ import {
 } from '../apps/api/src/generated/prisma/client.js';
 
 const prisma = new PrismaService();
+const integrationsRepository = new CustomerIntegrationsRepository(prisma);
 await prisma.$connect();
 let customerId: number | null = null;
 const documentNumber = `SMOKE-${Date.now()}`;
@@ -115,6 +117,46 @@ try {
     throw new Error('La integración no conservó el identificador externo de Siigo.');
   }
 
+  await prisma.customerIntegration.update({
+    where: {
+      customerId_provider: {
+        customerId: customer.id,
+        provider: CustomerIntegrationProvider.SIIGO,
+      },
+    },
+    data: { externalData: { preserved: { value: true } } },
+  });
+  await integrationsRepository.mergeExternalData(customer.id, CustomerIntegrationProvider.SIIGO, {
+    siigoLocation: {
+      source: { country: 'PA', region: 'PA-8', city: 'Ciudad de Panamá' },
+      target: {
+        countryCode: 'Pa',
+        stateCode: '05',
+        stateName: 'Ciudad de panamá',
+        cityCode: '0501',
+        cityName: 'Ciudad de panamá',
+      },
+    },
+  });
+  const mergedIntegration = await prisma.customerIntegration.findUniqueOrThrow({
+    where: {
+      customerId_provider: {
+        customerId: customer.id,
+        provider: CustomerIntegrationProvider.SIIGO,
+      },
+    },
+  });
+  const mergedExternalData = mergedIntegration.externalData as {
+    preserved?: { value?: boolean };
+    siigoLocation?: { target?: { cityCode?: string } };
+  };
+  if (
+    mergedExternalData.preserved?.value !== true ||
+    mergedExternalData.siigoLocation?.target?.cityCode !== '0501'
+  ) {
+    throw new Error('El merge de external_data reemplazó información previa de la integración.');
+  }
+
   let duplicateRejected = false;
   try {
     await prisma.customer.create({
@@ -138,8 +180,26 @@ try {
     throw new Error('La base de datos permitió duplicar el tipo y número de documento.');
   }
 
+  const international = await prisma.customer.update({
+    where: { id: customer.id },
+    data: {
+      country: 'PA',
+      region: 'PA-8',
+      cityCode: null,
+      cityName: 'Ciudad de Panamá',
+    },
+  });
+  if (
+    international.country !== 'PA' ||
+    international.region !== 'PA-8' ||
+    international.cityCode !== null ||
+    international.cityName !== 'Ciudad de Panamá'
+  ) {
+    throw new Error('El cliente internacional no conservó la ciudad libre esperada.');
+  }
+
   process.stdout.write(
-    'Customers model smoke: RBAC, locations, mappings, customer model, integrations and duplicate protection checks passed.\n',
+    'Customers model smoke: RBAC, locations, international city, integrations and duplicate protection checks passed.\n',
   );
 } finally {
   if (customerId !== null) await prisma.customer.delete({ where: { id: customerId } });

@@ -16,6 +16,13 @@ export function normalizePhoneE164(phone: string, countryCode: string): string |
   return phoneUtils.isValidNumber(formatted, iso2) ? formatted : null;
 }
 
+export function formatPhoneInternational(phone: string, countryCode: string): string | null {
+  const iso2 = countryIso2(countryCode);
+  const normalized = normalizePhoneE164(phone, countryCode);
+  if (!iso2 || !normalized) return null;
+  return phoneUtils.formatNumber(normalized, iso2, 'INTERNATIONAL') || null;
+}
+
 export function mapPhoneToSiigo(phone: string, countryCode: string): SiigoPhone | null {
   const iso2 = countryIso2(countryCode);
   const normalized = normalizePhoneE164(phone, countryCode);

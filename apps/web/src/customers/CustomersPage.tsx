@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { Fragment, useEffect, useRef, useState } from 'react';
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { Selection } from '@heroui/react';
 import {
@@ -22,14 +22,27 @@ import {
   ArrowRotateRight,
   EllipsisVertical,
   Eye,
+  PaperPlane,
   Pencil,
   PersonMagnifier,
   PersonPlus,
   TrashBin,
   Xmark,
 } from '@gravity-ui/icons';
-import { countryFlagPath, getCountries } from '@sevale/shared';
-import { customerDocumentTypes, type CreateCustomerInput } from '@sevale/validation';
+import {
+  customerCountryFlagPath,
+  getCustomerCountries,
+  getCustomerSiigoCities,
+  getCustomerSiigoStates,
+  isCustomerSiigoLocationMappingCurrent,
+  readCustomerSiigoLocationMapping,
+  resolveCustomerSiigoCountryByWooCode,
+} from '@sevale/shared';
+import {
+  customerDocumentTypes,
+  type CreateCustomerInput,
+  type CustomerSiigoLocationInput,
+} from '@sevale/validation';
 import { Chip } from '../components/Chip';
 import { getPaginationItems, Pagination } from '../components/Pagination';
 import { Select } from '../components/Select';
@@ -143,7 +156,7 @@ function CustomerPhone({
 
   return (
     <span className="customer-detail-phone">
-      {phone && country && <img src={countryFlagPath(country)} alt="" />}
+      {phone && country && <img src={customerCountryFlagPath(country)} alt="" />}
       <strong className="customer-phone-cell">{formatted}</strong>
     </span>
   );
@@ -175,11 +188,25 @@ function CustomerDetail({
   canRetry,
   retryingProviders,
   onRetry,
+  siigoResolution,
+  onSiigoStateChange,
+  onSiigoCityChange,
+  onConfirmSiigoLocation,
 }: {
   customer: CustomerRecord;
   canRetry: boolean;
   retryingProviders: ReadonlySet<CustomerProvider>;
   onRetry: (provider: CustomerProvider) => void;
+  siigoResolution: {
+    stateCode: string;
+    cityCode: string;
+    states: Array<{ id: string; name: string }>;
+    cities: Array<{ id: string; name: string }>;
+    error: string;
+  } | null;
+  onSiigoStateChange: (stateCode: string) => void;
+  onSiigoCityChange: (cityCode: string) => void;
+  onConfirmSiigoLocation: () => void;
 }) {
   return (
     <div className="customer-detail">
@@ -253,40 +280,81 @@ function CustomerDetail({
                     ? `Última sincronización: ${dateTime(integration.lastSyncedAt)}`
                     : 'Sin actividad de sincronización.';
             return (
-              <article key={integration.provider} className="customer-integration-card">
-                <div className="customer-integration-main">
-                  <div>
-                    <strong>{providerLabels[integration.provider]}</strong>
-                    <Chip color={integrationMeta[integration.status].color}>
-                      {integration.status === 'ERROR'
-                        ? 'Error'
-                        : integrationMeta[integration.status].label}
-                    </Chip>
+              <Fragment key={integration.provider}>
+                <article className="customer-integration-card">
+                  <div className="customer-integration-main">
+                    <div>
+                      <strong>{providerLabels[integration.provider]}</strong>
+                      <Chip color={integrationMeta[integration.status].color}>
+                        {integration.status === 'ERROR'
+                          ? 'Error'
+                          : integrationMeta[integration.status].label}
+                      </Chip>
+                    </div>
+                    {canRetry && integration.status !== 'SYNCED' && (
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        isIconOnly
+                        isPending={isRetrying}
+                        isDisabled={isRetrying}
+                        aria-label={
+                          integration.externalId
+                            ? `Reintentar en ${providerLabels[integration.provider]}`
+                            : `Crear en ${providerLabels[integration.provider]}`
+                        }
+                        onPress={() => onRetry(integration.provider)}
+                      >
+                        {integration.externalId ? (
+                          <ArrowRotateRight width={15} height={15} />
+                        ) : (
+                          <PersonPlus width={15} height={15} />
+                        )}
+                      </Button>
+                    )}
                   </div>
-                  {canRetry && integration.status !== 'SYNCED' && (
+                  <span className="customer-integration-date">{activity}</span>
+                </article>
+                {integration.provider === 'SIIGO' && siigoResolution && (
+                  <article className="customer-siigo-location-card">
+                    <CustomerAutocomplete
+                      ariaLabel="Región o provincia Siigo"
+                      label="Región / Provincia"
+                      placeholder="Seleccionar"
+                      value={siigoResolution.stateCode}
+                      options={siigoResolution.states}
+                      onChange={onSiigoStateChange}
+                    />
+                    <CustomerAutocomplete
+                      key={`siigo-city:${siigoResolution.stateCode}`}
+                      ariaLabel="Ciudad Siigo"
+                      label="Ciudad"
+                      placeholder="Seleccionar"
+                      value={siigoResolution.cityCode}
+                      options={siigoResolution.cities}
+                      isDisabled={!siigoResolution.stateCode}
+                      onChange={onSiigoCityChange}
+                    />
                     <Button
-                      size="sm"
-                      variant="secondary"
+                      variant="primary"
                       isIconOnly
                       isPending={isRetrying}
                       isDisabled={isRetrying}
                       aria-label={
-                        integration.externalId
-                          ? `Reintentar en ${providerLabels[integration.provider]}`
-                          : `Crear en ${providerLabels[integration.provider]}`
+                        integration.externalId ? 'Sincronizar con Siigo' : 'Crear en Siigo'
                       }
-                      onPress={() => onRetry(integration.provider)}
+                      onPress={onConfirmSiigoLocation}
                     >
-                      {integration.externalId ? (
-                        <ArrowRotateRight width={15} height={15} />
-                      ) : (
-                        <PersonPlus width={15} height={15} />
-                      )}
+                      <PaperPlane width={16} height={16} />
                     </Button>
-                  )}
-                </div>
-                <span className="customer-integration-date">{activity}</span>
-              </article>
+                    {siigoResolution.error && (
+                      <span className="customer-siigo-location-error" role="alert">
+                        {siigoResolution.error}
+                      </span>
+                    )}
+                  </article>
+                )}
+              </Fragment>
             );
           })}
         </div>
@@ -313,6 +381,10 @@ export function CustomersPage() {
   const [deleteTarget, setDeleteTarget] = useState<CustomerRecord | null>(null);
   const retryingProvidersRef = useRef(new Set<CustomerProvider>());
   const [retryingProviders, setRetryingProviders] = useState<Set<CustomerProvider>>(new Set());
+  const [siigoResolutionTarget, setSiigoResolutionTarget] = useState<CustomerRecord | null>(null);
+  const [siigoStateCode, setSiigoStateCode] = useState('');
+  const [siigoCityCode, setSiigoCityCode] = useState('');
+  const [siigoResolutionError, setSiigoResolutionError] = useState('');
 
   const customersQuery = useQuery({
     queryKey: ['customers', filters],
@@ -335,8 +407,15 @@ export function CustomersPage() {
     },
   });
   const retryIntegration = useMutation({
-    mutationFn: ({ id, provider }: { id: number; provider: CustomerProvider }) =>
-      customersApi.sync(id, provider),
+    mutationFn: ({
+      id,
+      provider,
+      siigoLocation,
+    }: {
+      id: number;
+      provider: CustomerProvider;
+      siigoLocation?: CustomerSiigoLocationInput;
+    }) => customersApi.sync(id, provider, siigoLocation),
     onSuccess: async (customer) => {
       queryClient.setQueryData(['customers', 'detail', customer.id], customer);
       await queryClient.invalidateQueries({ queryKey: ['customers'] });
@@ -434,9 +513,12 @@ export function CustomersPage() {
       throw error;
     }
   };
-  const retryProvider = async (provider: CustomerProvider) => {
-    if (!detailQuery.data || retryingProvidersRef.current.has(provider)) return;
-    const customer = detailQuery.data;
+  const synchronizeProvider = async (
+    customer: CustomerRecord,
+    provider: CustomerProvider,
+    siigoLocation?: CustomerSiigoLocationInput,
+  ): Promise<boolean> => {
+    if (retryingProvidersRef.current.has(provider)) return false;
     const providerLabel = providerLabels[provider];
     retryingProvidersRef.current.add(provider);
     setRetryingProviders(new Set(retryingProvidersRef.current));
@@ -449,7 +531,11 @@ export function CustomersPage() {
       { isLoading: true, timeout: 0 },
     );
     try {
-      const updated = await retryIntegration.mutateAsync({ id: customer.id, provider });
+      const updated = await retryIntegration.mutateAsync({
+        id: customer.id,
+        provider,
+        siigoLocation,
+      });
       toast.close(loadingId);
       const integration = updated.integrations.find((item) => item.provider === provider);
       if (integration?.status === 'SYNCED') {
@@ -460,6 +546,7 @@ export function CustomersPage() {
             'success',
           ),
         );
+        return true;
       } else {
         toast.warning(
           customerToastContent(
@@ -468,16 +555,76 @@ export function CustomersPage() {
             'warning',
           ),
         );
+        return false;
       }
     } catch (error) {
       toast.close(loadingId);
       toast.danger(
         customerToastContent('No pudimos reintentar la integración', messageFrom(error), 'danger'),
       );
+      return false;
     } finally {
       retryingProvidersRef.current.delete(provider);
       setRetryingProviders(new Set(retryingProvidersRef.current));
     }
+  };
+  const retryProvider = (provider: CustomerProvider) => {
+    const customer = detailQuery.data;
+    if (!customer || retryingProvidersRef.current.has(provider)) return;
+    if (provider === 'SIIGO' && customer.country !== 'CO') {
+      const integration = customer.integrations.find((item) => item.provider === 'SIIGO');
+      const storedMapping = readCustomerSiigoLocationMapping(integration?.externalData);
+      if (
+        storedMapping &&
+        customer.country &&
+        isCustomerSiigoLocationMappingCurrent(storedMapping, {
+          country: customer.country,
+          region: customer.region,
+          city: customer.cityName,
+        })
+      ) {
+        void synchronizeProvider(customer, provider);
+        return;
+      }
+      const siigoCountry = customer.country
+        ? resolveCustomerSiigoCountryByWooCode(customer.country)
+        : null;
+      if (!siigoCountry) {
+        toast.danger(
+          customerToastContent(
+            'Ubicación no disponible en Siigo',
+            'El país del cliente no tiene una correspondencia válida en el catálogo de Siigo.',
+            'danger',
+          ),
+        );
+        return;
+      }
+      setSiigoResolutionTarget(customer);
+      setSiigoStateCode('');
+      setSiigoCityCode('');
+      setSiigoResolutionError('');
+      return;
+    }
+    void synchronizeProvider(customer, provider);
+  };
+  const siigoCountry = siigoResolutionTarget?.country
+    ? resolveCustomerSiigoCountryByWooCode(siigoResolutionTarget.country)
+    : null;
+  const siigoStates = siigoCountry ? getCustomerSiigoStates(siigoCountry.code) : [];
+  const siigoCities =
+    siigoCountry && siigoStateCode ? getCustomerSiigoCities(siigoCountry.code, siigoStateCode) : [];
+  const confirmSiigoLocation = async () => {
+    if (!siigoResolutionTarget || !siigoCountry) return;
+    if (!siigoStateCode || !siigoCityCode) {
+      setSiigoResolutionError('Selecciona la región y la ciudad de Siigo.');
+      return;
+    }
+    setSiigoResolutionError('');
+    const synchronized = await synchronizeProvider(siigoResolutionTarget, 'SIIGO', {
+      stateCode: siigoStateCode,
+      cityCode: siigoCityCode,
+    });
+    if (synchronized) setSiigoResolutionTarget(null);
   };
   const removeCustomer = async () => {
     if (!deleteTarget || deleteCustomer.isPending) return;
@@ -535,7 +682,7 @@ export function CustomersPage() {
             value={filters.country || 'ALL'}
             options={[
               { id: 'ALL', name: 'Todos los países' },
-              ...getCountries().map((country) => ({
+              ...getCustomerCountries().map((country) => ({
                 id: country.code,
                 name: country.name,
               })),
@@ -719,7 +866,7 @@ export function CustomersPage() {
                         <div>
                           <strong>
                             {customer.country && (
-                              <img src={countryFlagPath(customer.country)} alt="" />
+                              <img src={customerCountryFlagPath(customer.country)} alt="" />
                             )}
                             {customer.location.countryName || emptyValue}
                           </strong>
@@ -913,7 +1060,15 @@ export function CustomersPage() {
         />
       )}
 
-      <Drawer isOpen={selectedId !== null} onOpenChange={(open) => !open && setSelectedId(null)}>
+      <Drawer
+        isOpen={selectedId !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setSelectedId(null);
+            setSiigoResolutionTarget(null);
+          }
+        }}
+      >
         <Drawer.Backdrop>
           <Drawer.Content placement="right">
             <Drawer.Dialog className="customer-detail-drawer">
@@ -942,6 +1097,33 @@ export function CustomersPage() {
                     canRetry={canManageCustomers}
                     retryingProviders={retryingProviders}
                     onRetry={(provider) => void retryProvider(provider)}
+                    siigoResolution={
+                      siigoResolutionTarget?.id === detailQuery.data.id
+                        ? {
+                            stateCode: siigoStateCode,
+                            cityCode: siigoCityCode,
+                            states: siigoStates.map((state) => ({
+                              id: state.code,
+                              name: state.name,
+                            })),
+                            cities: siigoCities.map((city) => ({
+                              id: city.code,
+                              name: city.name,
+                            })),
+                            error: siigoResolutionError,
+                          }
+                        : null
+                    }
+                    onSiigoStateChange={(stateCode) => {
+                      setSiigoStateCode(stateCode);
+                      setSiigoCityCode('');
+                      setSiigoResolutionError('');
+                    }}
+                    onSiigoCityChange={(cityCode) => {
+                      setSiigoCityCode(cityCode);
+                      setSiigoResolutionError('');
+                    }}
+                    onConfirmSiigoLocation={() => void confirmSiigoLocation()}
                   />
                 ) : null}
               </Drawer.Body>

@@ -1,6 +1,12 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
-import { mapPhoneToSiigo, normalizePhoneE164 } from '@sevale/shared';
+import {
+  mapPhoneToSiigo,
+  normalizePhoneE164,
+  resolveCustomerSiigoCity,
+  resolveCustomerSiigoCountryByWooCode,
+} from '@sevale/shared';
 import type { CustomerMappingSource } from './customer-mapping.types.js';
+import type { SiigoLocationSelection } from './customer-mapping.types.js';
 import { CustomerLocationsService } from './customer-locations.service.js';
 
 export type SiigoCustomerPayload = {
@@ -36,18 +42,14 @@ function uppercase(value: string): string {
   return value.toLocaleUpperCase('es-CO');
 }
 
-type SiigoReadyCustomer = CustomerMappingSource & {
-  country: string;
-  region: string;
-  cityCode: string;
-};
+type SiigoReadyCustomer = CustomerMappingSource & { country: string };
 
 function requireSiigoData(customer: CustomerMappingSource): asserts customer is SiigoReadyCustomer {
   const missing: string[] = [];
   if (customer.fiscalResponsibilities.length === 0) missing.push('responsabilidad fiscal');
   if (!customer.country) missing.push('país');
-  if (!customer.region) missing.push('región o departamento');
-  if (!customer.cityCode) missing.push('ciudad o municipio');
+  if (customer.country === 'CO' && !customer.region) missing.push('región o departamento');
+  if (customer.country === 'CO' && !customer.cityCode) missing.push('ciudad o municipio');
   if (missing.length === 0) return;
 
   throw new BadRequestException({
@@ -59,13 +61,20 @@ function requireSiigoData(customer: CustomerMappingSource): asserts customer is 
   });
 }
 
+function siigoLocationError(code: string, message: string): BadRequestException {
+  return new BadRequestException({ success: false, error: { code, message } });
+}
+
 @Injectable()
 export class SiigoCustomerMapper {
   constructor(private readonly locations: CustomerLocationsService) {}
 
-  map(customer: CustomerMappingSource): SiigoCustomerPayload {
+  map(
+    customer: CustomerMappingSource,
+    siigoSelection?: SiigoLocationSelection,
+  ): SiigoCustomerPayload {
     requireSiigoData(customer);
-    const location = this.locations.resolve(customer.country, customer.region, customer.cityCode);
+    const location = this.resolveLocation(customer, siigoSelection);
     const phone = customer.phone ? mapPhoneToSiigo(customer.phone, customer.country) : null;
     if (customer.phone && !phone) {
       throw new BadRequestException({
@@ -103,9 +112,9 @@ export class SiigoCustomerMapper {
       address: {
         ...(address ? { address: uppercase(address) } : {}),
         city: {
-          country_code: location.siigo.countryCode,
-          state_code: location.siigo.stateCode,
-          city_code: location.siigo.cityCode,
+          country_code: location.countryCode,
+          state_code: location.stateCode,
+          city_code: location.cityCode,
         },
         ...(customer.postalCode ? { postal_code: customer.postalCode } : {}),
       },
@@ -122,6 +131,46 @@ export class SiigoCustomerMapper {
             ],
           }
         : {}),
+    };
+  }
+
+  private resolveLocation(
+    customer: SiigoReadyCustomer,
+    selection?: SiigoLocationSelection,
+  ): { countryCode: string; stateCode: string; cityCode: string } {
+    if (customer.country === 'CO') {
+      const location = this.locations.resolve(
+        customer.country,
+        customer.region as string,
+        customer.cityCode as string,
+      );
+      return location.siigo;
+    }
+
+    const country = resolveCustomerSiigoCountryByWooCode(customer.country);
+    if (!country) {
+      throw siigoLocationError(
+        'SIIGO_CUSTOMER_COUNTRY_NOT_MAPPED',
+        'El país del cliente no está disponible en el catálogo de Siigo.',
+      );
+    }
+    if (!selection) {
+      throw siigoLocationError(
+        'SIIGO_CUSTOMER_LOCATION_REQUIRED',
+        'Selecciona la región y la ciudad de Siigo antes de sincronizar.',
+      );
+    }
+    const city = resolveCustomerSiigoCity(country.code, selection.stateCode, selection.cityCode);
+    if (!city) {
+      throw siigoLocationError(
+        'SIIGO_CUSTOMER_LOCATION_INVALID',
+        'La ciudad seleccionada no pertenece a la región de Siigo.',
+      );
+    }
+    return {
+      countryCode: country.code,
+      stateCode: selection.stateCode,
+      cityCode: city.code,
     };
   }
 }

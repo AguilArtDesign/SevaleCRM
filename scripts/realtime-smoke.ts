@@ -236,10 +236,73 @@ try {
     throw new Error('customer.integration.updated no devolvió el estado esperado.');
   }
 
-  const notificationPromise = waitFor<{ notificationId: number; productId: number | null }>(
+  const orderOperation = {
+    id: 901,
+    operationCode: 'OP-SOCKET-901',
+    source: 'CRM',
+    status: 'PENDING',
+  };
+  const orderCreatedPromise = waitFor<{ operationId: number; operationCode: string }>(
     socket,
-    'notification.created',
+    'order.operation.created',
   );
+  realtime.emitOrderOperationCreated(orderOperation);
+  const orderCreated = await orderCreatedPromise;
+  if (orderCreated.operationId !== 901 || orderCreated.operationCode !== 'OP-SOCKET-901') {
+    throw new Error('order.operation.created no devolvió la operación esperada.');
+  }
+
+  const orderUpdatedPromise = waitFor<{ status: string }>(socket, 'order.operation.updated');
+  realtime.emitOrderOperationUpdated({ ...orderOperation, status: 'COMPLETED' });
+  if ((await orderUpdatedPromise).status !== 'COMPLETED') {
+    throw new Error('order.operation.updated no devolvió el estado esperado.');
+  }
+
+  const orderSyncPromise = waitFor<{ stores: Array<{ store: string; syncStatus: string }> }>(
+    socket,
+    'order.sync.updated',
+  );
+  realtime.emitOrderSyncUpdated(orderOperation, [
+    { store: 'SERATUS', syncStatus: 'SYNCED' },
+    { store: 'PALI', syncStatus: 'ERROR' },
+  ]);
+  const orderSync = await orderSyncPromise;
+  if (
+    orderSync.stores.length !== 2 ||
+    orderSync.stores.find(({ store }) => store === 'PALI')?.syncStatus !== 'ERROR'
+  ) {
+    throw new Error('order.sync.updated no devolvió los estados por tienda esperados.');
+  }
+
+  const shipmentPromise = waitFor<{ shipment: { trackingNumber: string | null } }>(
+    socket,
+    'order.shipment.updated',
+  );
+  realtime.emitOrderShipmentUpdated(orderOperation, {
+    status: 'IN_TRANSIT',
+    trackingNumber: 'TRACK-SOCKET-901',
+  });
+  if ((await shipmentPromise).shipment.trackingNumber !== 'TRACK-SOCKET-901') {
+    throw new Error('order.shipment.updated no devolvió el envío esperado.');
+  }
+
+  const quotationPromise = waitFor<{ quotation: { externalId: string | null } }>(
+    socket,
+    'order.siigo-quotation.updated',
+  );
+  realtime.emitOrderSiigoQuotationUpdated(orderOperation, {
+    status: 'SYNCED',
+    externalId: 'SIIGO-SOCKET-901',
+  });
+  if ((await quotationPromise).quotation.externalId !== 'SIIGO-SOCKET-901') {
+    throw new Error('order.siigo-quotation.updated no devolvió la cotización esperada.');
+  }
+
+  const notificationPromise = waitFor<{
+    notificationId: number;
+    productId: number | null;
+    orderOperationId: number | null;
+  }>(socket, 'notification.created');
   realtime.emitNotificationCreated({
     id: 801,
     type: 'TEST_NOTIFICATION',
@@ -247,16 +310,21 @@ try {
     message: 'Contenido normalizado',
     productId: 501,
     customerId: null,
+    orderOperationId: 901,
     requiredPermission: null,
     createdAt: new Date(),
   });
   const notification = await notificationPromise;
-  if (notification.notificationId !== 801 || notification.productId !== 501) {
+  if (
+    notification.notificationId !== 801 ||
+    notification.productId !== 501 ||
+    notification.orderOperationId !== 901
+  ) {
     throw new Error('notification.created no devolvió el payload esperado.');
   }
 
   process.stdout.write(
-    'Realtime smoke: session authentication, inactive-user rejection and all initial Socket.IO events passed.\n',
+    'Realtime smoke: authentication, permission rooms and inventory, customer, order and notification events passed.\n',
   );
 } finally {
   for (const socket of sockets) socket.disconnect();

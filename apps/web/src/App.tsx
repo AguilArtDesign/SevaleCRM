@@ -7,6 +7,8 @@ import { AdminRoute } from './users/AdminRoute';
 import { UsersPage } from './users/UsersPage';
 import { CustomersPage } from './customers/CustomersPage';
 import { CustomersRoute } from './customers/CustomersRoute';
+import { OrdersPage } from './orders/OrdersPage';
+import { OrdersRoute } from './orders/OrdersRoute';
 
 export function App() {
   return (
@@ -20,6 +22,14 @@ export function App() {
         }
       >
         <Route path="/inventory" element={<InventoryPage />} />
+        <Route
+          path="/orders"
+          element={
+            <OrdersRoute>
+              <OrdersPage />
+            </OrdersRoute>
+          }
+        />
         <Route
           path="/customers"
           element={

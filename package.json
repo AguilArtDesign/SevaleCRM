@@ -12,7 +12,11 @@
     "npm": ">=11.0.0 <12"
   },
   "overrides": {
+    "@prisma/adapter-mariadb": {
+      "mariadb": "3.4.7"
+    },
     "deepmerge-ts": "8.0.2",
+    "mariadb": "3.4.7",
     "mysql2": "3.24.3"
   },
   "scripts": {
@@ -27,6 +31,12 @@
     "test:users": "tsc --ignoreConfig --module NodeNext --moduleResolution NodeNext --target ES2023 --experimentalDecorators --emitDecoratorMetadata --esModuleInterop --skipLibCheck --outDir .tmp/users-smoke --rootDir . scripts/users-smoke.ts && node .tmp/users-smoke/scripts/users-smoke.js",
     "test:products": "tsc --ignoreConfig --module NodeNext --moduleResolution NodeNext --target ES2023 --experimentalDecorators --emitDecoratorMetadata --esModuleInterop --skipLibCheck --outDir .tmp/products-smoke --rootDir . scripts/products-smoke.ts && node .tmp/products-smoke/scripts/products-smoke.js",
     "test:customers:model": "tsc --ignoreConfig --module NodeNext --moduleResolution NodeNext --target ES2023 --experimentalDecorators --emitDecoratorMetadata --esModuleInterop --skipLibCheck --resolveJsonModule --outDir .tmp/customers-model-smoke --rootDir . scripts/customers-model-smoke.ts && node .tmp/customers-model-smoke/scripts/customers-model-smoke.js",
+    "test:customers:catalogs": "tsc --ignoreConfig --module NodeNext --moduleResolution NodeNext --target ES2023 --types node --skipLibCheck --resolveJsonModule --outDir .tmp/customer-locations-catalog-smoke --rootDir . scripts/customer-locations-catalog-smoke.ts && node .tmp/customer-locations-catalog-smoke/scripts/customer-locations-catalog-smoke.js",
+    "test:orders:model": "tsc --ignoreConfig --module NodeNext --moduleResolution NodeNext --target ES2023 --experimentalDecorators --emitDecoratorMetadata --esModuleInterop --skipLibCheck --resolveJsonModule --outDir .tmp/orders-model-smoke --rootDir . scripts/orders-model-smoke.ts && node .tmp/orders-model-smoke/scripts/orders-model-smoke.js",
+    "test:orders": "tsc --ignoreConfig --module NodeNext --moduleResolution NodeNext --target ES2023 --experimentalDecorators --emitDecoratorMetadata --esModuleInterop --skipLibCheck --resolveJsonModule --outDir .tmp/orders-smoke --rootDir . scripts/orders-smoke.ts && node .tmp/orders-smoke/scripts/orders-smoke.js",
+    "test:orders:woo": "npm run build --workspace @sevale/shared && tsc --ignoreConfig --module NodeNext --moduleResolution NodeNext --target ES2023 --experimentalDecorators --emitDecoratorMetadata --esModuleInterop --skipLibCheck --resolveJsonModule --outDir .tmp/orders-woo-inbound-smoke --rootDir . scripts/orders-woo-inbound-smoke.ts && node .tmp/orders-woo-inbound-smoke/scripts/orders-woo-inbound-smoke.js",
+    "test:orders:woo-outbound": "tsc --ignoreConfig --module NodeNext --moduleResolution NodeNext --target ES2023 --experimentalDecorators --emitDecoratorMetadata --esModuleInterop --skipLibCheck --resolveJsonModule --outDir .tmp/orders-woo-outbound-smoke --rootDir . scripts/orders-woo-outbound-smoke.ts && node .tmp/orders-woo-outbound-smoke/scripts/orders-woo-outbound-smoke.js",
+    "test:orders:siigo-quotation": "tsc --ignoreConfig --module NodeNext --moduleResolution NodeNext --target ES2023 --types node --experimentalDecorators --emitDecoratorMetadata --esModuleInterop --skipLibCheck --resolveJsonModule --outDir .tmp/orders-siigo-quotation-smoke --rootDir . scripts/orders-siigo-quotation-smoke.ts && node .tmp/orders-siigo-quotation-smoke/scripts/orders-siigo-quotation-smoke.js",
     "test:customers": "tsc --ignoreConfig --module NodeNext --moduleResolution NodeNext --target ES2023 --experimentalDecorators --emitDecoratorMetadata --esModuleInterop --skipLibCheck --resolveJsonModule --outDir .tmp/customers-smoke --rootDir . scripts/customers-smoke.ts && node .tmp/customers-smoke/scripts/customers-smoke.js",
     "test:customers:mapping": "npm run build --workspace @sevale/shared && tsc --ignoreConfig --module NodeNext --moduleResolution NodeNext --target ES2023 --experimentalDecorators --emitDecoratorMetadata --esModuleInterop --skipLibCheck --resolveJsonModule --outDir .tmp/customer-mapping-smoke --rootDir . scripts/customer-mapping-smoke.ts && node .tmp/customer-mapping-smoke/scripts/customer-mapping-smoke.js",
     "test:customers:siigo": "npm run build --workspace @sevale/shared && tsc --ignoreConfig --module NodeNext --moduleResolution NodeNext --target ES2023 --experimentalDecorators --emitDecoratorMetadata --esModuleInterop --skipLibCheck --resolveJsonModule --outDir .tmp/siigo-customer-smoke --rootDir . scripts/siigo-customer-smoke.ts && node .tmp/siigo-customer-smoke/scripts/siigo-customer-smoke.js",
@@ -44,7 +54,7 @@
     "test:notifications": "tsc --ignoreConfig --module NodeNext --moduleResolution NodeNext --target ES2023 --experimentalDecorators --emitDecoratorMetadata --esModuleInterop --skipLibCheck --outDir .tmp/notifications-smoke --rootDir . scripts/notifications-smoke.ts && node .tmp/notifications-smoke/scripts/notifications-smoke.js",
     "test:security": "tsc --ignoreConfig --module NodeNext --moduleResolution NodeNext --target ES2023 --experimentalDecorators --emitDecoratorMetadata --esModuleInterop --skipLibCheck --outDir .tmp/security-smoke --rootDir . scripts/security-check.ts scripts/hardening-smoke.ts && node .tmp/security-smoke/scripts/security-check.js && node .tmp/security-smoke/scripts/hardening-smoke.js",
     "test:exposure": "tsc --ignoreConfig --module NodeNext --moduleResolution NodeNext --target ES2023 --experimentalDecorators --emitDecoratorMetadata --esModuleInterop --skipLibCheck --outDir .tmp/exposure-smoke --rootDir . scripts/exposure-smoke.ts && node .tmp/exposure-smoke/scripts/exposure-smoke.js",
-    "test:smoke": "npm run test:auth && npm run test:users && npm run test:products && npm run test:customers:model && npm run test:customers && npm run test:customers:mapping && npm run test:customers:siigo && npm run test:customers:sanitizer && npm run test:customers:woo && npm run test:customers:orchestration && npm run test:customers:resolver && npm run test:integrations && npm run test:siigo-token && npm run test:product-link && npm run test:product-sync && npm run test:product-import && npm run test:n8n && npm run test:realtime && npm run test:notifications && npm run test:exposure",
+    "test:smoke": "npm run test:auth && npm run test:users && npm run test:products && npm run test:customers:model && npm run test:customers:catalogs && npm run test:orders:model && npm run test:orders && npm run test:orders:woo && npm run test:orders:woo-outbound && npm run test:orders:siigo-quotation && npm run test:customers && npm run test:customers:mapping && npm run test:customers:siigo && npm run test:customers:sanitizer && npm run test:customers:woo && npm run test:customers:orchestration && npm run test:customers:resolver && npm run test:integrations && npm run test:siigo-token && npm run test:product-link && npm run test:product-sync && npm run test:product-import && npm run test:n8n && npm run test:realtime && npm run test:notifications && npm run test:exposure",
     "check:release": "npm run format:check && npm run lint && npm run typecheck && npm run prisma:validate && npm run build && npm run test:security && npm run test:smoke",
     "check:siigo-auth": "tsc --ignoreConfig --module NodeNext --moduleResolution NodeNext --target ES2023 --experimentalDecorators --emitDecoratorMetadata --esModuleInterop --skipLibCheck --outDir .tmp/siigo-auth-check --rootDir . scripts/siigo-auth-check.ts && node .tmp/siigo-auth-check/scripts/siigo-auth-check.js",
     "format": "prettier --write .",
@@ -68,5 +78,8 @@
     "tsx": "4.23.13",
     "typescript": "6.0.3",
     "typescript-eslint": "8.69.0"
+  },
+  "dependencies": {
+    "mariadb": "3.4.7"
   }
 }

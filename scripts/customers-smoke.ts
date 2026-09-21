@@ -284,14 +284,24 @@ try {
   const lookup = (await lookupResponse.json()) as {
     existsLocally: boolean;
     found: boolean;
-    customer?: { documentNumber: string; cityCode: string; addressLine2: string | null };
+    customer?: {
+      documentNumber: string;
+      country: string | null;
+      region: string | null;
+      cityCode: string | null;
+      cityName: string | null;
+      addressLine2: string | null;
+    };
     integrations: Array<{ provider: string; status: string; externalId: string | null }>;
   };
   if (
     lookup.existsLocally ||
     !lookup.found ||
     lookup.customer?.documentNumber !== documentNumber ||
-    lookup.customer.cityCode !== '05001' ||
+    lookup.customer.country !== null ||
+    lookup.customer.region !== null ||
+    lookup.customer.cityCode !== null ||
+    lookup.customer.cityName !== null ||
     lookup.customer.addressLine2 !== null ||
     lookup.integrations.find(({ provider }) => provider === 'SERATUS')?.externalId !== '31001' ||
     lookup.integrations.find(({ provider }) => provider === 'PALI')?.externalId !== '41001'
@@ -340,9 +350,9 @@ try {
   if (
     incompleteLookup.customer?.email !== `marcos-${runId}@example.invalid` ||
     incompleteLookup.customer.phone !== '+573006003345' ||
-    incompleteLookup.customer.country !== 'CO' ||
-    incompleteLookup.customer.region !== 'CO-ANT' ||
-    incompleteLookup.customer.cityCode !== '05001' ||
+    incompleteLookup.customer.country !== null ||
+    incompleteLookup.customer.region !== null ||
+    incompleteLookup.customer.cityCode !== null ||
     incompleteLookup.customer.addressLine1 !== 'Cra. 18 #79A - 42' ||
     incompleteLookup.customer.addressLine2 !== 'Apto 301'
   ) {

@@ -1,5 +1,5 @@
 import { BadGatewayException, Injectable } from '@nestjs/common';
-import { resolveLocationFromSiigo } from '@sevale/shared';
+import { resolveCustomerSiigoCountry } from '@sevale/shared';
 import { customerDocumentTypes, customerFiscalResponsibilities } from '@sevale/validation';
 import {
   IntegrationAuthenticationException,
@@ -12,6 +12,7 @@ import {
 } from '../../integrations/integration-http.js';
 import { SiigoTokenService } from '../../integrations/siigo/siigo-token.service.js';
 import type { CustomerMappingSource } from '../mapping/customer-mapping.types.js';
+import type { SiigoLocationSelection } from '../mapping/customer-mapping.types.js';
 import {
   normalizeCustomerName,
   resolveSiigoPhone,
@@ -174,12 +175,8 @@ function normalizeLookup(value: unknown): SiigoCustomerLookup | null {
     : [];
   const address = isRecord(value.address) ? value.address : null;
   const city = address && isRecord(address.city) ? address.city : null;
-  const location = city
-    ? resolveLocationFromSiigo(
-        optionalString(city.country_code) ?? '',
-        optionalString(city.state_code) ?? '',
-        optionalString(city.city_code) ?? '',
-      )
+  const siigoCountry = city
+    ? resolveCustomerSiigoCountry(optionalString(city.country_code) ?? '')
     : null;
   if (!idType || !documentTypes.has(idType) || names.length === 0) {
     return null;
@@ -188,7 +185,7 @@ function normalizeLookup(value: unknown): SiigoCustomerLookup | null {
   const contacts = Array.isArray(value.contacts) ? value.contacts.filter(isRecord) : [];
   const email =
     contacts.map((contact) => sanitizeCustomerEmail(contact.email)).find(Boolean) ?? null;
-  const country = location?.country ?? null;
+  const country = siigoCountry?.wooCountryCode ?? null;
   const phone = resolveSiigoPhone(value, country ?? '');
   const personType = reference.personType === 'Person' ? 'PERSON' : 'COMPANY';
   const canonicalName = names.join(' ');
@@ -217,8 +214,8 @@ function normalizeLookup(value: unknown): SiigoCustomerLookup | null {
       email,
       phone,
       country,
-      region: location?.region ?? null,
-      cityCode: location?.cityCode ?? null,
+      region: null,
+      cityCode: null,
       postalCode: sanitizePostalCode(address?.postal_code),
       addressLine1: sanitizeSiigoAddress(address?.address),
       addressLine2: null,
@@ -250,18 +247,22 @@ export class SiigoCustomerService {
     );
   }
 
-  async createCustomer(customer: CustomerMappingSource): Promise<SiigoCustomerReference> {
-    const payload = this.mapper.map(customer);
+  async createCustomer(
+    customer: CustomerMappingSource,
+    siigoLocation?: SiigoLocationSelection,
+  ): Promise<SiigoCustomerReference> {
+    const payload = this.mapper.map(customer, siigoLocation);
     return this.withAuthenticationRetry((token) => this.requestCreate(payload, token));
   }
 
   async updateCustomer(
     externalId: string,
     customer: CustomerMappingSource,
+    siigoLocation?: SiigoLocationSelection,
   ): Promise<SiigoCustomerReference> {
     const normalizedExternalId = externalId.trim();
     if (!UUID_PATTERN.test(normalizedExternalId)) throw invalidIntegrationResponse('Siigo');
-    const payload = this.mapper.map(customer);
+    const payload = this.mapper.map(customer, siigoLocation);
     return this.withAuthenticationRetry((token) =>
       this.requestUpdate(normalizedExternalId, payload, token),
     );

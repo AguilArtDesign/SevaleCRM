@@ -21,12 +21,13 @@ import {
   type CreateCustomerInput,
 } from '@sevale/validation';
 import {
-  getCities,
-  getCountries,
-  getStates,
-  resolveCity,
-  resolveCountry,
-  resolveState,
+  getCustomerColombiaCities,
+  getCustomerColombiaStates,
+  getCustomerCountries,
+  getCustomerWooStates,
+  resolveCustomerCityName,
+  resolveCustomerCountryName,
+  resolveCustomerRegionName,
 } from '@sevale/shared';
 import { Input } from '../components/Input';
 import { PhoneInput } from '../components/PhoneInput';
@@ -62,6 +63,7 @@ const emptyCustomer: CustomerFormValue = {
   country: null,
   region: null,
   cityCode: null,
+  cityName: null,
   postalCode: null,
   addressLine1: null,
   addressLine2: null,
@@ -85,6 +87,7 @@ function initialValue(customer?: CustomerRecord | null): CustomerFormValue {
     country: customer.country,
     region: customer.region,
     cityCode: customer.cityCode,
+    cityName: customer.cityName,
     postalCode: customer.postalCode,
     addressLine1: customer.addressLine1,
     addressLine2: customer.addressLine2,
@@ -95,17 +98,14 @@ function initialValue(customer?: CustomerRecord | null): CustomerFormValue {
 
 function formatAddress(address: CustomerDraftAddress): string {
   const lines = [address.addressLine1, address.addressLine2].filter(Boolean).join(', ');
-  const city =
-    address.country && address.region && address.cityCode
-      ? resolveCity(address.country, address.region, address.cityCode)
-      : null;
-  const region =
-    address.country && address.region
-      ? (resolveState(address.country, address.region)?.name ?? address.region)
-      : null;
-  const country = address.country
-    ? (resolveCountry(address.country)?.name ?? address.country)
-    : null;
+  const city = resolveCustomerCityName(
+    address.country,
+    address.region,
+    address.cityCode,
+    address.cityName,
+  );
+  const region = resolveCustomerRegionName(address.country, address.region);
+  const country = resolveCustomerCountryName(address.country);
   const location = [city, region, country].filter(Boolean).join(', ');
   return [lines, location].filter(Boolean).join(' — ');
 }
@@ -164,11 +164,19 @@ export function CustomerForm({
   const [lookupError, setLookupError] = useState('');
   const [lookupResult, setLookupResult] = useState<CustomerResolveResponse | null>(null);
   const [isLookingUp, setIsLookingUp] = useState(false);
-  const countries = useMemo(() => getCountries(), []);
-  const states = useMemo(() => getStates(value.country ?? ''), [value.country]);
+  const countries = useMemo(() => getCustomerCountries(), []);
+  const isColombia = value.country === 'CO';
+  const states = useMemo(
+    () =>
+      value.country === 'CO'
+        ? getCustomerColombiaStates()
+        : getCustomerWooStates(value.country ?? ''),
+    [value.country],
+  );
+  const hasPredefinedStates = states.length > 0;
   const cities = useMemo(
-    () => getCities(value.country ?? '', value.region ?? ''),
-    [value.country, value.region],
+    () => (isColombia ? getCustomerColombiaCities(value.region ?? '') : []),
+    [isColombia, value.region],
   );
   const isEdit = Boolean(customer);
   const hasUnresolvedConflict =
@@ -259,11 +267,15 @@ export function CustomerForm({
       const result = await customersApi.resolve(identification);
       setLookupResult(result);
       if (!result.existsLocally && result.customer) {
-        setValue({
-          ...result.customer,
-          documentType: result.customer.documentType ?? '',
-          fiscalResponsibilities: [result.customer.fiscalResponsibilities[0] ?? 'R-99-PN'],
-        });
+        setValue((current) => ({
+          ...result.customer!,
+          country: current.country,
+          region: current.region,
+          cityCode: current.cityCode,
+          cityName: current.cityName,
+          documentType: result.customer!.documentType ?? '',
+          fiscalResponsibilities: [result.customer!.fiscalResponsibilities[0] ?? 'R-99-PN'],
+        }));
       }
     } catch (lookupFailure) {
       setLookupResult(null);
@@ -604,46 +616,93 @@ export function CustomerForm({
                           country: country || null,
                           region: null,
                           cityCode: null,
+                          cityName: null,
                         }));
                         clearConflict('address');
                       }}
                     />
-                    <CustomerAutocomplete
-                      key={`region:${value.country}`}
-                      ariaLabel="Región o provincia"
-                      label="Región / Provincia"
-                      placeholder="Seleccionar"
-                      value={value.region ?? ''}
-                      options={states.map((option) => ({
-                        id: option.wooCode ?? option.code,
-                        name: option.name,
-                      }))}
-                      isDisabled={!value.country}
-                      onChange={(region) => {
-                        setValue((current) => ({
-                          ...current,
-                          region: region || null,
-                          cityCode: null,
-                        }));
-                        clearConflict('address');
-                      }}
-                    />
-                    <CustomerAutocomplete
-                      key={`city:${value.country}:${value.region}`}
-                      ariaLabel="Ciudad o municipio"
-                      label="Ciudad / Municipio"
-                      placeholder="Seleccionar"
-                      value={value.cityCode ?? ''}
-                      options={cities.map((option) => ({
-                        id: option.code,
-                        name: option.name,
-                      }))}
-                      isDisabled={!value.region}
-                      onChange={(cityCode) => {
-                        setValue((current) => ({ ...current, cityCode: cityCode || null }));
-                        clearConflict('address');
-                      }}
-                    />
+                    {isColombia || hasPredefinedStates ? (
+                      <CustomerAutocomplete
+                        key={`region:${value.country}`}
+                        ariaLabel={isColombia ? 'Departamento' : 'Región o provincia'}
+                        label={isColombia ? 'Departamento' : 'Región / Provincia'}
+                        placeholder="Seleccionar"
+                        value={value.region ?? ''}
+                        options={states.map((option) => ({
+                          id: option.code,
+                          name: option.name,
+                        }))}
+                        isDisabled={!value.country}
+                        onChange={(region) => {
+                          setValue((current) => ({
+                            ...current,
+                            region: region || null,
+                            cityCode: null,
+                            cityName: null,
+                          }));
+                          clearConflict('address');
+                        }}
+                      />
+                    ) : (
+                      <TextField>
+                        <Label>Región / Provincia</Label>
+                        <Input
+                          variant="secondary"
+                          placeholder="Escribe la región o provincia"
+                          value={value.region ?? ''}
+                          disabled={!value.country}
+                          onChange={(event) => {
+                            setValue((current) => ({
+                              ...current,
+                              region: event.target.value || null,
+                              cityCode: null,
+                              cityName: null,
+                            }));
+                            clearConflict('address');
+                          }}
+                        />
+                      </TextField>
+                    )}
+                    {isColombia ? (
+                      <CustomerAutocomplete
+                        key={`city:${value.country}:${value.region}`}
+                        ariaLabel="Ciudad o municipio"
+                        label="Ciudad / Municipio"
+                        placeholder="Seleccionar"
+                        value={value.cityCode ?? ''}
+                        options={cities.map((option) => ({
+                          id: option.code,
+                          name: option.name,
+                        }))}
+                        isDisabled={!value.region}
+                        onChange={(cityCode) => {
+                          setValue((current) => ({
+                            ...current,
+                            cityCode: cityCode || null,
+                            cityName: null,
+                          }));
+                          clearConflict('address');
+                        }}
+                      />
+                    ) : (
+                      <TextField>
+                        <Label>Ciudad</Label>
+                        <Input
+                          variant="secondary"
+                          placeholder="Escribe la ciudad"
+                          value={value.cityName ?? ''}
+                          disabled={!value.country}
+                          onChange={(event) => {
+                            setValue((current) => ({
+                              ...current,
+                              cityCode: null,
+                              cityName: event.target.value || null,
+                            }));
+                            clearConflict('address');
+                          }}
+                        />
+                      </TextField>
+                    )}
                     <TextField>
                       <Label>Código postal</Label>
                       <Input
@@ -684,7 +743,12 @@ export function CustomerForm({
                               const option =
                                 lookupResult.conflicts.address?.options[Number(selected)];
                               if (!option) return;
-                              setValue((current) => ({ ...current, ...option.value }));
+                              setValue((current) => ({
+                                ...current,
+                                postalCode: option.value.postalCode,
+                                addressLine1: option.value.addressLine1,
+                                addressLine2: option.value.addressLine2,
+                              }));
                               clearConflict('address');
                             }}
                           >

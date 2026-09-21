@@ -190,6 +190,7 @@ const customerFieldsSchema = z.object({
   country: optionalCountry,
   region: optionalText(32),
   cityCode: optionalText(32),
+  cityName: optionalText(191),
   postalCode: optionalText(32),
   addressLine1: optionalText(255),
   addressLine2: optionalText(255),
@@ -260,9 +261,27 @@ export const customerSiigoLookupSchema = z.object({
 });
 
 export const customerIntegrationProviderSchema = z.enum(['SIIGO', 'SERATUS', 'PALI']);
+export const customerSiigoLocationSchema = z
+  .object({
+    stateCode: z.string().trim().min(1, 'Selecciona la región de Siigo.').max(32),
+    cityCode: z.string().trim().min(1, 'Selecciona la ciudad de Siigo.').max(32),
+  })
+  .strict();
 export const customerSyncSchema = z
-  .object({ provider: customerIntegrationProviderSchema.optional() })
+  .object({
+    provider: customerIntegrationProviderSchema.optional(),
+    siigoLocation: customerSiigoLocationSchema.optional(),
+  })
   .strict()
+  .superRefine((input, context) => {
+    if (input.siigoLocation && input.provider && input.provider !== 'SIIGO') {
+      context.addIssue({
+        code: 'custom',
+        path: ['siigoLocation'],
+        message: 'La ubicación Siigo solo puede enviarse al sincronizar con Siigo.',
+      });
+    }
+  })
   .default({});
 
 export const storeSchema = z.enum(['SERATUS', 'PALI']);
@@ -335,7 +354,304 @@ export const productImportCsvSchema = z.object({
     .max(800_000, 'El archivo CSV supera el tamaño máximo permitido.'),
 });
 
+export const orderSourceSchema = z.enum(['CRM', 'WOOCOMMERCE']);
+export const operationStatusSchema = z.enum(['PENDING', 'COMPLETED', 'CANCELLED']);
+export const orderCurrencySchema = z.enum(['COP', 'USD']);
+
+const orderMoneySchema = z
+  .union([
+    z.string().trim(),
+    z
+      .number()
+      .finite()
+      .nonnegative()
+      .transform((value) => value.toFixed(2)),
+  ])
+  .pipe(z.string().regex(/^\d{1,12}(?:\.\d{1,2})?$/, 'El valor monetario no es válido.'));
+
+const nullableOrderText = (maximum: number) =>
+  z
+    .union([z.string().trim().max(maximum), z.null(), z.undefined()])
+    .transform((value) => value || null);
+
+const nullableOrderCountry = z
+  .union([
+    z.string().trim().toUpperCase().length(2, 'Selecciona un país válido.'),
+    z.literal(''),
+    z.null(),
+    z.undefined(),
+  ])
+  .transform((value) => value || null);
+
+export const orderBillingSchema = z
+  .object({
+    firstName: nullableOrderText(191),
+    lastName: nullableOrderText(191),
+    company: nullableOrderText(255),
+    address1: nullableOrderText(255),
+    address2: nullableOrderText(255),
+    city: nullableOrderText(191),
+    state: nullableOrderText(32),
+    postcode: nullableOrderText(32),
+    country: nullableOrderCountry,
+    email: optionalEmail,
+    phone: nullableOrderText(32),
+  })
+  .strict();
+
+export const orderShippingSchema = z
+  .object({
+    firstName: nullableOrderText(191),
+    lastName: nullableOrderText(191),
+    company: nullableOrderText(255),
+    address1: nullableOrderText(255),
+    address2: nullableOrderText(255),
+    city: nullableOrderText(191),
+    state: nullableOrderText(32),
+    postcode: nullableOrderText(32),
+    country: nullableOrderCountry,
+    phone: nullableOrderText(32),
+  })
+  .strict();
+
+const orderItemInputSchema = z
+  .object({
+    productId: productIdSchema,
+    quantity: z.number().int().min(1).max(10_000),
+    unitPrice: orderMoneySchema.optional(),
+    discountTotal: orderMoneySchema.default('0'),
+  })
+  .strict();
+
+const orderCouponInputSchema = z
+  .object({
+    store: storeSchema,
+    code: z.string().trim().min(1, 'Ingresa el código del cupón.').max(191),
+    discountTotal: orderMoneySchema,
+  })
+  .strict();
+
+const orderStoreShippingInputSchema = z
+  .object({ store: storeSchema, total: orderMoneySchema })
+  .strict();
+
+const orderOperationFieldsSchema = z
+  .object({
+    customerId: customerIdSchema,
+    currency: orderCurrencySchema,
+    paymentMethod: nullableOrderText(191),
+    paymentMethodTitle: nullableOrderText(191),
+    shippingMethod: nullableOrderText(191),
+    shippingMethodTitle: nullableOrderText(191),
+    billing: orderBillingSchema,
+    shipping: orderShippingSchema,
+    items: z.array(orderItemInputSchema).min(1, 'Agrega al menos un producto.').max(200),
+    coupons: z.array(orderCouponInputSchema).max(20).default([]),
+    shippingTotals: z.array(orderStoreShippingInputSchema).max(2).default([]),
+  })
+  .strict();
+
+function validateOrderCollections(
+  input: z.infer<typeof orderOperationFieldsSchema>,
+  context: z.RefinementCtx,
+) {
+  if (new Set(input.items.map(({ productId }) => productId)).size !== input.items.length) {
+    context.addIssue({
+      code: 'custom',
+      path: ['items'],
+      message: 'Cada producto solo puede aparecer una vez en la operación.',
+    });
+  }
+  if (
+    new Set(input.shippingTotals.map(({ store }) => store)).size !== input.shippingTotals.length
+  ) {
+    context.addIssue({
+      code: 'custom',
+      path: ['shippingTotals'],
+      message: 'Cada tienda solo puede tener un valor de envío.',
+    });
+  }
+}
+
+export const createOrderOperationSchema =
+  orderOperationFieldsSchema.superRefine(validateOrderCollections);
+export const updateOrderOperationSchema =
+  orderOperationFieldsSchema.superRefine(validateOrderCollections);
+
+export const orderOperationIdSchema = z.coerce
+  .number()
+  .int('El identificador de la operación no es válido.')
+  .positive('El identificador de la operación no es válido.');
+
+export const orderIdSchema = z.coerce
+  .number()
+  .int('El identificador del pedido no es válido.')
+  .positive('El identificador del pedido no es válido.');
+
+export const updateShipmentSchema = z
+  .object({
+    carrier: z.string().trim().min(1, 'Ingresa la transportadora.').max(191),
+    trackingNumber: z.string().trim().min(1, 'Ingresa el número de guía.').max(191),
+    status: z.string().trim().min(1, 'Ingresa el estado del envío.').max(100),
+    note: z
+      .union([z.string().trim().max(2_000), z.null(), z.undefined()])
+      .transform((value) => value || null),
+  })
+  .strict();
+
+export const createSiigoQuotationSchema = z
+  .object({
+    exchangeRate: z.number().finite().positive().max(999_999_999.999999).optional(),
+  })
+  .strict();
+
+export const orderListQuerySchema = z
+  .object({
+    search: z.string().trim().max(191, 'La búsqueda es demasiado larga.').default(''),
+    status: operationStatusSchema.optional(),
+    source: orderSourceSchema.optional(),
+    store: storeSchema.optional(),
+    customerId: customerIdSchema.optional(),
+    dateFrom: z.coerce.date().optional(),
+    dateTo: z.coerce.date().optional(),
+    page: z.coerce.number().int().min(1).default(1),
+    pageSize: z.coerce.number().int().min(1).max(100).default(20),
+    sort: z.enum(['operationCode', 'status', 'source', 'total', 'createdAt']).default('createdAt'),
+    order: z.enum(['asc', 'desc']).default('desc'),
+  })
+  .superRefine((input, context) => {
+    if (input.dateFrom && input.dateTo && input.dateFrom > input.dateTo) {
+      context.addIssue({
+        code: 'custom',
+        path: ['dateTo'],
+        message: 'La fecha final no puede ser anterior a la fecha inicial.',
+      });
+    }
+  });
+
+const wooIdentifierSchema = z.union([
+  z.number().int().nonnegative().transform(String),
+  z.string().trim().regex(/^\d+$/, 'El identificador de WooCommerce no es válido.'),
+]);
+
+const wooMoneySchema = z
+  .union([
+    z.number().finite().nonnegative(),
+    z
+      .string()
+      .trim()
+      .regex(/^\d+(?:\.\d{1,6})?$/),
+  ])
+  .transform(String);
+
+const wooOptionalTextSchema = (maximum: number) =>
+  z
+    .union([z.string().trim().max(maximum), z.null(), z.undefined()])
+    .transform((value) => value || '');
+
+const wooAddressSchema = z
+  .object({
+    first_name: wooOptionalTextSchema(191),
+    last_name: wooOptionalTextSchema(191),
+    company: wooOptionalTextSchema(255),
+    address_1: wooOptionalTextSchema(255),
+    address_2: wooOptionalTextSchema(255),
+    city: wooOptionalTextSchema(191),
+    state: wooOptionalTextSchema(32),
+    postcode: wooOptionalTextSchema(32),
+    country: wooOptionalTextSchema(2),
+    email: wooOptionalTextSchema(191),
+    phone: wooOptionalTextSchema(32),
+  })
+  .passthrough();
+
+const wooMetadataSchema = z
+  .object({ key: z.string().trim().min(1).max(191), value: z.unknown() })
+  .passthrough();
+
+const wooLineItemSchema = z
+  .object({
+    id: wooIdentifierSchema.optional(),
+    product_id: wooIdentifierSchema,
+    variation_id: wooIdentifierSchema.default('0'),
+    name: z.string().trim().min(1).max(255),
+    sku: wooOptionalTextSchema(191),
+    quantity: z.coerce.number().int().min(1).max(10_000),
+    price: wooMoneySchema.optional(),
+    subtotal: wooMoneySchema,
+    total: wooMoneySchema,
+    tax_class: wooOptionalTextSchema(100),
+  })
+  .passthrough();
+
+const wooCouponLineSchema = z
+  .object({
+    code: z.string().trim().min(1).max(191),
+    discount: wooMoneySchema.default('0'),
+  })
+  .passthrough();
+
+const wooShippingLineSchema = z
+  .object({
+    method_id: wooOptionalTextSchema(191),
+    method_title: wooOptionalTextSchema(191),
+    total: wooMoneySchema.default('0'),
+  })
+  .passthrough();
+
+const wooInboundOrderSchema = z
+  .object({
+    id: wooIdentifierSchema.refine(
+      (value) => value !== '0',
+      'El pedido de WooCommerce no es válido.',
+    ),
+    status: z.string().trim().min(1).max(50),
+    currency: z.string().trim().toUpperCase().length(3),
+    date_created: wooOptionalTextSchema(40),
+    date_modified: wooOptionalTextSchema(40),
+    customer_id: wooIdentifierSchema.default('0'),
+    discount_total: wooMoneySchema.default('0'),
+    shipping_total: wooMoneySchema.default('0'),
+    total: wooMoneySchema,
+    payment_method: wooOptionalTextSchema(191),
+    payment_method_title: wooOptionalTextSchema(191),
+    billing: wooAddressSchema,
+    shipping: wooAddressSchema.optional().default({
+      first_name: '',
+      last_name: '',
+      company: '',
+      address_1: '',
+      address_2: '',
+      city: '',
+      state: '',
+      postcode: '',
+      country: '',
+      email: '',
+      phone: '',
+    }),
+    meta_data: z.array(wooMetadataSchema).max(500).default([]),
+    line_items: z.array(wooLineItemSchema).min(1).max(200),
+    coupon_lines: z.array(wooCouponLineSchema).max(20).default([]),
+    shipping_lines: z.array(wooShippingLineSchema).max(20).default([]),
+  })
+  .passthrough();
+
+export const wooOrderInboundSchema = z
+  .object({
+    provider: storeSchema,
+    event: z.enum(['order.created', 'order.updated']),
+    deliveryId: z.string().trim().min(1).max(191),
+    order: wooInboundOrderSchema,
+  })
+  .strict();
+
 export type ProductImportCsvInput = z.infer<typeof productImportCsvSchema>;
+export type CreateOrderOperationInput = z.infer<typeof createOrderOperationSchema>;
+export type UpdateOrderOperationInput = z.infer<typeof updateOrderOperationSchema>;
+export type OrderListQuery = z.infer<typeof orderListQuerySchema>;
+export type UpdateShipmentInput = z.infer<typeof updateShipmentSchema>;
+export type CreateSiigoQuotationInput = z.infer<typeof createSiigoQuotationSchema>;
+export type WooOrderInboundInput = z.infer<typeof wooOrderInboundSchema>;
 
 export const siigoProductLookupQuerySchema = z.object({
   siigo_id: z.string().trim().min(1).max(191),
@@ -395,5 +711,6 @@ export type UpdateCustomerInput = z.infer<typeof updateCustomerSchema>;
 export type CustomerListQuery = z.infer<typeof customerListQuerySchema>;
 export type CustomerSiigoLookupQuery = z.infer<typeof customerSiigoLookupSchema>;
 export type CustomerSyncInput = z.infer<typeof customerSyncSchema>;
+export type CustomerSiigoLocationInput = z.infer<typeof customerSiigoLocationSchema>;
 export type ProductListQuery = z.infer<typeof productListQuerySchema>;
 export type BulkProductSyncInput = z.infer<typeof bulkProductSyncSchema>;

@@ -1,7 +1,13 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { rolePermissions, roles, type Permission } from '@sevale/permissions';
 import type { NotificationListQuery } from '@sevale/validation';
-import type { Customer, Product, SyncStatus } from '../generated/prisma/client.js';
+import type {
+  Customer,
+  OrderSyncStatus,
+  Product,
+  Store,
+  SyncStatus,
+} from '../generated/prisma/client.js';
 import { RealtimeGateway, type ProductUpdateChanges } from '../realtime/realtime.gateway.js';
 import { NotificationsRepository } from './notifications.repository.js';
 
@@ -48,6 +54,8 @@ export class NotificationsService {
         product: notification.product,
         customerId: notification.customerId,
         customer: notification.customer,
+        orderOperationId: notification.orderOperationId,
+        orderOperation: notification.orderOperation,
         createdAt: notification.createdAt,
         readAt: notification.reads[0]?.readAt ?? null,
       })),
@@ -128,6 +136,91 @@ export class NotificationsService {
     return Promise.all(results.map((result) => this.createCustomerRetry(customer, result)));
   }
 
+  createOrderOperation(
+    operation: { id: number; operationCode: string },
+    source: 'CRM' | 'WOOCOMMERCE',
+    store?: Store,
+  ) {
+    return this.create({
+      type:
+        source === 'WOOCOMMERCE' && store
+          ? `ORDER_WOO_RECEIVED_${store}`
+          : 'ORDER_OPERATION_CREATED',
+      title: source === 'WOOCOMMERCE' ? 'Pedido WooCommerce recibido' : 'Nueva operación',
+      message: operation.operationCode,
+      orderOperationId: operation.id,
+      requiredPermission: 'orders.read',
+    });
+  }
+
+  createOrderCompleted(operation: { id: number; operationCode: string }) {
+    return this.create({
+      type: 'ORDER_OPERATION_COMPLETED',
+      title: 'Operación completada',
+      message: operation.operationCode,
+      orderOperationId: operation.id,
+      requiredPermission: 'orders.read',
+    });
+  }
+
+  createOrderSyncResults(
+    operation: { id: number; operationCode: string },
+    stores: Array<{ store: Store; syncStatus: OrderSyncStatus }>,
+    isRetry: boolean,
+  ) {
+    const hasSynced = stores.some(({ syncStatus }) => syncStatus === 'SYNCED');
+    const hasError = stores.some(({ syncStatus }) => syncStatus === 'ERROR');
+    const relevant = stores.filter(({ syncStatus }) =>
+      isRetry ? syncStatus === 'SYNCED' || syncStatus === 'ERROR' : syncStatus === 'ERROR',
+    );
+    const notifications = relevant.map(({ store, syncStatus }) =>
+      this.create({
+        type:
+          syncStatus === 'ERROR' ? `ORDER_SYNC_ERROR_${store}` : `ORDER_SYNC_RECOVERED_${store}`,
+        title: syncStatus === 'ERROR' ? 'Error WooCommerce' : 'Sincronización recuperada',
+        message: operation.operationCode,
+        orderOperationId: operation.id,
+        requiredPermission: 'orders.read',
+      }),
+    );
+    if (hasSynced && hasError) {
+      notifications.unshift(
+        this.create({
+          type: 'ORDER_SYNC_PARTIAL',
+          title: 'Sincronización parcial',
+          message: operation.operationCode,
+          orderOperationId: operation.id,
+          requiredPermission: 'orders.read',
+        }),
+      );
+    }
+    return Promise.all(notifications);
+  }
+
+  createOrderShipmentUpdated(operation: { id: number; operationCode: string }) {
+    return this.create({
+      type: 'ORDER_SHIPMENT_UPDATED',
+      title: 'Envío actualizado',
+      message: operation.operationCode,
+      orderOperationId: operation.id,
+      requiredPermission: 'orders.read',
+    });
+  }
+
+  createOrderSiigoQuotationUpdated(
+    operation: { id: number; operationCode: string },
+    status: string | null,
+  ) {
+    const synced = status === 'SYNCED';
+    return this.create({
+      type: synced ? 'ORDER_SIIGO_QUOTATION_CREATED' : 'ORDER_SIIGO_QUOTATION_ERROR',
+      title: synced ? 'Cotización Siigo creada' : 'Error de cotización Siigo',
+      message: operation.operationCode,
+      orderOperationId: operation.id,
+      requiredPermission: 'orders.read',
+    });
+  }
+
   private createProductUpdate(
     type: 'PRODUCT_LINK_UPDATED' | 'SIIGO_PRODUCT_UPDATED',
     product: Product,
@@ -169,6 +262,7 @@ export class NotificationsService {
     message: string;
     productId?: number;
     customerId?: number;
+    orderOperationId?: number;
     requiredPermission?: string;
   }) {
     const notification = await this.repository.create(data);

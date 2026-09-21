@@ -7,11 +7,14 @@ import { AppModule } from '../apps/api/src/app.module.js';
 import { PrismaService } from '../apps/api/src/database/prisma.service.js';
 import {
   CustomerPersonType,
+  OperationStatus,
+  OrderSource,
   Role,
   Store,
   SyncStatus,
 } from '../apps/api/src/generated/prisma/client.js';
 import { NotificationRetentionService } from '../apps/api/src/notifications/notification-retention.service.js';
+import { NotificationsService } from '../apps/api/src/notifications/notifications.service.js';
 
 process.env.BETTER_AUTH_SECRET ||= 'local-notifications-smoke-secret-at-least-32-characters';
 
@@ -23,6 +26,7 @@ await app.listen(0, '127.0.0.1');
 
 const prisma = app.get(PrismaService);
 const notificationRetention = app.get(NotificationRetentionService);
+const notifications = app.get(NotificationsService);
 const baseUrl = await app.getUrl();
 const origin = process.env.FRONTEND_URL || 'http://localhost:5173';
 const runId = randomUUID();
@@ -50,6 +54,8 @@ const users = [
 let productId: number | null = null;
 let customerId: number | null = null;
 let customerNotificationId: number | null = null;
+let operationId: number | null = null;
+let orderNotificationId: number | null = null;
 const notificationIds: number[] = [];
 
 function expectStatus(response: Response, status: number, context: string) {
@@ -162,6 +168,54 @@ try {
     },
   });
   customerNotificationId = customerNotification.id;
+  const operation = await prisma.orderOperation.create({
+    data: {
+      operationCode: `OP-NOTIFY-${runId.slice(0, 8)}`,
+      source: OrderSource.CRM,
+      status: OperationStatus.PENDING,
+      customerId: customer.id,
+      currency: 'COP',
+    },
+  });
+  operationId = operation.id;
+  const orderNotification = await notifications.createOrderOperation(operation, 'CRM');
+  orderNotificationId = orderNotification.id;
+  const completedNotification = await notifications.createOrderCompleted(operation);
+  const syncNotifications = await notifications.createOrderSyncResults(
+    operation,
+    [
+      { store: Store.PALI, syncStatus: 'SYNCED' },
+      { store: Store.SERATUS, syncStatus: 'ERROR' },
+    ],
+    false,
+  );
+  const shipmentNotification = await notifications.createOrderShipmentUpdated(operation);
+  const quotationCreated = await notifications.createOrderSiigoQuotationUpdated(
+    operation,
+    'SYNCED',
+  );
+  const quotationError = await notifications.createOrderSiigoQuotationUpdated(operation, 'ERROR');
+  const phaseEightNotifications = [
+    completedNotification,
+    ...syncNotifications,
+    shipmentNotification,
+    quotationCreated,
+    quotationError,
+  ];
+  notificationIds.push(...phaseEightNotifications.map(({ id }) => id));
+  const phaseEightTypes = new Set(phaseEightNotifications.map(({ type }) => type));
+  for (const expectedType of [
+    'ORDER_OPERATION_COMPLETED',
+    'ORDER_SYNC_PARTIAL',
+    'ORDER_SYNC_ERROR_SERATUS',
+    'ORDER_SHIPMENT_UPDATED',
+    'ORDER_SIIGO_QUOTATION_CREATED',
+    'ORDER_SIIGO_QUOTATION_ERROR',
+  ]) {
+    if (!phaseEightTypes.has(expectedType)) {
+      throw new Error(`No se generó la notificación de pedidos ${expectedType}.`);
+    }
+  }
 
   const expiredNotification = await prisma.notification.create({
     data: {
@@ -189,6 +243,10 @@ try {
       id: number;
       readAt: string | null;
       product: { sku: string; imageUrl: string | null };
+      orderOperation?: {
+        operationCode: string;
+        customer: { id: number; displayName: string };
+      } | null;
     }>;
     unreadCount: number;
   };
@@ -208,12 +266,23 @@ try {
   if (customerItem?.customer?.displayName !== customer.displayName) {
     throw new Error('La notificación de cliente no devolvió su resumen relacionado.');
   }
+  const orderItem = unreadA.data.find((notification) => notification.id === orderNotificationId);
+  if (
+    orderItem?.orderOperation?.operationCode !== operation.operationCode ||
+    orderItem.orderOperation.customer.id !== customer.id ||
+    orderItem.orderOperation.customer.displayName !== customer.displayName
+  ) {
+    throw new Error('La notificación de pedido no devolvió la operación y cliente relacionados.');
+  }
 
   const logisticsUnreadResponse = await api('/api/notifications?status=unread', logisticsCookie);
   expectStatus(logisticsUnreadResponse, 200, 'Notificaciones de Logística');
   const logisticsUnread = (await logisticsUnreadResponse.json()) as { data: Array<{ id: number }> };
   if (logisticsUnread.data.some((notification) => notification.id === customerNotificationId)) {
     throw new Error('Logística recibió una notificación restringida a customers.read.');
+  }
+  if (!logisticsUnread.data.some((notification) => notification.id === orderNotificationId)) {
+    throw new Error('Logística no recibió la notificación restringida a orders.read.');
   }
   expectStatus(
     await api(`/api/notifications/${customerNotificationId}/read`, logisticsCookie, 'PATCH'),
@@ -274,6 +343,12 @@ try {
   }
   if (customerNotificationId !== null) {
     await prisma.notification.deleteMany({ where: { id: customerNotificationId } });
+  }
+  if (orderNotificationId !== null) {
+    await prisma.notification.deleteMany({ where: { id: orderNotificationId } });
+  }
+  if (operationId !== null) {
+    await prisma.orderOperation.deleteMany({ where: { id: operationId } });
   }
   if (customerId !== null) await prisma.customer.deleteMany({ where: { id: customerId } });
   if (productId !== null) await prisma.product.deleteMany({ where: { id: productId } });

@@ -8,6 +8,7 @@ import {
   Moon,
   Persons,
   PersonMagnifier,
+  ShoppingCart,
   Sun,
   Xmark,
 } from '@gravity-ui/icons';
@@ -199,6 +200,16 @@ export function AppShell() {
               <Boxes3 />
             </span>
             <span>Inventario</span>
+          </NavLink>
+
+          <NavLink
+            to="/orders"
+            className={({ isActive }) => `sidebar-link${isActive ? ' sidebar-link-active' : ''}`}
+          >
+            <span className="sidebar-menu-icon" aria-hidden="true">
+              <ShoppingCart />
+            </span>
+            <span>Pedidos</span>
           </NavLink>
 
           {(user?.role === 'ADMIN' || user?.role === 'COMMERCIAL') && (

@@ -2,6 +2,7 @@ import '../apps/api/src/config/load-environment.js';
 import { BadRequestException } from '@nestjs/common';
 import {
   createCustomerSchema,
+  customerSyncSchema,
   customerDocumentError,
   customerDocumentTypes,
   type CreateCustomerInput,
@@ -31,6 +32,7 @@ const customer: CreateCustomerInput = {
   country: 'CO',
   region: 'CO-ANT',
   cityCode: '05001',
+  cityName: null,
   postalCode: '050001',
   addressLine1: 'Cra. 18 #79A - 42',
   addressLine2: 'Apto 301',
@@ -40,7 +42,7 @@ const customer: CreateCustomerInput = {
 
 const locations = new CustomerLocationsService();
 const siigoMapper = new SiigoCustomerMapper(locations);
-const wooMapper = new WooCustomerMapper(locations);
+const wooMapper = new WooCustomerMapper();
 
 const resolved = locations.resolve('CO', 'CO-ANT', '05001');
 if (
@@ -246,6 +248,110 @@ if (
 ) {
   throw new Error('SiigoCustomerMapper generó un payload distinto al contrato aprobado.');
 }
+
+const siigoPanama = siigoMapper.map(
+  {
+    ...customer,
+    phone: null,
+    country: 'PA',
+    region: 'PA-8',
+    cityCode: null,
+    cityName: 'Ciudad de Panamá',
+  },
+  { stateCode: '05', cityCode: '0501' },
+);
+if (
+  siigoPanama.address.city.country_code !== 'Pa' ||
+  siigoPanama.address.city.state_code !== '05' ||
+  siigoPanama.address.city.city_code !== '0501'
+) {
+  throw new Error('SiigoCustomerMapper no utilizó la selección internacional explícita.');
+}
+
+let missingSiigoSelectionRejected = false;
+try {
+  siigoMapper.map({
+    ...customer,
+    phone: null,
+    country: 'PA',
+    region: 'PA-8',
+    cityCode: null,
+    cityName: 'Ciudad de Panamá',
+  });
+} catch (error) {
+  const response = error instanceof BadRequestException ? error.getResponse() : null;
+  missingSiigoSelectionRejected =
+    typeof response === 'object' &&
+    response !== null &&
+    'error' in response &&
+    (response as { error?: { code?: string } }).error?.code === 'SIIGO_CUSTOMER_LOCATION_REQUIRED';
+}
+if (!missingSiigoSelectionRejected) {
+  throw new Error('SiigoCustomerMapper permitió sincronizar Panamá sin ubicación Siigo.');
+}
+
+let mismatchedSiigoCityRejected = false;
+try {
+  siigoMapper.map(
+    {
+      ...customer,
+      phone: null,
+      country: 'PA',
+      region: 'PA-8',
+      cityCode: null,
+      cityName: 'Ciudad de Panamá',
+    },
+    { stateCode: '01', cityCode: '0501' },
+  );
+} catch (error) {
+  const response = error instanceof BadRequestException ? error.getResponse() : null;
+  mismatchedSiigoCityRejected =
+    typeof response === 'object' &&
+    response !== null &&
+    'error' in response &&
+    (response as { error?: { code?: string } }).error?.code === 'SIIGO_CUSTOMER_LOCATION_INVALID';
+}
+if (!mismatchedSiigoCityRejected) {
+  throw new Error('SiigoCustomerMapper aceptó una ciudad de otra región Siigo.');
+}
+
+let unmappedSiigoCountryRejected = false;
+try {
+  siigoMapper.map(
+    {
+      ...customer,
+      phone: null,
+      country: 'AD',
+      region: 'Región libre',
+      cityCode: null,
+      cityName: 'Andorra la Vieja',
+    },
+    { stateCode: '01', cityCode: '0101' },
+  );
+} catch (error) {
+  const response = error instanceof BadRequestException ? error.getResponse() : null;
+  unmappedSiigoCountryRejected =
+    typeof response === 'object' &&
+    response !== null &&
+    'error' in response &&
+    (response as { error?: { code?: string } }).error?.code === 'SIIGO_CUSTOMER_COUNTRY_NOT_MAPPED';
+}
+if (!unmappedSiigoCountryRejected) {
+  throw new Error('SiigoCustomerMapper inventó una correspondencia para un país no soportado.');
+}
+
+if (
+  !customerSyncSchema.safeParse({
+    provider: 'SIIGO',
+    siigoLocation: { stateCode: '05', cityCode: '0501' },
+  }).success ||
+  customerSyncSchema.safeParse({
+    provider: 'PALI',
+    siigoLocation: { stateCode: '05', cityCode: '0501' },
+  }).success
+) {
+  throw new Error('El contrato de sincronización no limitó la ubicación explícita a Siigo.');
+}
 if ('commercial_name' in siigo || 'check_digit' in siigo) {
   throw new Error('SiigoCustomerMapper incluyó campos opcionales vacíos o redundantes.');
 }
@@ -275,7 +381,7 @@ if (
   woo.billing.city !== 'Medellín' ||
   woo.billing.state !== 'CO-ANT' ||
   woo.billing.country !== 'CO' ||
-  woo.billing.phone !== '+573006003345' ||
+  woo.billing.phone !== '+57 300 6003345' ||
   woo.billing.address_1 !== 'CRA. 18 #79A - 42' ||
   woo.billing.address_2 !== 'APTO 301' ||
   woo.meta_data.find((entry) => entry.key === 'billing_type_document')?.value !== '13' ||
@@ -284,6 +390,96 @@ if (
   'shipping' in woo
 ) {
   throw new Error('WooCustomerMapper generó un payload distinto al contrato aprobado.');
+}
+
+const wooPanama = wooMapper.map({
+  ...customer,
+  phone: null,
+  country: 'PA',
+  region: 'PA-8',
+  cityCode: null,
+  cityName: 'Ciudad de Panamá',
+});
+if (
+  wooPanama.billing.country !== 'PA' ||
+  wooPanama.billing.state !== 'PA-8' ||
+  wooPanama.billing.city !== 'Ciudad de Panamá'
+) {
+  throw new Error('WooCustomerMapper no conservó la ubicación canónica internacional.');
+}
+
+const wooSpain = wooMapper.map({
+  ...customer,
+  phone: '+34607649286',
+  country: 'ES',
+  region: 'M',
+  cityCode: null,
+  cityName: 'Madrid',
+});
+if (wooSpain.billing.phone !== '+34 607 64 92 86') {
+  throw new Error('WooCustomerMapper no envió el teléfono con formato internacional legible.');
+}
+
+const wooWithoutCatalogStates = wooMapper.map({
+  ...customer,
+  phone: null,
+  country: 'AD',
+  region: 'Región libre',
+  cityCode: null,
+  cityName: 'Andorra la Vieja',
+});
+if (
+  wooWithoutCatalogStates.billing.country !== 'AD' ||
+  wooWithoutCatalogStates.billing.state !== 'Región libre' ||
+  wooWithoutCatalogStates.billing.city !== 'Andorra la Vieja'
+) {
+  throw new Error('WooCustomerMapper no conservó la región libre de un país sin states.');
+}
+
+let invalidInternationalStateRejected = false;
+try {
+  wooMapper.map({
+    ...customer,
+    phone: null,
+    country: 'PA',
+    region: '05',
+    cityCode: null,
+    cityName: 'Ciudad de Panamá',
+  });
+} catch (error) {
+  const response = error instanceof BadRequestException ? error.getResponse() : null;
+  invalidInternationalStateRejected =
+    typeof response === 'object' &&
+    response !== null &&
+    'error' in response &&
+    (response as { error?: { code?: string } }).error?.code ===
+      'WOOCOMMERCE_CUSTOMER_LOCATION_INVALID';
+}
+if (!invalidInternationalStateRejected) {
+  throw new Error('WooCustomerMapper aceptó un state Siigo como si fuera un state Woo.');
+}
+
+let missingInternationalCityRejected = false;
+try {
+  wooMapper.map({
+    ...customer,
+    phone: null,
+    country: 'PA',
+    region: 'PA-8',
+    cityCode: null,
+    cityName: null,
+  });
+} catch (error) {
+  const response = error instanceof BadRequestException ? error.getResponse() : null;
+  missingInternationalCityRejected =
+    typeof response === 'object' &&
+    response !== null &&
+    'error' in response &&
+    (response as { error?: { code?: string } }).error?.code ===
+      'WOOCOMMERCE_CUSTOMER_LOCATION_REQUIRED';
+}
+if (!missingInternationalCityRejected) {
+  throw new Error('WooCustomerMapper permitió un país internacional sin ciudad libre.');
 }
 
 const wooWithUppercaseNames = wooMapper.map({

@@ -44,6 +44,39 @@ export type WooCommerceBatchUpdateResult = {
   error: string | null;
 };
 
+export type WooCommerceOrderCreatePayload = {
+  customer_id: number;
+  currency: string;
+  payment_method?: string;
+  payment_method_title?: string;
+  set_paid: true;
+  billing: Record<string, string>;
+  shipping: Record<string, string>;
+  line_items: Array<{
+    product_id: number;
+    variation_id?: number;
+    quantity: number;
+    subtotal: string;
+    total: string;
+  }>;
+  shipping_lines?: Array<{ method_id: string; method_title: string; total: string }>;
+  coupon_lines?: Array<{ code: string }>;
+  meta_data: Array<{ key: string; value: string }>;
+};
+
+export type WooCommerceOrderReference = {
+  id: string;
+  status: string;
+  dateCreated: Date | null;
+  dateModified: Date | null;
+};
+
+export type WooCommerceShipmentUpdate = {
+  carrier: string;
+  trackingNumber: string;
+  status: string;
+};
+
 function isRecord(value: unknown): value is UnknownRecord {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -58,6 +91,36 @@ function identifier(value: unknown): string | null {
   if (typeof value === 'number' && Number.isSafeInteger(value) && value > 0) return String(value);
   if (typeof value === 'string' && /^\d+$/.test(value)) return value;
   return null;
+}
+
+function date(value: unknown): Date | null {
+  if (typeof value !== 'string' || !value.trim()) return null;
+  const result = new Date(value);
+  return Number.isNaN(result.getTime()) ? null : result;
+}
+
+function orderMetadata(value: unknown, key: string): string | null {
+  if (!isRecord(value) || !Array.isArray(value.meta_data)) return null;
+  for (const item of value.meta_data) {
+    if (!isRecord(item) || item.key !== key) continue;
+    if (typeof item.value === 'string' || typeof item.value === 'number') {
+      return String(item.value).trim() || null;
+    }
+  }
+  return null;
+}
+
+function normalizeOrder(value: unknown): WooCommerceOrderReference | null {
+  if (!isRecord(value)) return null;
+  const id = identifier(value.id);
+  const status = typeof value.status === 'string' ? value.status.trim() : '';
+  if (!id || !status) return null;
+  return {
+    id,
+    status,
+    dateCreated: date(value.date_created),
+    dateModified: date(value.date_modified),
+  };
 }
 
 function updateBody(update: WooCommerceBatchProductUpdate) {
@@ -132,6 +195,95 @@ function normalizeProduct(
 
 @Injectable()
 export class WooCommerceService {
+  async updateOrderShipment(
+    store: Store,
+    orderId: string,
+    shipment: WooCommerceShipmentUpdate,
+  ): Promise<WooCommerceOrderReference> {
+    const config = wooCommerceConfiguration(store);
+    const normalizedOrderId = identifier(orderId);
+    if (!normalizedOrderId) throw invalidIntegrationResponse(config.label);
+    const metadata = [
+      { key: '_wot_tracking_carrier', value: shipment.carrier },
+      { key: '_wot_tracking_number', value: shipment.trackingNumber },
+      { key: '_wot_tracking_status', value: shipment.status },
+    ];
+    const response = await integrationPut(
+      integrationUrl(config.apiUrl, `orders/${normalizedOrderId}`),
+      wooCommerceAuthorizationHeaders(config),
+      { meta_data: metadata },
+      config.label,
+      { timeoutMs: 30_000, retryCount: 1 },
+    );
+    const order = normalizeOrder(response);
+    if (
+      !order ||
+      order.id !== normalizedOrderId ||
+      metadata.some(({ key, value }) => orderMetadata(response, key) !== value)
+    ) {
+      throw invalidIntegrationResponse(config.label);
+    }
+    return order;
+  }
+
+  async findOrderByExternalKey(
+    store: Store,
+    customerId: string,
+    externalKey: string,
+  ): Promise<WooCommerceOrderReference | null> {
+    const config = wooCommerceConfiguration(store);
+    const normalizedCustomerId = identifier(customerId);
+    if (!normalizedCustomerId) throw invalidIntegrationResponse(config.label);
+
+    for (let page = 1; page <= 10; page += 1) {
+      const url = integrationUrl(config.apiUrl, 'orders');
+      url.searchParams.set('customer', normalizedCustomerId);
+      url.searchParams.set('status', 'any');
+      url.searchParams.set('orderby', 'date');
+      url.searchParams.set('order', 'desc');
+      url.searchParams.set('per_page', '100');
+      url.searchParams.set('page', String(page));
+      const payload = await integrationGet(
+        url,
+        wooCommerceAuthorizationHeaders(config),
+        config.label,
+        { timeoutMs: 20_000, retryCount: 1 },
+      );
+      if (!Array.isArray(payload)) throw invalidIntegrationResponse(config.label);
+      const orders: unknown[] = payload;
+      const match = orders.find(
+        (order) => orderMetadata(order, 'sevale_crm_order_key') === externalKey,
+      );
+      if (match) {
+        const normalized = normalizeOrder(match);
+        if (!normalized) throw invalidIntegrationResponse(config.label);
+        return normalized;
+      }
+      if (orders.length < 100) return null;
+    }
+    return null;
+  }
+
+  async createOrder(
+    store: Store,
+    body: WooCommerceOrderCreatePayload,
+  ): Promise<WooCommerceOrderReference> {
+    const config = wooCommerceConfiguration(store);
+    const response = await integrationPost(
+      integrationUrl(config.apiUrl, 'orders'),
+      wooCommerceAuthorizationHeaders(config),
+      body,
+      config.label,
+      { timeoutMs: 30_000 },
+    );
+    const order = normalizeOrder(response);
+    const externalKey = body.meta_data.find(({ key }) => key === 'sevale_crm_order_key')?.value;
+    if (!order || !externalKey || orderMetadata(response, 'sevale_crm_order_key') !== externalKey) {
+      throw invalidIntegrationResponse(config.label);
+    }
+    return order;
+  }
+
   async searchProductBySku(store: Store, sku: string): Promise<WooCommerceProduct | null> {
     const config = wooCommerceConfiguration(store);
     const url = integrationUrl(config.apiUrl, 'products');

@@ -22,6 +22,20 @@ export type NotificationRecord = {
     displayName: string;
     email: string;
   } | null;
+  orderOperationId: number | null;
+  orderOperation: {
+    operationCode: string;
+    source: 'CRM' | 'WOOCOMMERCE';
+    status: 'PENDING' | 'COMPLETED' | 'CANCELLED';
+    customer: {
+      id: number;
+      personType: 'PERSON' | 'COMPANY';
+      firstName: string | null;
+      lastName: string | null;
+      displayName: string;
+      email: string | null;
+    };
+  } | null;
   createdAt: string;
   readAt: string | null;
 };

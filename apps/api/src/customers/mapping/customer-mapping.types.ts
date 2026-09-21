@@ -1,6 +1,7 @@
-import type { CreateCustomerInput } from '@sevale/validation';
+import type { CreateCustomerInput, CustomerSiigoLocationInput } from '@sevale/validation';
 
 export type CustomerMappingSource = CreateCustomerInput & { active?: boolean };
+export type SiigoLocationSelection = CustomerSiigoLocationInput;
 
 export type ResolvedCustomerLocation = {
   display: { country: string; region: string; city: string };

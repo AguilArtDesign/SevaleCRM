@@ -1,8 +1,14 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
-import { normalizePhoneE164 } from '@sevale/shared';
+import {
+  formatPhoneInternational,
+  getCustomerWooStates,
+  resolveCustomerColombiaCity,
+  resolveCustomerColombiaState,
+  resolveCustomerCountry,
+  resolveCustomerWooState,
+} from '@sevale/shared';
 import { capitalizeCustomerName } from '../customer-data-sanitizer.js';
 import type { CustomerMappingSource } from './customer-mapping.types.js';
-import { CustomerLocationsService } from './customer-locations.service.js';
 
 export type WooCustomerPayload = {
   username: string;
@@ -32,10 +38,80 @@ function uppercase(value: string): string {
   return value.toLocaleUpperCase('es-CO');
 }
 
+type WooLocation = { country: string; state?: string; city: string };
+
+function locationError(code: string, message: string): BadRequestException {
+  return new BadRequestException({ success: false, error: { code, message } });
+}
+
+function resolveWooLocation(customer: CustomerMappingSource): WooLocation | null {
+  const hasLocation = Boolean(
+    customer.country || customer.region || customer.cityCode || customer.cityName,
+  );
+  if (!hasLocation) return null;
+  if (!customer.country) {
+    throw locationError(
+      'WOOCOMMERCE_CUSTOMER_LOCATION_REQUIRED',
+      'Selecciona el país antes de sincronizar el cliente con WooCommerce.',
+    );
+  }
+  const countryCode = customer.country.trim().toUpperCase();
+  if (!resolveCustomerCountry(countryCode)) {
+    throw locationError(
+      'WOOCOMMERCE_CUSTOMER_LOCATION_INVALID',
+      'El país seleccionado no existe en el catálogo de WooCommerce.',
+    );
+  }
+
+  if (countryCode === 'CO') {
+    const state = customer.region ? resolveCustomerColombiaState(customer.region) : null;
+    const city =
+      state && customer.cityCode
+        ? resolveCustomerColombiaCity(state.code, customer.cityCode)
+        : null;
+    if (!state || !city) {
+      throw locationError(
+        'WOOCOMMERCE_CUSTOMER_LOCATION_INVALID',
+        'Selecciona un departamento y una ciudad válidos de Colombia antes de sincronizar.',
+      );
+    }
+    return { country: 'CO', state: state.code, city: city.name };
+  }
+
+  if (customer.cityCode) {
+    throw locationError(
+      'WOOCOMMERCE_CUSTOMER_LOCATION_INVALID',
+      'Corrige la ciudad internacional y guárdala como texto antes de sincronizar.',
+    );
+  }
+  const city = customer.cityName?.trim();
+  if (!city) {
+    throw locationError(
+      'WOOCOMMERCE_CUSTOMER_LOCATION_REQUIRED',
+      'Escribe la ciudad antes de sincronizar el cliente con WooCommerce.',
+    );
+  }
+  const states = getCustomerWooStates(countryCode);
+  if (states.length > 0) {
+    const state = customer.region ? resolveCustomerWooState(countryCode, customer.region) : null;
+    if (!state) {
+      throw locationError(
+        'WOOCOMMERCE_CUSTOMER_LOCATION_INVALID',
+        'Selecciona una región válida de WooCommerce antes de sincronizar.',
+      );
+    }
+    return { country: countryCode, state: state.code, city };
+  }
+  const freeRegion = customer.region?.trim();
+  return {
+    country: countryCode,
+    ...(freeRegion ? { state: freeRegion } : {}),
+    city,
+  };
+}
+
 @Injectable()
 export class WooCustomerMapper {
-  constructor(private readonly locations: CustomerLocationsService) {}
-
   map(customer: CustomerMappingSource): WooCustomerPayload {
     if (!customer.email) {
       throw new BadRequestException({
@@ -46,12 +122,9 @@ export class WooCustomerMapper {
         },
       });
     }
-    const location =
-      customer.country && customer.region && customer.cityCode
-        ? this.locations.resolve(customer.country, customer.region, customer.cityCode)
-        : null;
+    const location = resolveWooLocation(customer);
     const phone = customer.phone
-      ? normalizePhoneE164(customer.phone, customer.country ?? '')
+      ? formatPhoneInternational(customer.phone, customer.country ?? '')
       : null;
     if (customer.phone && !phone) {
       throw new BadRequestException({
@@ -76,9 +149,10 @@ export class WooCustomerMapper {
         ...(customer.company ? { company: customer.company } : {}),
         ...(customer.addressLine1 ? { address_1: uppercase(customer.addressLine1) } : {}),
         ...(customer.addressLine2 ? { address_2: uppercase(customer.addressLine2) } : {}),
-        ...(location ? { city: location.woo.city, state: location.woo.state } : {}),
+        ...(location ? { city: location.city } : {}),
+        ...(location?.state ? { state: location.state } : {}),
         ...(customer.postalCode ? { postcode: customer.postalCode } : {}),
-        ...(location ? { country: location.woo.country } : {}),
+        ...(location ? { country: location.country } : {}),
         email: customer.email,
         ...(phone ? { phone } : {}),
       },

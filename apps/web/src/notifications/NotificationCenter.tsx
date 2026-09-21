@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Avatar, Button, Popover, Skeleton, Tabs } from '@heroui/react';
-import { Bell, Boxes3, Check, CheckDouble } from '@gravity-ui/icons';
+import { Bell, Boxes3, Check, CheckDouble, ShoppingCart } from '@gravity-ui/icons';
 import { Chip } from '../components/Chip';
 import { customerAvatarClass, customerInitials } from '../customers/presentation';
 import { notificationsApi, type NotificationRecord, type NotificationStatus } from './api';
@@ -24,6 +24,9 @@ function capitalize(value: string) {
 }
 
 function notificationDescription(notification: NotificationRecord) {
+  if (notification.type.startsWith('ORDER_') && notification.orderOperation) {
+    return `${notification.orderOperation.customer.displayName} · ${notification.orderOperation.operationCode}`;
+  }
   if (notification.type.startsWith('CUSTOMER_')) {
     return notification.message.split('\n')[0] || notification.customer?.displayName || '';
   }
@@ -64,6 +67,11 @@ function customerNotificationProvider(notification: NotificationRecord): Custome
       details.toLocaleLowerCase('es-CO').includes(customerProviderLabels[provider].toLowerCase()),
     ) ?? null
   );
+}
+
+function orderNotificationProvider(notification: NotificationRecord): CustomerProvider | null {
+  if (!notification.type.startsWith('ORDER_')) return null;
+  return customerNotificationProvider(notification);
 }
 
 function customerNotificationPresentation(notification: NotificationRecord) {
@@ -123,27 +131,33 @@ export function NotificationCenter() {
           <strong>{status === 'unread' ? 'Todo está al día' : 'Sin notificaciones leídas'}</strong>
           <span>
             {status === 'unread'
-              ? 'Las novedades del inventario y clientes aparecerán aquí.'
+              ? 'Las novedades del inventario, clientes y pedidos aparecerán aquí.'
               : 'Las notificaciones que marques como leídas aparecerán aquí.'}
           </span>
         </div>
       ) : (
         notificationsQuery.data.data.map((notification) => {
           const customerPresentation = customerNotificationPresentation(notification);
+          const orderProvider = orderNotificationProvider(notification);
+          const relatedCustomer = notification.customer ?? notification.orderOperation?.customer;
           return (
             <article
               className={`notification-item${notification.readAt ? '' : ' notification-item-unread'}`}
               key={notification.id}
             >
               <span className="notification-dot" aria-hidden="true" />
-              {notification.customer ? (
+              {relatedCustomer ? (
                 <Avatar
                   size="md"
-                  className={`notification-customer-avatar ${customerAvatarClass(notification.customerId ?? notification.id)}`}
+                  className={`notification-customer-avatar ${customerAvatarClass(notification.customerId ?? notification.orderOperation?.customer.id ?? notification.id)}`}
                   aria-hidden="true"
                 >
-                  <Avatar.Fallback>{customerInitials(notification.customer)}</Avatar.Fallback>
+                  <Avatar.Fallback>{customerInitials(relatedCustomer)}</Avatar.Fallback>
                 </Avatar>
+              ) : notification.orderOperation ? (
+                <span className="notification-product-image" aria-hidden="true">
+                  <ShoppingCart width={20} height={20} />
+                </span>
               ) : (
                 <span className="notification-product-image" aria-hidden="true">
                   {notification.product?.imageUrl ? (
@@ -177,6 +191,14 @@ export function NotificationCenter() {
                       color="default"
                     >
                       {customerProviderLabels[customerPresentation.provider]}
+                    </Chip>
+                  )}
+                  {orderProvider && (
+                    <Chip
+                      className={`notification-provider-chip--${orderProvider.toLowerCase()}`}
+                      color="default"
+                    >
+                      {customerProviderLabels[orderProvider]}
                     </Chip>
                   )}
                 </div>

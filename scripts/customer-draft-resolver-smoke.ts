@@ -101,6 +101,9 @@ scenario = { siigo: siigo() };
 const onlySiigo = await resolver.resolve('904940');
 assert(!onlySiigo.existsLocally && onlySiigo.customer, 'Siigo debe construir un draft.');
 equal(onlySiigo.customer.email, 'cliente@gmail.com', 'Debe conservar el correo único de Siigo');
+equal(onlySiigo.customer.country, null, 'Siigo no debe autocompletar el país');
+equal(onlySiigo.customer.region, null, 'Siigo no debe autocompletar la región');
+equal(onlySiigo.customer.cityCode, null, 'Siigo no debe autocompletar el código de ciudad');
 equal(Object.keys(onlySiigo.conflicts).length, 0, 'Siigo único no debe generar conflictos');
 
 scenario = { seratus: woo() };
@@ -109,6 +112,9 @@ assert(!onlyWoo.existsLocally && onlyWoo.customer, 'WooCommerce debe construir u
 equal(onlyWoo.customer.documentType, '22', 'Debe mapear el tipo documental real de Woo');
 equal(onlyWoo.customer.firstName, 'Yohander David', 'Billing debe ganar sobre top-level');
 equal(onlyWoo.customer.addressLine2, 'Robledo Miramar', 'Debe preservar el complemento Billing');
+equal(onlyWoo.customer.country, null, 'WooCommerce no debe autocompletar el país');
+equal(onlyWoo.customer.region, null, 'WooCommerce no debe autocompletar la región');
+equal(onlyWoo.customer.cityName, null, 'WooCommerce no debe autocompletar la ciudad');
 
 scenario = {
   seratus: woo({

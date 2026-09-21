@@ -1,6 +1,9 @@
 import '../apps/api/src/config/load-environment.js';
-import { GatewayTimeoutException } from '@nestjs/common';
-import type { CustomerIntegrationProvider } from '../apps/api/src/generated/prisma/client.js';
+import { BadRequestException, GatewayTimeoutException } from '@nestjs/common';
+import type {
+  CustomerIntegrationProvider,
+  Prisma,
+} from '../apps/api/src/generated/prisma/client.js';
 import {
   CustomerIntegrationService,
   customerIntegrationProviders,
@@ -17,6 +20,7 @@ type IntegrationState = {
   lastSyncedAt: Date | null;
   lastErrorCode: string | null;
   lastErrorMessage: string | null;
+  externalData: Prisma.JsonValue | null;
 };
 
 const states = new Map<CustomerIntegrationProvider, IntegrationState>(
@@ -29,6 +33,7 @@ const states = new Map<CustomerIntegrationProvider, IntegrationState>(
       lastSyncedAt: null,
       lastErrorCode: null,
       lastErrorMessage: null,
+      externalData: null,
     },
   ]),
 );
@@ -55,6 +60,17 @@ const repository = {
     externalId: string,
   ) => {
     state(provider).externalId = externalId;
+    return Promise.resolve(state(provider));
+  },
+  mergeExternalData: (
+    _customerId: number,
+    provider: CustomerIntegrationProvider,
+    patch: Prisma.JsonObject,
+  ) => {
+    const current = state(provider).externalData;
+    const base =
+      typeof current === 'object' && current !== null && !Array.isArray(current) ? current : {};
+    state(provider).externalData = { ...base, ...patch };
     return Promise.resolve(state(provider));
   },
   markSynced: (
@@ -92,6 +108,8 @@ const repository = {
 
 const siigoId = '377d11bb-4fce-4e80-bd6d-c593da3fccdb';
 let siigoCreates = 0;
+let lastSiigoLocation: { stateCode: string; cityCode: string } | undefined;
+const currentSiigoLocation = () => lastSiigoLocation;
 const siigo = {
   findCustomer: () =>
     Promise.resolve({ id: siigoId, identification: '13832081', personType: 'Person' as const }),
@@ -103,12 +121,27 @@ const siigo = {
       personType: 'Person' as const,
     });
   },
-  updateCustomer: (externalId: string) =>
-    Promise.resolve({
+  updateCustomer: (
+    externalId: string,
+    _customer: CustomerWithIntegrations,
+    siigoLocation?: { stateCode: string; cityCode: string },
+  ) => {
+    lastSiigoLocation = siigoLocation;
+    if (_customer.country !== 'CO' && !siigoLocation) {
+      throw new BadRequestException({
+        success: false,
+        error: {
+          code: 'SIIGO_CUSTOMER_LOCATION_REQUIRED',
+          message: 'Selecciona la región y la ciudad de Siigo antes de sincronizar.',
+        },
+      });
+    }
+    return Promise.resolve({
       id: externalId,
       identification: '13832081',
       personType: 'Person' as const,
-    }),
+    });
+  },
 } as unknown as SiigoCustomerService;
 
 let paliExists = false;
@@ -180,6 +213,7 @@ function customerFromState(): CustomerWithIntegrations {
     country: 'CO',
     region: 'CO-ANT',
     cityCode: '05001',
+    cityName: null,
     postalCode: '050001',
     addressLine1: 'Cra. 18 #79A - 42',
     addressLine2: null,
@@ -194,7 +228,7 @@ function customerFromState(): CustomerWithIntegrations {
       customerId: 701,
       provider,
       externalId: state(provider).externalId,
-      externalData: null,
+      externalData: state(provider).externalData,
       status: state(provider).status,
       lastAttemptAt: state(provider).lastAttemptAt,
       lastSyncedAt: state(provider).lastSyncedAt,
@@ -223,6 +257,60 @@ if (
   paliCreates !== 1
 ) {
   throw new Error('El preflight, los external_id o el error sanitizado no se registraron.');
+}
+
+const internationalCustomer = {
+  ...customerFromState(),
+  country: 'PA',
+  region: 'PA-8',
+  cityCode: null,
+  cityName: 'Ciudad de Panamá',
+};
+state('SIIGO').externalData = { preserved: { value: true } };
+await service.synchronize(internationalCustomer, ['SIIGO'], {
+  stateCode: '05',
+  cityCode: '0501',
+});
+const selectedSiigoLocation = currentSiigoLocation();
+const storedSiigoData = state('SIIGO').externalData as {
+  preserved?: { value?: boolean };
+  siigoLocation?: { target?: { stateCode?: string; cityCode?: string } };
+};
+if (
+  selectedSiigoLocation?.stateCode !== '05' ||
+  selectedSiigoLocation.cityCode !== '0501' ||
+  storedSiigoData.preserved?.value !== true ||
+  storedSiigoData.siigoLocation?.target?.stateCode !== '05' ||
+  storedSiigoData.siigoLocation.target.cityCode !== '0501'
+) {
+  throw new Error('La orquestación no guardó la ubicación Siigo preservando external_data.');
+}
+
+lastSiigoLocation = undefined;
+const reuse = await service.synchronize(
+  { ...internationalCustomer, integrations: customerFromState().integrations },
+  ['SIIGO'],
+);
+const reusedSiigoLocation = currentSiigoLocation();
+if (
+  reuse[0]?.status !== 'SYNCED' ||
+  reusedSiigoLocation?.stateCode !== '05' ||
+  reusedSiigoLocation.cityCode !== '0501'
+) {
+  throw new Error('La orquestación no reutilizó el mapping Siigo vigente.');
+}
+
+lastSiigoLocation = undefined;
+const invalidated = await service.synchronize(
+  {
+    ...internationalCustomer,
+    cityName: 'Colón',
+    integrations: customerFromState().integrations,
+  },
+  ['SIIGO'],
+);
+if (invalidated[0]?.status !== 'ERROR' || currentSiigoLocation() !== undefined) {
+  throw new Error('La orquestación reutilizó el mapping después de cambiar la ciudad local.');
 }
 
 paliExists = true;

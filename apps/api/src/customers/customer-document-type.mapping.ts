@@ -1,4 +1,4 @@
-import type { customerDocumentTypes } from '@sevale/validation';
+import { customerDocumentTypes } from '@sevale/validation';
 
 export type CustomerDocumentType = (typeof customerDocumentTypes)[number]['value'];
 
@@ -25,6 +25,8 @@ function normalized(value: string): string {
 export function documentTypeFromWoo(value: string | null | undefined): CustomerDocumentType | null {
   if (!value?.trim()) return null;
   const candidate = normalized(value);
+  const canonical = customerDocumentTypes.find(({ value: code }) => normalized(code) === candidate);
+  if (canonical) return canonical.value;
   for (const [documentType, mapping] of Object.entries(customerDocumentTypeMappings)) {
     if (mapping.wooValues.some((wooValue) => normalized(wooValue) === candidate)) {
       return documentType as CustomerDocumentType;

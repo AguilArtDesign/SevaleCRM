@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import type { CustomerIntegrationProvider } from '../generated/prisma/client.js';
+import type { Prisma } from '../generated/prisma/client.js';
 import { PrismaService } from '../database/prisma.service.js';
 
 @Injectable()
@@ -27,6 +28,30 @@ export class CustomerIntegrationsRepository {
     return this.prisma.customerIntegration.update({
       where: { customerId_provider: { customerId, provider } },
       data: { externalId },
+    });
+  }
+
+  mergeExternalData(
+    customerId: number,
+    provider: CustomerIntegrationProvider,
+    patch: Prisma.JsonObject,
+  ) {
+    return this.prisma.$transaction(async (transaction) => {
+      const integration = await transaction.customerIntegration.findUniqueOrThrow({
+        where: { customerId_provider: { customerId, provider } },
+        select: { externalData: true },
+      });
+      const current = integration.externalData;
+      const base: Prisma.JsonObject =
+        typeof current === 'object' && current !== null && !Array.isArray(current)
+          ? current
+          : current === null
+            ? {}
+            : { legacy: current };
+      return transaction.customerIntegration.update({
+        where: { customerId_provider: { customerId, provider } },
+        data: { externalData: { ...base, ...patch } },
+      });
     });
   }
 

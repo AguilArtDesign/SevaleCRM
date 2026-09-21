@@ -125,6 +125,33 @@ export function resolveLocationFromSiigo(
   };
 }
 
+export function resolveLocationFromWoo(
+  wooCountryCode: string,
+  wooStateCode: string,
+  cityName: string,
+) {
+  const countryCode = normalizedCode(wooCountryCode);
+  const country = resolveCountry(countryCode);
+  const normalizedState = normalizedCode(wooStateCode);
+  const state = country
+    ? (resolveState(countryCode, normalizedState) ??
+      resolveState(countryCode, `${countryCode}-${normalizedState}`))
+    : null;
+  if (!country || !state) return null;
+  const stateCode = Object.entries(country.states).find(
+    ([, candidate]) => candidate === state,
+  )?.[0];
+  if (!stateCode) return null;
+  const city = getCities(countryCode, stateCode).find(
+    ({ name }) => name.localeCompare(cityName.trim(), 'es', { sensitivity: 'base' }) === 0,
+  );
+  return {
+    country: countryCode,
+    region: state.wooCode ?? stateCode,
+    cityCode: city?.code ?? null,
+  };
+}
+
 export function countryFlagPath(countryCode: string): string {
   return `/img/flags/${normalizedCode(countryCode)}.webp`;
 }

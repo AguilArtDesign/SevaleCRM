@@ -1,5 +1,4 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { getCities, resolveCountry, resolveState } from '@sevale/shared';
 import type { CreateCustomerInput } from '@sevale/validation';
 import {
   normalizeCustomerName,
@@ -27,7 +26,7 @@ export type CustomerSourceSummary = {
 };
 export type CustomerDraftAddress = Pick<
   CreateCustomerInput,
-  'country' | 'region' | 'cityCode' | 'postalCode' | 'addressLine1' | 'addressLine2'
+  'country' | 'region' | 'cityCode' | 'cityName' | 'postalCode' | 'addressLine1' | 'addressLine2'
 >;
 export type CustomerDraftName = Pick<CreateCustomerInput, 'firstName' | 'lastName' | 'displayName'>;
 export type CustomerDraftConflictOption<T> = { value: T; sources: CustomerDraftSource[] };
@@ -140,6 +139,7 @@ function equivalentAddress(first: CustomerDraftAddress, second: CustomerDraftAdd
     compatibleValue(first.country, second.country) &&
     compatibleValue(first.region, second.region) &&
     compatibleValue(first.cityCode, second.cityCode) &&
+    compatibleValue(first.cityName, second.cityName) &&
     compatibleValue(first.postalCode, second.postalCode)
   );
 }
@@ -157,6 +157,7 @@ function combineEquivalentAddress(
       country: structured.country ?? fallback.country,
       region: structured.region ?? fallback.region,
       cityCode: structured.cityCode ?? fallback.cityCode,
+      cityName: structured.cityName ?? fallback.cityName,
       postalCode: structured.postalCode ?? fallback.postalCode,
       addressLine1: structured.addressLine1 ?? fallback.addressLine1,
       addressLine2: structured.addressLine2 ?? fallback.addressLine2,
@@ -177,26 +178,14 @@ function mergeAddressCandidates(
   return merged;
 }
 
-function wooLocation(customer: WooCustomerReference) {
-  const country = customer.billing.country;
-  if (!country || !resolveCountry(country)) return { country: null, region: null, cityCode: null };
-  const state = resolveState(country, customer.billing.state);
-  const region = state?.wooCode ?? null;
-  const cityCode =
-    region && customer.billing.city
-      ? (getCities(country, region).find(
-          ({ name }) =>
-            name.localeCompare(customer.billing.city, 'es', { sensitivity: 'base' }) === 0,
-        )?.code ?? null)
-      : null;
-  return { country, region, cityCode };
-}
-
 function wooAddress(customer: WooCustomerReference): CustomerDraftAddress | null {
   const addressLine1 = sanitizeSiigoAddress(customer.billing.address_1);
   if (!addressLine1) return null;
   return {
-    ...wooLocation(customer),
+    country: null,
+    region: null,
+    cityCode: null,
+    cityName: null,
     postalCode: sanitizePostalCode(customer.billing.postcode),
     addressLine1,
     addressLine2: sanitizeSiigoAddress(customer.billing.address_2),
@@ -206,9 +195,10 @@ function wooAddress(customer: WooCustomerReference): CustomerDraftAddress | null
 function siigoAddress(customer: SiigoCustomerLookup): CustomerDraftAddress | null {
   if (!customer.prefill.addressLine1) return null;
   return {
-    country: customer.prefill.country,
-    region: customer.prefill.region,
-    cityCode: customer.prefill.cityCode,
+    country: null,
+    region: null,
+    cityCode: null,
+    cityName: null,
     postalCode: customer.prefill.postalCode,
     addressLine1: customer.prefill.addressLine1,
     addressLine2: null,
@@ -280,10 +270,6 @@ export class CustomerDraftResolverService {
           .filter((type): type is NonNullable<typeof type> => type !== null),
       ),
     ];
-    const fallbackLocation = profiles
-      .map(({ customer }) => wooLocation(customer))
-      .find(({ country }) => country !== null);
-
     const nameOptions = mergeNameCandidates([
       ...(siigoPrefill?.firstName || siigoPrefill?.lastName
         ? [
@@ -370,11 +356,10 @@ export class CustomerDraftResolverService {
       checkDigit: siigoPrefill?.checkDigit ?? null,
       email: emailOptions.length === 1 ? emailOptions[0]!.value : null,
       phone: phoneOptions.length === 1 ? phoneOptions[0]!.value : null,
-      country:
-        resolvedAddress?.country ?? siigoPrefill?.country ?? fallbackLocation?.country ?? null,
-      region: resolvedAddress?.region ?? siigoPrefill?.region ?? fallbackLocation?.region ?? null,
-      cityCode:
-        resolvedAddress?.cityCode ?? siigoPrefill?.cityCode ?? fallbackLocation?.cityCode ?? null,
+      country: null,
+      region: null,
+      cityCode: null,
+      cityName: null,
       postalCode: resolvedAddress?.postalCode ?? siigoPrefill?.postalCode ?? null,
       addressLine1: resolvedAddress?.addressLine1 ?? null,
       addressLine2: resolvedAddress?.addressLine2 ?? null,

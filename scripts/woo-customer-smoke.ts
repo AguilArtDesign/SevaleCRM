@@ -1,7 +1,6 @@
 import '../apps/api/src/config/load-environment.js';
 import { ConflictException } from '@nestjs/common';
 import type { CreateCustomerInput } from '../packages/validation/src/index.js';
-import { CustomerLocationsService } from '../apps/api/src/customers/mapping/customer-locations.service.js';
 import { WooCustomerMapper } from '../apps/api/src/customers/mapping/woo-customer.mapper.js';
 import { WooCustomerService } from '../apps/api/src/customers/integrations/woo-customer.service.js';
 
@@ -93,7 +92,7 @@ process.env.PALI_API_URL = 'https://pali.test/wp-json/wc/v3';
 process.env.WOOCOMMERCE_PALI_CK = 'pali-key';
 process.env.WOOCOMMERCE_PALI_CS = 'pali-secret';
 
-const mapper = new WooCustomerMapper(new CustomerLocationsService());
+const mapper = new WooCustomerMapper();
 const service = new WooCustomerService(mapper);
 const customer: CreateCustomerInput = {
   personType: 'PERSON',
@@ -109,6 +108,7 @@ const customer: CreateCustomerInput = {
   country: 'CO',
   region: 'CO-ANT',
   cityCode: '05001',
+  cityName: null,
   postalCode: '050001',
   addressLine1: 'Cra. 18 #79A - 42',
   addressLine2: 'Apto 301',

@@ -1,11 +1,15 @@
-import type { CreateCustomerInput, UpdateCustomerInput } from '@sevale/validation';
+import type {
+  CreateCustomerInput,
+  CustomerSiigoLocationInput,
+  UpdateCustomerInput,
+} from '@sevale/validation';
 import { apiUrl } from '../config/api-url';
 
 export type CustomerIntegration = {
   id: number;
   provider: 'SIIGO' | 'SERATUS' | 'PALI';
   externalId: string | null;
-  externalData: WooCustomerData | null;
+  externalData: unknown;
   status: 'PENDING' | 'SYNCED' | 'ERROR';
   lastAttemptAt: string | null;
   lastSyncedAt: string | null;
@@ -71,7 +75,7 @@ export type CustomerSourceLookup = {
 
 export type CustomerDraftAddress = Pick<
   CreateCustomerInput,
-  'country' | 'region' | 'cityCode' | 'postalCode' | 'addressLine1' | 'addressLine2'
+  'country' | 'region' | 'cityCode' | 'cityName' | 'postalCode' | 'addressLine1' | 'addressLine2'
 >;
 export type CustomerDraftName = Pick<CreateCustomerInput, 'firstName' | 'lastName' | 'displayName'>;
 
@@ -156,9 +160,13 @@ export const customersApi = {
     apiRequest<CustomerRecord>(`/api/customers/${id}`, {
       method: 'DELETE',
     }),
-  sync: (id: number, provider: CustomerIntegration['provider']) =>
+  sync: (
+    id: number,
+    provider: CustomerIntegration['provider'],
+    siigoLocation?: CustomerSiigoLocationInput,
+  ) =>
     apiRequest<CustomerRecord>(`/api/customers/${id}/sync`, {
       method: 'POST',
-      body: JSON.stringify({ provider }),
+      body: JSON.stringify({ provider, ...(siigoLocation ? { siigoLocation } : {}) }),
     }),
 };

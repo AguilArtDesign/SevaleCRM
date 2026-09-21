@@ -11,6 +11,7 @@ export function useRealtimeUpdates() {
     const socket = io(apiUrl, { withCredentials: true });
     let productRefreshTimer: number | undefined;
     let customerRefreshTimer: number | undefined;
+    let orderRefreshTimer: number | undefined;
     const refreshProducts = () => {
       if (productRefreshTimer !== undefined) window.clearTimeout(productRefreshTimer);
       productRefreshTimer = window.setTimeout(() => {
@@ -23,6 +24,13 @@ export function useRealtimeUpdates() {
       customerRefreshTimer = window.setTimeout(() => {
         customerRefreshTimer = undefined;
         void queryClient.invalidateQueries({ queryKey: ['customers'] });
+      }, 300);
+    };
+    const refreshOrders = () => {
+      if (orderRefreshTimer !== undefined) window.clearTimeout(orderRefreshTimer);
+      orderRefreshTimer = window.setTimeout(() => {
+        orderRefreshTimer = undefined;
+        void queryClient.invalidateQueries({ queryKey: ['orders'] });
       }, 300);
     };
     const refreshNotifications = (notification: {
@@ -48,11 +56,17 @@ export function useRealtimeUpdates() {
     socket.on('customer.updated', refreshCustomers);
     socket.on('customer.deleted', refreshCustomers);
     socket.on('customer.integration.updated', refreshCustomers);
+    socket.on('order.operation.created', refreshOrders);
+    socket.on('order.operation.updated', refreshOrders);
+    socket.on('order.sync.updated', refreshOrders);
+    socket.on('order.shipment.updated', refreshOrders);
+    socket.on('order.siigo-quotation.updated', refreshOrders);
     socket.on('notification.created', refreshNotifications);
 
     return () => {
       if (productRefreshTimer !== undefined) window.clearTimeout(productRefreshTimer);
       if (customerRefreshTimer !== undefined) window.clearTimeout(customerRefreshTimer);
+      if (orderRefreshTimer !== undefined) window.clearTimeout(orderRefreshTimer);
       socket.disconnect();
     };
   }, [queryClient]);

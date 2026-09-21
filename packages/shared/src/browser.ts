@@ -1,5 +1,7 @@
 export const applicationName = 'SevaleCRM';
 
+export { formatPhoneInternational, mapPhoneToSiigo, normalizePhoneE164 } from './customer-phone.js';
+
 export {
   countryFlagPath,
   findCitiesByName,
@@ -11,6 +13,7 @@ export {
   resolveCity,
   resolveCountry,
   resolveLocationFromSiigo,
+  resolveLocationFromWoo,
   resolveState,
 } from './locations.js';
 export type {
@@ -22,3 +25,44 @@ export type {
   LocationState,
   StateOption,
 } from './locations.js';
+
+export {
+  buildCustomerSiigoLocationMapping,
+  customerCountryFlagPath,
+  findCustomerColombiaCitiesByName,
+  getCustomerColombiaCities,
+  getCustomerColombiaStates,
+  getCustomerCountries,
+  getCustomerSiigoCities,
+  getCustomerSiigoCountries,
+  getCustomerSiigoStates,
+  getCustomerWooStates,
+  isCustomerSiigoLocationMappingCurrent,
+  readCustomerSiigoLocationMapping,
+  resolveCustomerCityName,
+  resolveCustomerColombiaCity,
+  resolveCustomerColombiaState,
+  resolveCustomerCountry,
+  resolveCustomerCountryName,
+  resolveCustomerRegionName,
+  resolveCustomerSiigoCity,
+  resolveCustomerSiigoCountry,
+  resolveCustomerSiigoCountryByWooCode,
+  resolveCustomerSiigoState,
+  resolveCustomerWooState,
+} from './customer-locations.js';
+export type {
+  CustomerCityOption,
+  CustomerCityMatch,
+  CustomerColombiaCountry,
+  CustomerColombiaState,
+  CustomerColombiaStateOption,
+  CustomerCountryOption,
+  CustomerSiigoCountry,
+  CustomerSiigoCountryOption,
+  CustomerSiigoLocationMapping,
+  CustomerSiigoLocationSource,
+  CustomerSiigoState,
+  CustomerStateOption,
+  CustomerWooCountry,
+} from './customer-locations.js';

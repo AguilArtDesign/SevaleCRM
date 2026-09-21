@@ -5,7 +5,13 @@ import {
   type OnGatewayConnection,
   type OnGatewayInit,
 } from '@nestjs/websockets';
-import { rolePermissions, roles, type Permission, type Role } from '@sevale/permissions';
+import {
+  permissions,
+  rolePermissions,
+  roles,
+  type Permission,
+  type Role,
+} from '@sevale/permissions';
 import type { IncomingHttpHeaders } from 'node:http';
 import type { Server, Socket } from 'socket.io';
 import { AuthService } from '../auth/auth.service.js';
@@ -31,6 +37,14 @@ type ProductEventBase = {
 type CustomerEventBase = {
   customerId: number;
   displayName: string;
+  occurredAt: string;
+};
+
+type OrderEventBase = {
+  operationId: number;
+  operationCode: string;
+  source: string;
+  status: string;
   occurredAt: string;
 };
 
@@ -149,6 +163,54 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection {
     });
   }
 
+  emitOrderOperationCreated(operation: {
+    id: number;
+    operationCode: string;
+    source: string;
+    status: string;
+  }) {
+    this.orderAudience().emit('order.operation.created', this.orderEvent(operation));
+  }
+
+  emitOrderOperationUpdated(operation: {
+    id: number;
+    operationCode: string;
+    source: string;
+    status: string;
+  }) {
+    this.orderAudience().emit('order.operation.updated', this.orderEvent(operation));
+  }
+
+  emitOrderSyncUpdated(
+    operation: { id: number; operationCode: string; source: string; status: string },
+    stores: Array<{ store: string; syncStatus: string }>,
+  ) {
+    this.orderAudience().emit('order.sync.updated', {
+      ...this.orderEvent(operation),
+      stores,
+    });
+  }
+
+  emitOrderShipmentUpdated(
+    operation: { id: number; operationCode: string; source: string; status: string },
+    shipment: { status: string | null; trackingNumber: string | null },
+  ) {
+    this.orderAudience().emit('order.shipment.updated', {
+      ...this.orderEvent(operation),
+      shipment,
+    });
+  }
+
+  emitOrderSiigoQuotationUpdated(
+    operation: { id: number; operationCode: string; source: string; status: string },
+    quotation: { status: string | null; externalId: string | null },
+  ) {
+    this.orderAudience().emit('order.siigo-quotation.updated', {
+      ...this.orderEvent(operation),
+      quotation,
+    });
+  }
+
   emitNotificationCreated(notification: {
     id: number;
     type: string;
@@ -156,11 +218,14 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection {
     message: string;
     productId: number | null;
     customerId: number | null;
+    orderOperationId: number | null;
     requiredPermission: string | null;
     createdAt: Date;
   }) {
-    const audience =
-      notification.requiredPermission === 'customers.read' ? this.customerAudience() : this.server;
+    const permission = permissions.find(
+      (candidate) => candidate === notification.requiredPermission,
+    );
+    const audience = permission ? this.server.to(permissionRoom(permission)) : this.server;
     audience.emit('notification.created', {
       notificationId: notification.id,
       type: notification.type,
@@ -168,6 +233,7 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection {
       message: notification.message,
       productId: notification.productId,
       customerId: notification.customerId,
+      orderOperationId: notification.orderOperationId,
       occurredAt: notification.createdAt.toISOString(),
     });
   }
@@ -184,7 +250,26 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection {
     };
   }
 
+  private orderEvent(operation: {
+    id: number;
+    operationCode: string;
+    source: string;
+    status: string;
+  }): OrderEventBase {
+    return {
+      operationId: operation.id,
+      operationCode: operation.operationCode,
+      source: operation.source,
+      status: operation.status,
+      occurredAt: new Date().toISOString(),
+    };
+  }
+
   private customerAudience() {
     return this.server.to(permissionRoom('customers.read'));
+  }
+
+  private orderAudience() {
+    return this.server.to(permissionRoom('orders.read'));
   }
 }

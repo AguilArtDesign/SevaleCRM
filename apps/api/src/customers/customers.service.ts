@@ -15,7 +15,17 @@ import {
   type CustomerSyncInput,
   type UpdateCustomerInput,
 } from '@sevale/validation';
-import { findCitiesByName, resolveCity, resolveCountry, resolveState } from '@sevale/shared';
+import {
+  findCustomerColombiaCitiesByName,
+  getCustomerWooStates,
+  resolveCustomerCityName,
+  resolveCustomerColombiaCity,
+  resolveCustomerColombiaState,
+  resolveCustomerCountry,
+  resolveCustomerCountryName,
+  resolveCustomerRegionName,
+  resolveCustomerWooState,
+} from '@sevale/shared';
 import {
   capitalizeCustomerName,
   normalizeCustomerName,
@@ -81,18 +91,48 @@ function isUniqueConstraintError(error: unknown): boolean {
   );
 }
 
-function validateLocation(input: Pick<CreateCustomerInput, 'country' | 'region' | 'cityCode'>) {
-  if (input.country && !resolveCountry(input.country)) {
+function isForeignKeyConstraintError(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'code' in error &&
+    (error as { code?: unknown }).code === 'P2003'
+  );
+}
+
+function validateLocation(
+  input: Pick<CreateCustomerInput, 'country' | 'region' | 'cityCode' | 'cityName'>,
+) {
+  if (!input.country) {
+    if (input.region || input.cityCode || input.cityName) {
+      throw new BadRequestException('Selecciona un país para guardar la ubicación.');
+    }
+    return;
+  }
+  if (!resolveCustomerCountry(input.country)) {
     throw new BadRequestException('El país no existe en el catálogo geográfico.');
   }
-  if (input.region && (!input.country || !resolveState(input.country, input.region))) {
-    throw new BadRequestException('La región no pertenece al país seleccionado.');
+  if (input.country === 'CO') {
+    if (input.region && !resolveCustomerColombiaState(input.region)) {
+      throw new BadRequestException('El departamento no pertenece a Colombia.');
+    }
+    if (
+      input.cityCode &&
+      (!input.region || !resolveCustomerColombiaCity(input.region, input.cityCode))
+    ) {
+      throw new BadRequestException('La ciudad no pertenece al departamento seleccionado.');
+    }
+    return;
+  }
+  if (input.cityCode) {
+    throw new BadRequestException('Las ciudades internacionales deben guardarse como texto libre.');
   }
   if (
-    input.cityCode &&
-    (!input.country || !input.region || !resolveCity(input.country, input.region, input.cityCode))
+    input.region &&
+    getCustomerWooStates(input.country).length > 0 &&
+    !resolveCustomerWooState(input.country, input.region)
   ) {
-    throw new BadRequestException('La ciudad no pertenece a la región seleccionada.');
+    throw new BadRequestException('La región no pertenece al país seleccionado.');
   }
 }
 
@@ -152,25 +192,24 @@ function serializeCustomer<
     country: string | null;
     region: string | null;
     cityCode: string | null;
+    cityName: string | null;
     fiscalResponsibilities: unknown;
   },
 >(customer: T) {
-  const country = customer.country ? resolveCountry(customer.country) : null;
-  const state =
-    customer.country && customer.region ? resolveState(customer.country, customer.region) : null;
-  const city =
-    customer.country && customer.region && customer.cityCode
-      ? resolveCity(customer.country, customer.region, customer.cityCode)
-      : null;
   return {
     ...customer,
     fiscalResponsibilities: Array.isArray(customer.fiscalResponsibilities)
       ? customer.fiscalResponsibilities
       : [],
     location: {
-      countryName: country?.name ?? customer.country ?? null,
-      regionName: state?.name ?? customer.region ?? null,
-      cityName: city ?? customer.cityCode ?? null,
+      countryName: resolveCustomerCountryName(customer.country),
+      regionName: resolveCustomerRegionName(customer.country, customer.region),
+      cityName: resolveCustomerCityName(
+        customer.country,
+        customer.region,
+        customer.cityCode,
+        customer.cityName,
+      ),
     },
   };
 }
@@ -192,7 +231,7 @@ export class CustomersService {
   async list(query: CustomerListQuery) {
     const [customers, total] = await this.customers.list(
       query,
-      findCitiesByName(query.search, query.country),
+      query.country && query.country !== 'CO' ? [] : findCustomerColombiaCitiesByName(query.search),
     );
     return {
       data: customers.map(serializeCustomer),
@@ -305,6 +344,7 @@ export class CustomersService {
       country: input.country === undefined ? current.country : input.country,
       region: input.region === undefined ? current.region : input.region,
       cityCode: input.cityCode === undefined ? current.cityCode : input.cityCode,
+      cityName: input.cityName === undefined ? current.cityName : input.cityName,
       postalCode: input.postalCode === undefined ? current.postalCode : input.postalCode,
       addressLine1: input.addressLine1 === undefined ? current.addressLine1 : input.addressLine1,
       addressLine2: input.addressLine2 === undefined ? current.addressLine2 : input.addressLine2,
@@ -346,7 +386,7 @@ export class CustomersService {
           .filter((integration) => integration.status !== 'SYNCED')
           .map((integration) => integration.provider);
     if (providers.length === 0) return serializeCustomer(customer);
-    const results = await this.integrations.synchronize(customer, providers);
+    const results = await this.integrations.synchronize(customer, providers, input.siigoLocation);
     const synchronized = await this.customers.findById(customer.id);
     if (!synchronized) throw new NotFoundException('El cliente no existe.');
     for (const result of results) {
@@ -362,9 +402,22 @@ export class CustomersService {
   async remove(id: number) {
     const customer = await this.customers.findById(id);
     if (!customer) throw new NotFoundException('El cliente no existe.');
-    const deleted = await this.customers.delete(id);
-    this.realtime.emitCustomerDeleted(deleted);
-    return serializeCustomer(deleted);
+    try {
+      const deleted = await this.customers.delete(id);
+      this.realtime.emitCustomerDeleted(deleted);
+      return serializeCustomer(deleted);
+    } catch (error) {
+      if (isForeignKeyConstraintError(error)) {
+        throw new ConflictException({
+          success: false,
+          error: {
+            code: 'CUSTOMER_HAS_ORDERS',
+            message: 'El cliente no puede eliminarse porque tiene operaciones asociadas.',
+          },
+        });
+      }
+      throw error;
+    }
   }
 
   private async publishNotification(operation: Promise<unknown>, context: string) {

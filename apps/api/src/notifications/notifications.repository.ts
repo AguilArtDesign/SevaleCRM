@@ -41,6 +41,23 @@ export class NotificationsRepository {
               email: true,
             },
           },
+          orderOperation: {
+            select: {
+              operationCode: true,
+              source: true,
+              status: true,
+              customer: {
+                select: {
+                  id: true,
+                  personType: true,
+                  firstName: true,
+                  lastName: true,
+                  displayName: true,
+                  email: true,
+                },
+              },
+            },
+          },
           reads: { where: { userId }, select: { readAt: true } },
         },
       }),
