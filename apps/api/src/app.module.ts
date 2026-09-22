@@ -10,6 +10,7 @@ import { RealtimeModule } from './realtime/realtime.module.js';
 import { NotificationsModule } from './notifications/notifications.module.js';
 import { CustomersModule } from './customers/customers.module.js';
 import { OrdersModule } from './orders/orders.module.js';
+import { CouponsModule } from './coupons/coupons.module.js';
 
 @Module({
   imports: [
@@ -22,6 +23,7 @@ import { OrdersModule } from './orders/orders.module.js';
     IntegrationsModule,
     CustomersModule,
     OrdersModule,
+    CouponsModule,
   ],
   controllers: [HealthController],
   providers: [HealthService],

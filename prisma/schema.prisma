@@ -286,6 +286,23 @@ model Product {
   @@map("products")
 }
 
+model Coupon {
+  id              Int              @id @default(autoincrement())
+  coupon          String           @unique @db.VarChar(64)
+  description     String?          @db.VarChar(255)
+  type            String           @db.VarChar(32)
+  amount          Decimal          @db.Decimal(7, 2)
+  active          Boolean          @default(true)
+  createdAt       DateTime         @default(now()) @map("created_at")
+  updatedAt       DateTime         @updatedAt @map("updated_at")
+  orderOperations OrderOperation[]
+
+  @@index([active])
+  @@index([type])
+  @@index([createdAt])
+  @@map("coupons")
+}
+
 model IntegrationToken {
   id          Int      @id @default(autoincrement())
   provider    String   @unique @db.VarChar(64)
@@ -332,6 +349,10 @@ model OrderOperation {
   paymentMethodTitle  String?         @map("payment_method_title") @db.VarChar(191)
   shippingMethod      String?         @map("shipping_method") @db.VarChar(191)
   shippingMethodTitle String?         @map("shipping_method_title") @db.VarChar(191)
+  couponId            Int?            @map("coupon_id")
+  couponCode          String?         @map("coupon_code") @db.VarChar(64)
+  couponType          String?         @map("coupon_type") @db.VarChar(32)
+  couponAmount        Decimal?        @map("coupon_amount") @db.Decimal(7, 2)
   subtotal            Decimal         @default(0) @db.Decimal(14, 2)
   discountTotal       Decimal         @default(0) @map("discount_total") @db.Decimal(14, 2)
   shippingTotal       Decimal         @default(0) @map("shipping_total") @db.Decimal(14, 2)
@@ -361,6 +382,7 @@ model OrderOperation {
   updatedAt           DateTime        @updatedAt @map("updated_at")
   deletedAt           DateTime?       @map("deleted_at")
   customer            Customer        @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  coupon              Coupon?         @relation(fields: [couponId], references: [id], onDelete: SetNull)
   createdBy           User?           @relation("OrderOperationCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
   orders              Order[]
   shipment            Shipment?
@@ -369,6 +391,7 @@ model OrderOperation {
 
   @@index([customerId])
   @@index([createdByUserId])
+  @@index([couponId])
   @@index([status])
   @@index([source])
   @@index([createdAt])

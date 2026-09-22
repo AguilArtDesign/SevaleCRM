@@ -278,20 +278,15 @@ try {
     body: JSON.stringify({
       customerId: customer.id,
       currency: 'COP',
-      paymentMethod: 'bacs',
-      paymentMethodTitle: 'Transferencia bancaria',
-      shippingMethod: 'flat_rate',
-      shippingMethodTitle: 'Envío nacional',
+      paymentMethod: 'cod',
+      shippingMethod: 'free_shipping',
+      customShippingTotal: null,
+      couponId: null,
       billing: { ...addressSnapshot, email: customer.email },
       shipping: addressSnapshot,
       items: [
-        { productId: seratus.id, quantity: 2, unitPrice: '95000', discountTotal: '10000' },
-        { productId: pali.id, quantity: 1, discountTotal: '0' },
-      ],
-      coupons: [{ store: 'SERATUS', code: 'OUT10', discountTotal: '10000' }],
-      shippingTotals: [
-        { store: 'SERATUS', total: '5000' },
-        { store: 'PALI', total: '7000' },
+        { productId: seratus.id, quantity: 2, unitPrice: '95000' },
+        { productId: pali.id, quantity: 1 },
       ],
     }),
   });

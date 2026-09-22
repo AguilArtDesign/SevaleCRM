@@ -166,6 +166,10 @@ function operationData(operation: PreparedOperation) {
 export class OrdersRepository {
   constructor(private readonly prisma: PrismaService) {}
 
+  findActiveCoupon(id: number) {
+    return this.prisma.coupon.findFirst({ where: { id, active: true } });
+  }
+
   list(query: OrderListQuery) {
     const numericWooOrderId = /^\d+$/.test(query.search) ? BigInt(query.search) : null;
     const parsedLocalOrderId = Number(query.search);

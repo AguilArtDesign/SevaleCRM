@@ -3,6 +3,20 @@ export const applicationName = 'SevaleCRM';
 export { formatPhoneInternational, mapPhoneToSiigo, normalizePhoneE164 } from './customer-phone.js';
 
 export {
+  couponTypes,
+  paymentMethods,
+  resolveCouponType,
+  resolvePaymentMethod,
+  resolveShippingMethod,
+  shippingMethods,
+} from './order-commercial-catalogs.js';
+export type {
+  CouponTypeCode,
+  PaymentMethodCode,
+  ShippingMethodCode,
+} from './order-commercial-catalogs.js';
+
+export {
   countryFlagPath,
   findCitiesByName,
   getCities,

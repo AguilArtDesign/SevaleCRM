@@ -1,0 +1,24 @@
+{
+  "paymentMethods": [
+    {
+      "payment_method": "cod",
+      "payment_method_title": "Pago con Asesor Comercial"
+    },
+    {
+      "payment_method": "avalpay",
+      "payment_method_title": "AvalPay"
+    },
+    {
+      "payment_method": "binance",
+      "payment_method_title": "Binance Pay"
+    },
+    {
+      "payment_method": "addi",
+      "payment_method_title": "Addi"
+    },
+    {
+      "payment_method": "sistecredito",
+      "payment_method_title": "SisteCredito"
+    }
+  ]
+}

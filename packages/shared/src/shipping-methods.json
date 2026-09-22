@@ -1,0 +1,50 @@
+{
+  "shippingMethods": [
+    {
+      "shipping_method": "free_shipping",
+      "shipping_method_title": "Envío Gratis",
+      "type": "FREE",
+      "custom_amount": false,
+      "rules": {
+        "COP": {
+          "minimum_order_total": 100000,
+          "comparison": "GTE",
+          "shipping_total": 0
+        },
+        "USD": {
+          "minimum_order_total": 100,
+          "comparison": "GTE",
+          "shipping_total": 0
+        }
+      }
+    },
+    {
+      "shipping_method": "flat_rate",
+      "shipping_method_title": "Precio Fijo",
+      "type": "FLAT_RATE",
+      "custom_amount": false,
+      "rules": {
+        "COP": {
+          "maximum_order_total": 100000,
+          "comparison": "LT",
+          "shipping_total": 16000
+        },
+        "USD": {
+          "maximum_order_total": 100,
+          "comparison": "LT",
+          "shipping_total": 20
+        }
+      }
+    },
+    {
+      "shipping_method": "custom",
+      "shipping_method_title": "Personalizado",
+      "type": "CUSTOM",
+      "custom_amount": true,
+      "rules": {
+        "COP": null,
+        "USD": null
+      }
+    }
+  ]
+}

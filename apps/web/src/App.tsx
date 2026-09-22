@@ -9,6 +9,8 @@ import { CustomersPage } from './customers/CustomersPage';
 import { CustomersRoute } from './customers/CustomersRoute';
 import { OrdersPage } from './orders/OrdersPage';
 import { OrdersRoute } from './orders/OrdersRoute';
+import { CouponsPage } from './coupons/CouponsPage';
+import { PermissionRoute } from './auth/PermissionRoute';
 
 export function App() {
   return (
@@ -36,6 +38,14 @@ export function App() {
             <CustomersRoute>
               <CustomersPage />
             </CustomersRoute>
+          }
+        />
+        <Route
+          path="/coupons"
+          element={
+            <PermissionRoute permission="coupons.read">
+              <CouponsPage />
+            </PermissionRoute>
           }
         />
         <Route

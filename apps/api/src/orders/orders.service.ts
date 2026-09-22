@@ -12,6 +12,7 @@ import type {
   UpdateShipmentInput,
   UpdateOrderOperationInput,
 } from '@sevale/validation';
+import { resolveCouponType, resolvePaymentMethod, resolveShippingMethod } from '@sevale/shared';
 import { Prisma, type Product, type Store } from '../generated/prisma/client.js';
 import { OrdersRepository, type OrderOperationDetail } from './orders.repository.js';
 import type {
@@ -56,6 +57,10 @@ function sum(values: Prisma.Decimal[]): Prisma.Decimal {
   return values.reduce((total, value) => total.plus(value), zero());
 }
 
+function roundMoney(value: Prisma.Decimal): Prisma.Decimal {
+  return value.toDecimalPlaces(2);
+}
+
 function operationCode(date = new Date()): string {
   const parts = new Intl.DateTimeFormat('en-CA', {
     timeZone: 'America/Bogota',
@@ -95,6 +100,7 @@ function serializeItem(item: OrderOperationDetail['orders'][number]['items'][num
 function serializeDetail(operation: OrderOperationDetail) {
   return {
     ...operation,
+    couponAmount: operation.couponAmount ? money(operation.couponAmount) : null,
     subtotal: money(operation.subtotal),
     discountTotal: money(operation.discountTotal),
     shippingTotal: money(operation.shippingTotal),
@@ -372,9 +378,27 @@ export class OrdersService {
   }
 
   private async prepare(input: OperationInput): Promise<PreparedOperation> {
-    const [customer, products] = await Promise.all([
+    const paymentMethod = resolvePaymentMethod(input.paymentMethod);
+    if (!paymentMethod) {
+      throw businessError(
+        BadRequestException,
+        'ORDER_PAYMENT_METHOD_INVALID',
+        'El método de pago seleccionado no es válido.',
+      );
+    }
+    const shippingMethod = resolveShippingMethod(input.shippingMethod);
+    if (!shippingMethod) {
+      throw businessError(
+        BadRequestException,
+        'ORDER_SHIPPING_METHOD_INVALID',
+        'El método de envío seleccionado no es válido.',
+      );
+    }
+
+    const [customer, products, coupon] = await Promise.all([
       this.orders.findCustomer(input.customerId),
       this.orders.findProducts(input.items.map(({ productId }) => productId)),
+      input.couponId ? this.orders.findActiveCoupon(input.couponId) : Promise.resolve(null),
     ]);
     if (!customer) {
       throw businessError(NotFoundException, 'CUSTOMER_NOT_FOUND', 'El cliente no existe.');
@@ -384,6 +408,27 @@ export class OrdersService {
         NotFoundException,
         'PRODUCT_NOT_FOUND',
         'Uno o más productos no existen.',
+      );
+    }
+    if (input.couponId && !coupon) {
+      throw businessError(
+        BadRequestException,
+        'ORDER_COUPON_NOT_AVAILABLE',
+        'El cupón seleccionado no existe o está desactivado.',
+      );
+    }
+    if (coupon && !resolveCouponType(coupon.type)) {
+      throw businessError(
+        BadRequestException,
+        'ORDER_COUPON_TYPE_INVALID',
+        'El tipo del cupón seleccionado no está permitido.',
+      );
+    }
+    if (coupon && (coupon.amount.lessThanOrEqualTo(0) || coupon.amount.greaterThan(100))) {
+      throw businessError(
+        BadRequestException,
+        'ORDER_COUPON_AMOUNT_INVALID',
+        'El porcentaje del cupón seleccionado no es válido.',
       );
     }
 
@@ -398,67 +443,52 @@ export class OrdersService {
       itemsByStore.set(product.store, current);
     }
 
-    const couponsByStore = new Map<Store, PreparedOrderCoupon[]>();
-    for (const coupon of input.coupons) {
-      if (!itemsByStore.has(coupon.store)) {
-        throw businessError(
-          BadRequestException,
-          'ORDER_STORE_WITHOUT_ITEMS',
-          `No puedes aplicar un cupón a ${coupon.store} porque no tiene productos.`,
-        );
-      }
-      const current = couponsByStore.get(coupon.store) ?? [];
-      current.push({ code: coupon.code, discountTotal: decimal(coupon.discountTotal) });
-      couponsByStore.set(coupon.store, current);
-    }
-
-    const shippingByStore = new Map<Store, Prisma.Decimal>();
-    for (const shipping of input.shippingTotals) {
-      if (!itemsByStore.has(shipping.store)) {
-        throw businessError(
-          BadRequestException,
-          'ORDER_STORE_WITHOUT_ITEMS',
-          `No puedes asignar envío a ${shipping.store} porque no tiene productos.`,
-        );
-      }
-      shippingByStore.set(shipping.store, decimal(shipping.total));
-    }
-
     const storeOrders: PreparedStoreOrder[] = [...itemsByStore.entries()].map(([store, items]) => {
-      const coupons = couponsByStore.get(store) ?? [];
       const subtotal = sum(items.map((item) => item.subtotal));
-      const itemDiscount = sum(items.map((item) => item.discountTotal));
-      const couponDiscount = sum(coupons.map((coupon) => coupon.discountTotal));
-      if (!itemDiscount.equals(couponDiscount)) {
-        throw businessError(
-          BadRequestException,
-          'ORDER_DISCOUNT_MISMATCH',
-          `Los descuentos de los productos y cupones de ${store} no coinciden.`,
-        );
-      }
-      const shippingTotal = shippingByStore.get(store) ?? zero();
+      const couponEligibleSubtotal = sum(
+        items
+          .filter((item) => !item.unitPrice.lessThan(item.originalPrice))
+          .map((item) => item.subtotal),
+      );
+      const discountTotal = coupon
+        ? roundMoney(couponEligibleSubtotal.times(coupon.amount).dividedBy(100))
+        : zero();
+      const coupons: PreparedOrderCoupon[] = coupon ? [{ code: coupon.coupon, discountTotal }] : [];
       return {
         store,
         items,
         coupons,
         subtotal,
-        discountTotal: itemDiscount,
-        shippingTotal,
-        total: subtotal.minus(itemDiscount).plus(shippingTotal),
+        discountTotal,
+        shippingTotal: zero(),
+        total: subtotal.minus(discountTotal),
       };
     });
+
+    const subtotal = sum(storeOrders.map((order) => order.subtotal));
+    const discountTotal = sum(storeOrders.map((order) => order.discountTotal));
+    const shippingTotal = this.shippingTotal(
+      shippingMethod,
+      input.currency,
+      subtotal,
+      input.customShippingTotal,
+    );
 
     return {
       customerId: input.customerId,
       currency: input.currency,
-      paymentMethod: input.paymentMethod,
-      paymentMethodTitle: input.paymentMethodTitle,
-      shippingMethod: input.shippingMethod,
-      shippingMethodTitle: input.shippingMethodTitle,
-      subtotal: sum(storeOrders.map((order) => order.subtotal)),
-      discountTotal: sum(storeOrders.map((order) => order.discountTotal)),
-      shippingTotal: sum(storeOrders.map((order) => order.shippingTotal)),
-      total: sum(storeOrders.map((order) => order.total)),
+      paymentMethod: paymentMethod.payment_method,
+      paymentMethodTitle: paymentMethod.payment_method_title,
+      shippingMethod: shippingMethod.shipping_method,
+      shippingMethodTitle: shippingMethod.shipping_method_title,
+      couponId: coupon?.id ?? null,
+      couponCode: coupon?.coupon ?? null,
+      couponType: coupon?.type ?? null,
+      couponAmount: coupon?.amount ?? null,
+      subtotal,
+      discountTotal,
+      shippingTotal,
+      total: subtotal.minus(discountTotal).plus(shippingTotal),
       billingFirstName: input.billing.firstName,
       billingLastName: input.billing.lastName,
       billingCompany: input.billing.company,
@@ -484,6 +514,53 @@ export class OrdersService {
     };
   }
 
+  private shippingTotal(
+    method: NonNullable<ReturnType<typeof resolveShippingMethod>>,
+    currency: OperationInput['currency'],
+    subtotal: Prisma.Decimal,
+    customShippingTotal: OperationInput['customShippingTotal'],
+  ): Prisma.Decimal {
+    if (method.shipping_method === 'custom') {
+      if (customShippingTotal === null) {
+        throw businessError(
+          BadRequestException,
+          'ORDER_CUSTOM_SHIPPING_REQUIRED',
+          'Ingresa el valor del envío personalizado.',
+        );
+      }
+      return decimal(customShippingTotal);
+    }
+
+    const rule = method.rules[currency];
+    if (!rule) {
+      throw businessError(
+        BadRequestException,
+        'ORDER_SHIPPING_RULE_NOT_FOUND',
+        'No existe una regla de envío para la moneda seleccionada.',
+      );
+    }
+    if (method.shipping_method === 'free_shipping') {
+      const minimum = 'minimum_order_total' in rule ? rule.minimum_order_total : undefined;
+      if (typeof minimum !== 'number' || subtotal.lessThan(minimum)) {
+        throw businessError(
+          BadRequestException,
+          'ORDER_FREE_SHIPPING_NOT_AVAILABLE',
+          'El subtotal de la operación no alcanza el mínimo para envío gratis.',
+        );
+      }
+      return decimal(rule.shipping_total);
+    }
+    const maximum = 'maximum_order_total' in rule ? rule.maximum_order_total : undefined;
+    if (typeof maximum !== 'number' || !subtotal.lessThan(maximum)) {
+      throw businessError(
+        BadRequestException,
+        'ORDER_FLAT_RATE_NOT_AVAILABLE',
+        'El subtotal de la operación corresponde a envío gratis.',
+      );
+    }
+    return decimal(rule.shipping_total);
+  }
+
   private prepareItem(
     product: Product,
     input: OperationInput['items'][number],
@@ -492,14 +569,7 @@ export class OrdersService {
     const originalPrice = currency === 'COP' ? product.wooPriceCop : product.wooPriceUsd;
     const unitPrice = input.unitPrice === undefined ? originalPrice : decimal(input.unitPrice);
     const subtotal = unitPrice.times(input.quantity);
-    const discountTotal = decimal(input.discountTotal);
-    if (discountTotal.greaterThan(subtotal)) {
-      throw businessError(
-        BadRequestException,
-        'ORDER_DISCOUNT_EXCEEDS_SUBTOTAL',
-        `El descuento de ${product.sku} supera el subtotal del producto.`,
-      );
-    }
+    const discountTotal = zero();
     return {
       productId: product.id,
       skuSnapshot: product.sku,

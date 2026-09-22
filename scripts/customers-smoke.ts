@@ -392,6 +392,28 @@ try {
   });
   expectStatus(invalidLocation, 400, 'Ubicación inválida');
 
+  const invalidPhone = await api('/api/customers', adminCookie, {
+    method: 'POST',
+    body: JSON.stringify({
+      ...payload,
+      phone: '+12071910805',
+      country: 'US',
+      region: 'CA',
+      cityCode: null,
+      cityName: 'Los Ángeles',
+    }),
+  });
+  expectStatus(invalidPhone, 400, 'Teléfono inválido');
+  const invalidPhoneBody = (await invalidPhone.json()) as {
+    error?: { code?: string; message?: string };
+  };
+  if (
+    invalidPhoneBody.error?.code !== 'CUSTOMER_PHONE_INVALID' ||
+    invalidPhoneBody.error.message !== 'El teléfono no es válido para el país seleccionado.'
+  ) {
+    throw new Error('La API no explicó de forma segura por qué rechazó el teléfono.');
+  }
+
   const internalEmail = await api('/api/customers', adminCookie, {
     method: 'POST',
     body: JSON.stringify({ ...payload, email: 'usuario@sevale.com' }),

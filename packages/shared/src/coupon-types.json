@@ -1,0 +1,9 @@
+{
+  "couponTypes": [
+    {
+      "type": "percent",
+      "title": "Porcentaje",
+      "active": true
+    }
+  ]
+}

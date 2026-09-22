@@ -53,6 +53,10 @@ type CustomerSourceLookup = {
   externalData: WooCustomerData | null;
 };
 
+function customerBadRequest(code: string, message: string): BadRequestException {
+  return new BadRequestException({ success: false, error: { code, message } });
+}
+
 function canonicalWooData(
   customer: WooCustomerReference | WooCustomerData | null,
   documentType: string | null,
@@ -105,34 +109,52 @@ function validateLocation(
 ) {
   if (!input.country) {
     if (input.region || input.cityCode || input.cityName) {
-      throw new BadRequestException('Selecciona un país para guardar la ubicación.');
+      throw customerBadRequest(
+        'CUSTOMER_COUNTRY_REQUIRED',
+        'Selecciona un país para guardar la ubicación.',
+      );
     }
     return;
   }
   if (!resolveCustomerCountry(input.country)) {
-    throw new BadRequestException('El país no existe en el catálogo geográfico.');
+    throw customerBadRequest(
+      'CUSTOMER_COUNTRY_INVALID',
+      'El país no existe en el catálogo geográfico.',
+    );
   }
   if (input.country === 'CO') {
     if (input.region && !resolveCustomerColombiaState(input.region)) {
-      throw new BadRequestException('El departamento no pertenece a Colombia.');
+      throw customerBadRequest(
+        'CUSTOMER_REGION_INVALID',
+        'El departamento no pertenece a Colombia.',
+      );
     }
     if (
       input.cityCode &&
       (!input.region || !resolveCustomerColombiaCity(input.region, input.cityCode))
     ) {
-      throw new BadRequestException('La ciudad no pertenece al departamento seleccionado.');
+      throw customerBadRequest(
+        'CUSTOMER_CITY_INVALID',
+        'La ciudad no pertenece al departamento seleccionado.',
+      );
     }
     return;
   }
   if (input.cityCode) {
-    throw new BadRequestException('Las ciudades internacionales deben guardarse como texto libre.');
+    throw customerBadRequest(
+      'CUSTOMER_CITY_INVALID',
+      'Las ciudades internacionales deben guardarse como texto libre.',
+    );
   }
   if (
     input.region &&
     getCustomerWooStates(input.country).length > 0 &&
     !resolveCustomerWooState(input.country, input.region)
   ) {
-    throw new BadRequestException('La región no pertenece al país seleccionado.');
+    throw customerBadRequest(
+      'CUSTOMER_REGION_INVALID',
+      'La región no pertenece al país seleccionado.',
+    );
   }
 }
 
@@ -143,7 +165,10 @@ function normalizedPhone(
   if (!phone) return null;
   const normalized = normalizeCustomerPhone(phone, country);
   if (!normalized) {
-    throw new BadRequestException('El teléfono no es válido para el país seleccionado.');
+    throw customerBadRequest(
+      'CUSTOMER_PHONE_INVALID',
+      'El teléfono no es válido para el país seleccionado.',
+    );
   }
   return normalized;
 }
@@ -151,7 +176,8 @@ function normalizedPhone(
 function sanitizeCustomerInput(input: CreateCustomerInput): CreateCustomerInput {
   const email = input.email ? sanitizeCustomerEmail(input.email) : null;
   if (input.email && !email) {
-    throw new BadRequestException(
+    throw customerBadRequest(
+      'CUSTOMER_EMAIL_INVALID',
       'Ingresa un correo válido del cliente que no pertenezca a un dominio interno.',
     );
   }
@@ -318,7 +344,8 @@ export class CustomersService {
     if (!current) throw new NotFoundException('El cliente no existe.');
 
     if (input.documentNumber !== undefined && input.documentNumber !== current.documentNumber) {
-      throw new BadRequestException(
+      throw customerBadRequest(
+        'CUSTOMER_DOCUMENT_IMMUTABLE',
         'El número de documento no puede cambiarse hasta habilitar la sincronización con las integraciones.',
       );
     }
@@ -353,7 +380,10 @@ export class CustomersService {
         input.fiscalResponsibilities ?? (current.fiscalResponsibilities as string[]),
     });
     if (!merged.success) {
-      throw new BadRequestException(merged.error.issues[0]?.message || 'Los datos no son válidos.');
+      throw customerBadRequest(
+        'CUSTOMER_VALIDATION_ERROR',
+        merged.error.issues[0]?.message || 'Los datos no son válidos.',
+      );
     }
     const sanitized = sanitizeCustomerInput(merged.data);
     validateLocation(sanitized);

@@ -5,6 +5,7 @@ import {
   Avatar,
   Button,
   Label,
+  ListBox,
   Modal,
   Radio,
   RadioGroup,
@@ -23,10 +24,21 @@ import {
   ShoppingCart,
   TrashBin,
 } from '@gravity-ui/icons';
-import { countryFlagPath, resolveCity, resolveCountry, resolveState } from '@sevale/shared';
+import {
+  countryFlagPath,
+  paymentMethods,
+  resolveCity,
+  resolveCountry,
+  resolvePaymentMethod,
+  resolveShippingMethod,
+  resolveState,
+  shippingMethods,
+} from '@sevale/shared';
 import type { CreateOrderOperationInput } from '@sevale/validation';
 import { Input } from '../components/Input';
 import { Chip } from '../components/Chip';
+import { Select } from '../components/Select';
+import { couponsApi, type CouponRecord } from '../coupons/api';
 import { customersApi, type CustomerRecord } from '../customers/api';
 import {
   customerAvatarClass,
@@ -54,11 +66,10 @@ type BillingValue = AddressValue & { email: string };
 type FormItem = {
   product: ProductRecord;
   quantity: string;
+  originalPrice: string;
   unitPrice: string;
   discountTotal: string;
 };
-
-type StoreValues = Record<ProductStore, string>;
 
 const emptyAddress: AddressValue = {
   firstName: '',
@@ -162,9 +173,15 @@ function BillingSummary({ value, onEdit }: { value: BillingValue; onEdit: () => 
         <span>{value.email}</span>
         <span>{value.phone}</span>
       </div>
-      <Button size="sm" variant="tertiary" onPress={onEdit}>
+      <Button
+        className="order-edit-billing"
+        size="sm"
+        variant="tertiary"
+        isIconOnly
+        aria-label="Editar datos de facturación"
+        onPress={onEdit}
+      >
         <Pencil width={15} height={15} />
-        Editar
       </Button>
     </div>
   );
@@ -327,9 +344,15 @@ function CustomerSearch({
           <strong>{customerDisplayName(selected)}</strong>
           <span>{selected.email || 'Sin correo'}</span>
         </div>
-        <Button className="order-change-customer" size="sm" variant="tertiary" onPress={onChange}>
+        <Button
+          className="order-change-customer"
+          size="sm"
+          variant="tertiary"
+          isIconOnly
+          aria-label="Cambiar cliente"
+          onPress={onChange}
+        >
           <ArrowRotateRight width={15} height={15} />
-          Cambiar
         </Button>
       </div>
     );
@@ -491,6 +514,99 @@ function ProductSearch({
   );
 }
 
+function CouponSearch({
+  selected,
+  onSelect,
+  onClear,
+}: {
+  selected: CouponRecord | null;
+  onSelect: (coupon: CouponRecord) => void;
+  onClear: () => void;
+}) {
+  const [search, setSearch] = useState('');
+  const [debounced, setDebounced] = useState('');
+
+  useEffect(() => {
+    const timeout = window.setTimeout(() => setDebounced(search.trim()), 250);
+    return () => window.clearTimeout(timeout);
+  }, [search]);
+
+  const query = useQuery({
+    queryKey: ['orders', 'coupon-search', debounced],
+    enabled: !selected && Boolean(debounced),
+    queryFn: () => couponsApi.list({ search: debounced, active: true, page: 1, pageSize: 8 }),
+  });
+  const isLoadingResults = search.trim() !== debounced || query.isFetching;
+
+  if (selected) {
+    return (
+      <div className="order-selected-coupon">
+        <div>
+          <strong>{selected.coupon}</strong>
+          <span>{selected.description || 'Sin descripción'}</span>
+        </div>
+        <Chip color="accent">{selected.amount}%</Chip>
+        <Button
+          className="order-change-coupon"
+          size="sm"
+          variant="tertiary"
+          isIconOnly
+          aria-label="Cambiar cupón"
+          onPress={onClear}
+        >
+          <ArrowRotateRight width={15} height={15} />
+        </Button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="order-search-control">
+      <SearchField
+        value={search}
+        onChange={setSearch}
+        aria-label="Buscar cupón local"
+        variant="secondary"
+        fullWidth
+      >
+        <SearchField.Group>
+          <SearchField.SearchIcon />
+          <SearchField.Input placeholder="Buscar por cupón o descripción" />
+          <SearchField.ClearButton />
+        </SearchField.Group>
+      </SearchField>
+      {search && (
+        <div className="order-search-results order-coupon-results" aria-busy={isLoadingResults}>
+          <div className="order-search-results-scroll">
+            {isLoadingResults && <Spinner size="sm" />}
+            {!isLoadingResults && query.data?.data.length === 0 && (
+              <span>No encontramos cupones activos.</span>
+            )}
+            {!isLoadingResults &&
+              query.data?.data.map((coupon) => (
+                <button
+                  key={coupon.id}
+                  type="button"
+                  className="order-coupon-result"
+                  onClick={() => {
+                    onSelect(coupon);
+                    setSearch('');
+                  }}
+                >
+                  <span>
+                    <strong>{coupon.coupon}</strong>
+                    <small>{coupon.description || 'Sin descripción'}</small>
+                  </span>
+                  <strong>{coupon.amount}%</strong>
+                </button>
+              ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function OrderForm({
   isOpen,
   order,
@@ -529,15 +645,12 @@ export function OrderForm({
   const [items, setItems] = useState<FormItem[]>([]);
   const [editingPriceId, setEditingPriceId] = useState<number | null>(null);
   const [priceDraft, setPriceDraft] = useState('');
-  const [couponCodes, setCouponCodes] = useState<StoreValues>({ SERATUS: '', PALI: '' });
-  const [shippingTotals, setShippingTotals] = useState<StoreValues>({
-    SERATUS: '0.00',
-    PALI: '0.00',
-  });
-  const paymentMethod = order?.paymentMethod ?? '';
-  const [paymentMethodTitle, setPaymentMethodTitle] = useState(order?.paymentMethodTitle ?? '');
-  const shippingMethod = order?.shippingMethod ?? '';
-  const shippingMethodTitle = order?.shippingMethodTitle ?? '';
+  const [selectedCoupon, setSelectedCoupon] = useState<CouponRecord | null>(null);
+  const [paymentMethod, setPaymentMethod] = useState(order?.paymentMethod ?? '');
+  const [shippingMethod, setShippingMethod] = useState(order?.shippingMethod ?? 'flat_rate');
+  const [customShippingTotal, setCustomShippingTotal] = useState(
+    order?.shippingMethod === 'custom' ? order.shippingTotal : '',
+  );
   const [error, setError] = useState('');
 
   useEffect(() => {
@@ -548,6 +661,10 @@ export function OrderForm({
     let active = true;
     if (!order) {
       setItems([]);
+      setSelectedCoupon(null);
+      setPaymentMethod('');
+      setShippingMethod('flat_rate');
+      setCustomShippingTotal('');
       return () => {
         active = false;
       };
@@ -560,6 +677,7 @@ export function OrderForm({
           ? {
               product,
               quantity: String(item.quantity),
+              originalPrice: item.originalPrice ?? productPrice(product, order.currency),
               unitPrice: item.unitPrice,
               discountTotal: item.discountTotal,
             }
@@ -572,14 +690,25 @@ export function OrderForm({
       .catch(() => {
         if (active) setError('No pudimos cargar los productos de este pedido.');
       });
-    const codes = { SERATUS: '', PALI: '' };
-    const shippingByStore = { SERATUS: '0.00', PALI: '0.00' };
-    order.orders.forEach((storeOrder) => {
-      codes[storeOrder.store] = storeOrder.coupons[0]?.code ?? '';
-      shippingByStore[storeOrder.store] = storeOrder.shippingTotal;
-    });
-    setCouponCodes(codes);
-    setShippingTotals(shippingByStore);
+    setPaymentMethod(order.paymentMethod ?? '');
+    setShippingMethod(order.shippingMethod ?? '');
+    setCustomShippingTotal(order.shippingMethod === 'custom' ? order.shippingTotal : '');
+
+    const couponCode = order.couponCode ?? order.orders.flatMap(({ coupons }) => coupons)[0]?.code;
+    setSelectedCoupon(null);
+    if (couponCode) {
+      void couponsApi
+        .list({ search: couponCode, active: true, page: 1, pageSize: 8 })
+        .then(({ data }) => {
+          if (!active) return;
+          setSelectedCoupon(
+            data.find((coupon) => coupon.coupon.toLowerCase() === couponCode.toLowerCase()) ?? null,
+          );
+        })
+        .catch(() => {
+          if (active) setError('No pudimos cargar el cupón de este pedido.');
+        });
+    }
     return () => {
       active = false;
     };
@@ -589,18 +718,55 @@ export function OrderForm({
     () => [...new Set(items.map(({ product }) => product.store))] as ProductStore[],
     [items],
   );
+  const itemsSubtotal = useMemo(
+    () => items.reduce((total, item) => total + money(item.unitPrice) * money(item.quantity), 0),
+    [items],
+  );
+
+  useEffect(() => {
+    if (items.length === 0 || shippingMethod === 'custom') return;
+    const freeShippingRule = resolveShippingMethod('free_shipping')?.rules[currency];
+    const freeShippingMinimum =
+      freeShippingRule && 'minimum_order_total' in freeShippingRule
+        ? freeShippingRule.minimum_order_total
+        : undefined;
+    if (typeof freeShippingMinimum !== 'number') return;
+    const automaticMethod = itemsSubtotal >= freeShippingMinimum ? 'free_shipping' : 'flat_rate';
+    if (shippingMethod !== automaticMethod) setShippingMethod(automaticMethod);
+  }, [currency, items.length, itemsSubtotal, shippingMethod]);
+
   const summary = useMemo(() => {
-    const subtotal = items.reduce(
-      (total, item) => total + money(item.unitPrice) * money(item.quantity),
-      0,
-    );
-    const discount = items.reduce((total, item) => total + money(item.discountTotal), 0);
-    const shippingTotal = activeStores.reduce(
-      (total, store) => total + money(shippingTotals[store]),
-      0,
-    );
+    const subtotal = itemsSubtotal;
+    const discount = selectedCoupon
+      ? activeStores.reduce((total, store) => {
+          const couponEligibleSubtotal = items
+            .filter(
+              (item) =>
+                item.product.store === store && money(item.unitPrice) >= money(item.originalPrice),
+            )
+            .reduce(
+              (storeTotal, item) => storeTotal + money(item.unitPrice) * money(item.quantity),
+              0,
+            );
+          return total + Math.round(couponEligibleSubtotal * selectedCoupon.amount) / 100;
+        }, 0)
+      : 0;
+    const shippingDefinition = resolveShippingMethod(shippingMethod);
+    const shippingRule = shippingDefinition?.rules[currency];
+    const shippingTotal =
+      shippingMethod === 'custom'
+        ? money(customShippingTotal)
+        : (shippingRule?.shipping_total ?? 0);
     return { subtotal, discount, shippingTotal, total: subtotal - discount + shippingTotal };
-  }, [activeStores, items, shippingTotals]);
+  }, [
+    activeStores,
+    currency,
+    customShippingTotal,
+    items,
+    itemsSubtotal,
+    selectedCoupon,
+    shippingMethod,
+  ]);
 
   const chooseCustomer = (next: CustomerRecord) => {
     const nextBilling = addressFromCustomer(next);
@@ -642,11 +808,13 @@ export function OrderForm({
   };
   const changeCurrency = (next: 'COP' | 'USD') => {
     setCurrency(next);
+    if (shippingMethod === 'custom') setCustomShippingTotal('');
     setEditingPriceId(null);
     setPriceDraft('');
     setItems((current) =>
       current.map((item) => ({
         ...item,
+        originalPrice: productPrice(item.product, next),
         unitPrice: productPrice(item.product, next),
         discountTotal: '0.00',
       })),
@@ -685,29 +853,53 @@ export function OrderForm({
     setError('');
     if (!customer) return setError('Selecciona un cliente.');
     if (items.length === 0) return setError('Agrega al menos un producto.');
+    const selectedPaymentMethod = resolvePaymentMethod(paymentMethod);
+    if (!selectedPaymentMethod) return setError('Selecciona el método de pago.');
+    const selectedShippingMethod = resolveShippingMethod(shippingMethod);
+    if (!selectedShippingMethod) return setError('Selecciona el método de envío.');
+    if (
+      selectedShippingMethod.custom_amount &&
+      (!customShippingTotal.trim() || money(customShippingTotal) < 0)
+    ) {
+      return setError('Ingresa un valor de envío personalizado válido.');
+    }
+    const shippingRule = selectedShippingMethod.rules[currency];
+    const minimumOrderTotal =
+      shippingRule && 'minimum_order_total' in shippingRule
+        ? shippingRule.minimum_order_total
+        : undefined;
+    const maximumOrderTotal =
+      shippingRule && 'maximum_order_total' in shippingRule
+        ? shippingRule.maximum_order_total
+        : undefined;
+    if (
+      selectedShippingMethod.shipping_method === 'free_shipping' &&
+      typeof minimumOrderTotal === 'number' &&
+      summary.subtotal < minimumOrderTotal
+    ) {
+      return setError('El subtotal todavía no alcanza el mínimo para envío gratis.');
+    }
+    if (
+      selectedShippingMethod.shipping_method === 'flat_rate' &&
+      typeof maximumOrderTotal === 'number' &&
+      summary.subtotal >= maximumOrderTotal
+    ) {
+      return setError('Este subtotal corresponde a envío gratis.');
+    }
     for (const item of items) {
       if (money(item.quantity) < 1 || !Number.isInteger(money(item.quantity)))
         return setError('Las cantidades deben ser números enteros mayores a cero.');
-      if (money(item.discountTotal) > money(item.unitPrice) * money(item.quantity))
-        return setError(`El descuento de ${item.product.sku} supera su subtotal.`);
-    }
-    for (const store of activeStores) {
-      const discount = items
-        .filter(({ product }) => product.store === store)
-        .reduce((total, item) => total + money(item.discountTotal), 0);
-      if (discount > 0 && !couponCodes[store].trim())
-        return setError(
-          `Ingresa el código del cupón aplicado en ${store === 'SERATUS' ? 'Seratus' : 'Pali'}.`,
-        );
     }
     const effectiveShipping = differentShipping ? shipping : withoutEmail(billing);
     await onSubmit({
       customerId: customer.id,
       currency,
-      paymentMethod: nullable(paymentMethod),
-      paymentMethodTitle: nullable(paymentMethodTitle),
-      shippingMethod: nullable(shippingMethod),
-      shippingMethodTitle: nullable(shippingMethodTitle),
+      paymentMethod: selectedPaymentMethod.payment_method,
+      shippingMethod: selectedShippingMethod.shipping_method,
+      customShippingTotal: selectedShippingMethod.custom_amount
+        ? fixed(money(customShippingTotal))
+        : null,
+      couponId: selectedCoupon?.id ?? null,
       billing: {
         firstName: nullable(billing.firstName),
         lastName: nullable(billing.lastName),
@@ -737,19 +929,6 @@ export function OrderForm({
         productId: item.product.id,
         quantity: Number(item.quantity),
         unitPrice: fixed(money(item.unitPrice)),
-        discountTotal: fixed(money(item.discountTotal)),
-      })),
-      coupons: activeStores.flatMap((store) => {
-        const discountTotal = items
-          .filter(({ product }) => product.store === store)
-          .reduce((total, item) => total + money(item.discountTotal), 0);
-        return couponCodes[store].trim()
-          ? [{ store, code: couponCodes[store].trim(), discountTotal: fixed(discountTotal) }]
-          : [];
-      }),
-      shippingTotals: activeStores.map((store) => ({
-        store,
-        total: fixed(money(shippingTotals[store])),
       })),
     });
   };
@@ -849,6 +1028,7 @@ export function OrderForm({
                         {
                           product,
                           quantity: '1',
+                          originalPrice: productPrice(product, currency),
                           unitPrice: productPrice(product, currency),
                           discountTotal: '0.00',
                         },
@@ -987,70 +1167,10 @@ export function OrderForm({
                       )}
                     </div>
                   </div>
-                  {activeStores.length > 0 && (
-                    <div className="order-products-settings">
-                      <h3>Cupones y envío por tienda</h3>
-                      <div className="order-store-settings">
-                        {activeStores.map((store) => {
-                          const discount = items
-                            .filter(({ product }) => product.store === store)
-                            .reduce((total, item) => total + money(item.discountTotal), 0);
-                          return (
-                            <article key={store}>
-                              <div>
-                                <strong>{store === 'SERATUS' ? 'Seratus' : 'Pali'}</strong>
-                                <Chip
-                                  className={
-                                    store === 'SERATUS'
-                                      ? 'inventory-store-chip-seratus'
-                                      : 'inventory-store-chip-pali'
-                                  }
-                                >
-                                  {store}
-                                </Chip>
-                              </div>
-                              <TextField>
-                                <Label>Código del cupón</Label>
-                                <Input
-                                  variant="secondary"
-                                  value={couponCodes[store]}
-                                  onChange={(event) =>
-                                    setCouponCodes((current) => ({
-                                      ...current,
-                                      [store]: event.target.value,
-                                    }))
-                                  }
-                                />
-                              </TextField>
-                              <TextField>
-                                <Label>Total del envío</Label>
-                                <Input
-                                  variant="secondary"
-                                  type="number"
-                                  min="0"
-                                  step="0.01"
-                                  value={shippingTotals[store]}
-                                  onChange={(event) =>
-                                    setShippingTotals((current) => ({
-                                      ...current,
-                                      [store]: event.target.value,
-                                    }))
-                                  }
-                                />
-                              </TextField>
-                              <span>
-                                Descuento aplicado: {currency} {fixed(discount)}
-                              </span>
-                            </article>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  )}
                 </section>
 
                 <section className="order-form-section">
-                  <h3>Pago</h3>
+                  <h3>Condiciones de la operación</h3>
                   <RadioGroup
                     aria-label="Moneda"
                     value={currency}
@@ -1087,61 +1207,160 @@ export function OrderForm({
                       </Radio>
                     </div>
                   </RadioGroup>
-                  <TextField aria-label="Forma de pago">
-                    <Input
+
+                  <div className="order-operation-conditions">
+                    <div className="order-coupon-field">
+                      <Label>Cupón</Label>
+                      <CouponSearch
+                        selected={selectedCoupon}
+                        onSelect={setSelectedCoupon}
+                        onClear={() => setSelectedCoupon(null)}
+                      />
+                    </div>
+
+                    <Select
+                      aria-label="Método de pago"
+                      value={paymentMethod}
+                      onChange={(value) => setPaymentMethod(String(value ?? ''))}
                       variant="secondary"
-                      placeholder="Forma de pago"
-                      value={paymentMethodTitle}
-                      onChange={(event) => setPaymentMethodTitle(event.target.value)}
-                    />
-                  </TextField>
+                    >
+                      <Label>Método de pago</Label>
+                      <Select.Trigger>
+                        <Select.Value />
+                        <Select.Indicator />
+                      </Select.Trigger>
+                      <Select.Popover>
+                        <ListBox>
+                          {paymentMethods.map((method) => (
+                            <ListBox.Item
+                              key={method.payment_method}
+                              id={method.payment_method}
+                              textValue={method.payment_method_title}
+                            >
+                              {method.payment_method_title}
+                              <ListBox.ItemIndicator />
+                            </ListBox.Item>
+                          ))}
+                        </ListBox>
+                      </Select.Popover>
+                    </Select>
+
+                    <Select
+                      aria-label="Método de envío"
+                      value={shippingMethod}
+                      onChange={(value) => {
+                        const next = String(value ?? '');
+                        setShippingMethod(next);
+                        if (next !== 'custom') setCustomShippingTotal('');
+                      }}
+                      variant="secondary"
+                    >
+                      <Label>Método de envío</Label>
+                      <Select.Trigger>
+                        <Select.Value />
+                        <Select.Indicator />
+                      </Select.Trigger>
+                      <Select.Popover>
+                        <ListBox>
+                          {shippingMethods.map((method) => (
+                            <ListBox.Item
+                              key={method.shipping_method}
+                              id={method.shipping_method}
+                              textValue={method.shipping_method_title}
+                            >
+                              {method.shipping_method_title}
+                              <ListBox.ItemIndicator />
+                            </ListBox.Item>
+                          ))}
+                        </ListBox>
+                      </Select.Popover>
+                    </Select>
+
+                    {shippingMethod === 'custom' && (
+                      <TextField>
+                        <Label>Valor del envío</Label>
+                        <Input
+                          variant="secondary"
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={customShippingTotal}
+                          onChange={(event) => setCustomShippingTotal(event.target.value)}
+                          placeholder={`Valor en ${currency}`}
+                        />
+                      </TextField>
+                    )}
+                  </div>
                 </section>
 
                 <section className="order-form-section order-summary">
-                  <h3>Resumen</h3>
-                  <dl>
+                  <h3>Resumen del pedido</h3>
+                  {activeStores.length > 1 && (
+                    <div className="order-store-summaries">
+                      {activeStores.map((store) => {
+                        const storeItems = items.filter(({ product }) => product.store === store);
+                        const subtotal = storeItems.reduce(
+                          (total, item) => total + money(item.unitPrice) * money(item.quantity),
+                          0,
+                        );
+                        const discount = selectedCoupon
+                          ? Math.round(
+                              storeItems
+                                .filter(
+                                  (item) => money(item.unitPrice) >= money(item.originalPrice),
+                                )
+                                .reduce(
+                                  (total, item) =>
+                                    total + money(item.unitPrice) * money(item.quantity),
+                                  0,
+                                ) * selectedCoupon.amount,
+                            ) / 100
+                          : 0;
+                        return (
+                          <article key={store} className="order-store-summary">
+                            <h4>{store === 'SERATUS' ? 'Seratus' : 'Pali'}</h4>
+                            <dl>
+                              <div>
+                                <dt>Subtotal</dt>
+                                <dd>{formattedProductPrice(subtotal, currency)}</dd>
+                              </div>
+                              <div>
+                                <dt>Descuento</dt>
+                                <dd>{formattedProductPrice(discount, currency)}</dd>
+                              </div>
+                              <div>
+                                <dt>Envío</dt>
+                                <dd>{formattedProductPrice(0, currency)}</dd>
+                              </div>
+                              <div>
+                                <dt>Total</dt>
+                                <dd>{formattedProductPrice(subtotal - discount, currency)}</dd>
+                              </div>
+                            </dl>
+                          </article>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  <dl className="order-summary-general">
                     <div>
                       <dt>Subtotal</dt>
-                      <dd>
-                        {currency} {fixed(summary.subtotal)}
-                      </dd>
+                      <dd>{formattedProductPrice(summary.subtotal, currency)}</dd>
                     </div>
                     <div>
-                      <dt>Descuentos</dt>
-                      <dd>
-                        - {currency} {fixed(summary.discount)}
-                      </dd>
+                      <dt>Descuento</dt>
+                      <dd>{formattedProductPrice(summary.discount, currency)}</dd>
                     </div>
                     <div>
                       <dt>Envío</dt>
-                      <dd>
-                        {currency} {fixed(summary.shippingTotal)}
-                      </dd>
+                      <dd>{formattedProductPrice(summary.shippingTotal, currency)}</dd>
                     </div>
                     <div className="order-summary-total">
                       <dt>Total</dt>
-                      <dd>
-                        {currency} {fixed(summary.total)}
-                      </dd>
+                      <dd>{formattedProductPrice(summary.total, currency)}</dd>
                     </div>
                   </dl>
-                  {activeStores.map((store) => {
-                    const storeItems = items.filter(({ product }) => product.store === store);
-                    const subtotal = storeItems.reduce(
-                      (total, item) => total + money(item.unitPrice) * money(item.quantity),
-                      0,
-                    );
-                    const discount = storeItems.reduce(
-                      (total, item) => total + money(item.discountTotal),
-                      0,
-                    );
-                    return (
-                      <p key={store}>
-                        <strong>{store === 'SERATUS' ? 'Seratus' : 'Pali'}:</strong> {currency}{' '}
-                        {fixed(subtotal - discount + money(shippingTotals[store]))}
-                      </p>
-                    );
-                  })}
                 </section>
               </Modal.Body>
               <Modal.Footer>

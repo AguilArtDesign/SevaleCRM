@@ -23,6 +23,10 @@ export const permissions = [
   'orders.shipping.update',
   'orders.siigo_quote.create',
   'orders.sync.retry',
+  'coupons.read',
+  'coupons.create',
+  'coupons.update',
+  'coupons.delete',
 ] as const;
 
 export type Role = (typeof roles)[number];
@@ -43,6 +47,11 @@ export const rolePermissions = {
     'orders.shipping.update',
     'orders.siigo_quote.create',
     'orders.sync.retry',
+    'coupons.read',
   ],
   LOGISTICS: ['inventory.read', 'orders.read', 'orders.shipping.update'],
 } as const satisfies Record<Role, readonly Permission[]>;
+
+export function hasPermission(role: Role, permission: Permission): boolean {
+  return (rolePermissions[role] as readonly Permission[]).includes(permission);
+}

@@ -419,35 +419,24 @@ const orderItemInputSchema = z
     productId: productIdSchema,
     quantity: z.number().int().min(1).max(10_000),
     unitPrice: orderMoneySchema.optional(),
-    discountTotal: orderMoneySchema.default('0'),
   })
-  .strict();
-
-const orderCouponInputSchema = z
-  .object({
-    store: storeSchema,
-    code: z.string().trim().min(1, 'Ingresa el código del cupón.').max(191),
-    discountTotal: orderMoneySchema,
-  })
-  .strict();
-
-const orderStoreShippingInputSchema = z
-  .object({ store: storeSchema, total: orderMoneySchema })
   .strict();
 
 const orderOperationFieldsSchema = z
   .object({
     customerId: customerIdSchema,
     currency: orderCurrencySchema,
-    paymentMethod: nullableOrderText(191),
-    paymentMethodTitle: nullableOrderText(191),
-    shippingMethod: nullableOrderText(191),
-    shippingMethodTitle: nullableOrderText(191),
+    paymentMethod: z.string().trim().min(1, 'Selecciona el método de pago.').max(191),
+    shippingMethod: z.string().trim().min(1, 'Selecciona el método de envío.').max(191),
+    customShippingTotal: z
+      .union([orderMoneySchema, z.null(), z.undefined()])
+      .transform((value) => value ?? null),
+    couponId: z
+      .union([z.number().int().positive(), z.null(), z.undefined()])
+      .transform((value) => value ?? null),
     billing: orderBillingSchema,
     shipping: orderShippingSchema,
     items: z.array(orderItemInputSchema).min(1, 'Agrega al menos un producto.').max(200),
-    coupons: z.array(orderCouponInputSchema).max(20).default([]),
-    shippingTotals: z.array(orderStoreShippingInputSchema).max(2).default([]),
   })
   .strict();
 
@@ -460,15 +449,6 @@ function validateOrderCollections(
       code: 'custom',
       path: ['items'],
       message: 'Cada producto solo puede aparecer una vez en la operación.',
-    });
-  }
-  if (
-    new Set(input.shippingTotals.map(({ store }) => store)).size !== input.shippingTotals.length
-  ) {
-    context.addIssue({
-      code: 'custom',
-      path: ['shippingTotals'],
-      message: 'Cada tienda solo puede tener un valor de envío.',
     });
   }
 }
@@ -528,6 +508,51 @@ export const orderListQuerySchema = z
       });
     }
   });
+
+const couponCodeSchema = z
+  .string()
+  .trim()
+  .toLowerCase()
+  .min(2, 'El cupón debe contener al menos 2 caracteres.')
+  .max(64, 'El cupón no puede superar 64 caracteres.')
+  .regex(
+    /^[a-z0-9][a-z0-9_-]*$/,
+    'El cupón solo puede contener letras, números, guiones y guiones bajos.',
+  );
+
+const couponFieldsSchema = z.object({
+  coupon: couponCodeSchema,
+  description: z
+    .union([z.string().trim().max(255), z.literal(''), z.null(), z.undefined()])
+    .transform((value) => value || null),
+  type: z.string().trim().min(1, 'Selecciona el tipo de cupón.').max(32),
+  amount: z.coerce
+    .number()
+    .finite()
+    .gt(0, 'El valor debe ser mayor que 0.')
+    .lte(100, 'El porcentaje no puede superar 100.'),
+  active: z.boolean().default(true),
+});
+
+export const createCouponSchema = couponFieldsSchema;
+export const updateCouponSchema = couponFieldsSchema
+  .partial()
+  .refine((data) => Object.keys(data).length > 0, 'Debes enviar al menos un cambio.');
+export const couponIdSchema = z.coerce
+  .number()
+  .int('El identificador del cupón no es válido.')
+  .positive('El identificador del cupón no es válido.');
+export const couponListQuerySchema = z.object({
+  search: z.string().trim().max(191, 'La búsqueda es demasiado larga.').default(''),
+  active: z
+    .enum(['true', 'false'])
+    .transform((value) => value === 'true')
+    .optional(),
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(20),
+  sort: z.enum(['coupon', 'amount', 'createdAt', 'updatedAt']).default('createdAt'),
+  order: z.enum(['asc', 'desc']).default('desc'),
+});
 
 const wooIdentifierSchema = z.union([
   z.number().int().nonnegative().transform(String),
@@ -712,5 +737,8 @@ export type CustomerListQuery = z.infer<typeof customerListQuerySchema>;
 export type CustomerSiigoLookupQuery = z.infer<typeof customerSiigoLookupSchema>;
 export type CustomerSyncInput = z.infer<typeof customerSyncSchema>;
 export type CustomerSiigoLocationInput = z.infer<typeof customerSiigoLocationSchema>;
+export type CreateCouponInput = z.infer<typeof createCouponSchema>;
+export type UpdateCouponInput = z.infer<typeof updateCouponSchema>;
+export type CouponListQuery = z.infer<typeof couponListQuerySchema>;
 export type ProductListQuery = z.infer<typeof productListQuerySchema>;
 export type BulkProductSyncInput = z.infer<typeof bulkProductSyncSchema>;

@@ -73,6 +73,10 @@ export type OrderDetailRecord = {
   paymentMethodTitle: string | null;
   shippingMethod: string | null;
   shippingMethodTitle: string | null;
+  couponId: number | null;
+  couponCode: string | null;
+  couponType: string | null;
+  couponAmount: string | null;
   billingFirstName: string | null;
   billingLastName: string | null;
   billingCompany: string | null;

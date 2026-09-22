@@ -2974,6 +2974,20 @@ select {
   flex: 0 0 auto;
 }
 
+.order-edit-billing {
+  width: 2rem;
+  min-width: 2rem;
+  height: 2rem;
+  color: var(--accent);
+  background: color-mix(in oklch, var(--accent) 14%, transparent);
+  border-radius: 999px;
+}
+
+.order-edit-billing:hover {
+  color: var(--accent);
+  background: color-mix(in oklch, var(--accent) 22%, transparent);
+}
+
 .order-billing-actions {
   display: flex;
   justify-content: flex-end;
@@ -3202,18 +3216,108 @@ select {
   font-size: 0.75rem;
 }
 
-.order-change-customer {
+.order-change-customer,
+.order-change-coupon {
+  width: 2rem;
+  min-width: 2rem;
+  height: 2rem;
   color: var(--warning);
   background: var(--warning-soft);
+  border-radius: 999px;
 }
 
-.order-change-customer:hover {
+.order-change-customer:hover,
+.order-change-coupon:hover {
   color: var(--warning);
   background: var(--warning-soft-hover);
 }
 
 .order-selected-customer .button {
   flex: 0 0 auto;
+}
+
+.order-operation-conditions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.85rem;
+}
+
+.order-coupon-field {
+  display: grid;
+  min-width: 0;
+  align-content: start;
+  gap: 0.5rem;
+}
+
+.order-selected-coupon {
+  display: flex;
+  min-height: 2.5rem;
+  padding: 0.55rem 0.65rem;
+  align-items: center;
+  gap: 0.6rem;
+  background: var(--default);
+  border-radius: var(--field-radius);
+}
+
+.order-selected-coupon > div {
+  display: grid;
+  min-width: 0;
+  margin-right: auto;
+  gap: 0.1rem;
+}
+
+.order-selected-coupon strong,
+.order-selected-coupon span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.order-selected-coupon > div > strong {
+  color: var(--foreground);
+  font-size: 0.82rem;
+  font-weight: 500;
+}
+
+.order-selected-coupon > div > span {
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.order-selected-coupon .button,
+.order-selected-coupon .chip {
+  flex: 0 0 auto;
+}
+
+.order-coupon-result {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.75rem !important;
+}
+
+.order-coupon-result > span {
+  display: grid;
+  min-width: 0;
+  gap: 0.1rem;
+}
+
+.order-coupon-result > span > strong,
+.order-coupon-result > span > small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.order-coupon-result > span > strong,
+.order-coupon-result > strong {
+  color: var(--foreground);
+  font-size: 0.82rem;
+  font-weight: 500;
+}
+
+.order-coupon-result > span > small {
+  color: var(--muted);
+  font-size: 0.72rem;
 }
 
 .order-items,
@@ -3549,28 +3653,54 @@ select {
 }
 
 .order-summary {
-  padding: 1rem;
-  margin-block: 1rem;
+  padding-block: 1rem;
+  margin: 0;
+  background: transparent;
+}
+
+.order-store-summaries {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.order-store-summary,
+.order-summary-general {
+  padding: 0.85rem;
   background: var(--surface-secondary);
-  border: 0;
   border-radius: 0.9rem;
 }
 
-.order-summary dl,
+.order-store-summary h4 {
+  margin: 0 0 0.75rem;
+  color: var(--foreground);
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.order-store-summary dl,
+.order-summary-general,
 .order-detail-stores dl {
   display: grid;
   margin: 0;
   gap: 0.4rem;
 }
 
-.order-summary dl > div,
+.order-store-summary dl > div,
+.order-summary-general > div,
 .order-detail-stores dl > div {
   display: flex;
   justify-content: space-between;
   gap: 1rem;
 }
 
-.order-summary dd,
+.order-store-summary dt,
+.order-summary-general dt {
+  color: var(--muted);
+}
+
+.order-store-summary dd,
+.order-summary-general dd,
 .order-detail-stores dd {
   margin: 0;
   font-weight: 600;
@@ -3582,12 +3712,6 @@ select {
   color: var(--foreground);
   font-size: 1rem;
   font-weight: 700;
-}
-
-.order-summary p {
-  margin: 0;
-  color: var(--muted);
-  font-size: 0.8rem;
 }
 
 .order-detail {
@@ -3819,9 +3943,11 @@ select {
   }
 
   .order-address-grid,
+  .order-operation-conditions,
   .shipment-form-grid,
   .shipment-detail dl,
   .order-store-settings,
+  .order-store-summaries,
   .order-detail-overview {
     grid-template-columns: 1fr;
   }
@@ -3848,5 +3974,121 @@ select {
     grid-column: 3;
     grid-row: 3;
     justify-self: end;
+  }
+}
+
+.coupons-layout {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
+.page-heading-row,
+.coupons-toolbar,
+.coupon-actions,
+.coupon-active-control {
+  display: flex;
+  align-items: center;
+}
+
+.page-heading-row {
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.page-heading-row h2 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.page-heading-row p {
+  margin: 0.2rem 0 0;
+}
+
+.coupons-toolbar {
+  gap: 0.65rem;
+}
+
+.coupons-toolbar .search-field {
+  width: min(28rem, 100%);
+}
+
+.coupons-toolbar .select {
+  width: 12rem;
+}
+
+.coupons-table-shell {
+  display: flex;
+  min-height: 28rem;
+  flex: 1;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--surface-secondary);
+  border: 1px solid var(--border);
+  border-radius: 1rem;
+}
+
+.coupons-table-shell .table {
+  flex: 1;
+}
+
+.coupons-table-shell .pagination {
+  margin-top: auto;
+  padding: 0.8rem 1rem;
+}
+
+.coupons-state {
+  display: grid;
+  min-height: 16rem;
+  place-items: center;
+  align-content: center;
+  gap: 0.4rem;
+  color: var(--muted-foreground);
+  text-align: center;
+}
+
+.coupon-actions {
+  gap: 0.3rem;
+}
+
+.coupon-form-modal form {
+  display: contents;
+}
+
+.coupon-form-body {
+  display: grid;
+  gap: 1rem;
+}
+
+.coupon-active-control {
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.8rem;
+  background: var(--surface-secondary);
+  border-radius: 0.8rem;
+}
+
+.coupon-active-control > div {
+  display: grid;
+  gap: 0.15rem;
+}
+
+.coupon-active-control span {
+  color: var(--muted-foreground);
+  font-size: 0.78rem;
+}
+
+@media (max-width: 640px) {
+  .page-heading-row,
+  .coupons-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .coupons-toolbar .search-field,
+  .coupons-toolbar .select {
+    width: 100%;
   }
 }

@@ -4,6 +4,20 @@ export { formatPhoneInternational, mapPhoneToSiigo, normalizePhoneE164 } from '.
 export type { SiigoPhone } from './customer-phone.js';
 
 export {
+  couponTypes,
+  paymentMethods,
+  resolveCouponType,
+  resolvePaymentMethod,
+  resolveShippingMethod,
+  shippingMethods,
+} from './order-commercial-catalogs.js';
+export type {
+  CouponTypeCode,
+  PaymentMethodCode,
+  ShippingMethodCode,
+} from './order-commercial-catalogs.js';
+
+export {
   countryFlagPath,
   findCitiesByName,
   getCities,

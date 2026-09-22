@@ -10,8 +10,10 @@ import {
   PersonMagnifier,
   ShoppingCart,
   Sun,
+  Ticket,
   Xmark,
 } from '@gravity-ui/icons';
+import { hasPermission } from '@sevale/permissions';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { authClient } from '../auth/auth-client';
 import { useTheme } from '../theme/ThemeProvider';
@@ -211,6 +213,18 @@ export function AppShell() {
             </span>
             <span>Pedidos</span>
           </NavLink>
+
+          {user && hasPermission(user.role, 'coupons.read') && (
+            <NavLink
+              to="/coupons"
+              className={({ isActive }) => `sidebar-link${isActive ? ' sidebar-link-active' : ''}`}
+            >
+              <span className="sidebar-menu-icon" aria-hidden="true">
+                <Ticket />
+              </span>
+              <span>Cupones</span>
+            </NavLink>
+          )}
 
           {(user?.role === 'ADMIN' || user?.role === 'COMMERCIAL') && (
             <NavLink

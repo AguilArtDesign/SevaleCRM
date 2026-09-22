@@ -25,6 +25,7 @@ import {
   getCustomerColombiaStates,
   getCustomerCountries,
   getCustomerWooStates,
+  normalizePhoneE164,
   resolveCustomerCityName,
   resolveCustomerCountryName,
   resolveCustomerRegionName,
@@ -238,10 +239,17 @@ export function CustomerForm({
       setError(formIssue?.message ?? '');
       return;
     }
+    const normalizedPhone = parsed.data.phone
+      ? normalizePhoneE164(parsed.data.phone, parsed.data.country ?? '')
+      : null;
+    if (parsed.data.phone && !normalizedPhone) {
+      setError('El teléfono no es válido para el país seleccionado.');
+      return;
+    }
     setError('');
     setDocumentErrors({});
     try {
-      await onSubmit(parsed.data);
+      await onSubmit({ ...parsed.data, phone: normalizedPhone });
     } catch {
       // El padre presenta el error normalizado devuelto por la API.
     }

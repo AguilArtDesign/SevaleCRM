@@ -36,6 +36,10 @@ export type PreparedOperation = {
   paymentMethodTitle: string | null;
   shippingMethod: string | null;
   shippingMethodTitle: string | null;
+  couponId: number | null;
+  couponCode: string | null;
+  couponType: string | null;
+  couponAmount: Prisma.Decimal | null;
   subtotal: Prisma.Decimal;
   discountTotal: Prisma.Decimal;
   shippingTotal: Prisma.Decimal;

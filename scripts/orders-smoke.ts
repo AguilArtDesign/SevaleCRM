@@ -26,6 +26,7 @@ const password = `O-${randomUUID()}-9a!`;
 const userIds: string[] = [];
 const operationIds: number[] = [];
 let customerId: number | null = null;
+let couponId: number | null = null;
 const productIds: number[] = [];
 
 function expectStatus(response: Response, status: number, context: string) {
@@ -144,6 +145,17 @@ try {
   });
   productIds.push(pali.id);
 
+  const coupon = await prisma.coupon.create({
+    data: {
+      coupon: `orders-${runId}`,
+      description: 'Cupón porcentual para pruebas de pedidos',
+      type: 'percent',
+      amount: 20,
+      active: true,
+    },
+  });
+  couponId = coupon.id;
+
   const address = {
     firstName: 'Cliente',
     lastName: 'Pedidos API',
@@ -159,10 +171,10 @@ try {
   const basePayload = {
     customerId: customer.id,
     currency: 'COP',
-    paymentMethod: 'cash',
-    paymentMethodTitle: 'Efectivo',
-    shippingMethod: 'flat_rate',
-    shippingMethodTitle: 'Envío nacional',
+    paymentMethod: 'avalpay',
+    shippingMethod: 'free_shipping',
+    customShippingTotal: null,
+    couponId: coupon.id,
     billing: { ...address, email: customer.email },
     shipping: address,
     items: [
@@ -170,12 +182,39 @@ try {
         productId: seratus.id,
         quantity: 2,
         unitPrice: '120000',
-        discountTotal: '10000',
       },
     ],
-    coupons: [{ store: 'SERATUS', code: 'PROMO', discountTotal: '10000' }],
-    shippingTotals: [{ store: 'SERATUS', total: '15000' }],
   };
+
+  async function createOrderCase(
+    label: string,
+    overrides: Record<string, unknown>,
+  ): Promise<{
+    id: number;
+    subtotal: string;
+    discountTotal: string;
+    shippingTotal: string;
+    total: string;
+    paymentMethod: string;
+    paymentMethodTitle: string;
+  }> {
+    const response = await api('/api/orders', commercialCookie, {
+      method: 'POST',
+      body: JSON.stringify({ ...basePayload, couponId: null, ...overrides }),
+    });
+    expectStatus(response, 201, label);
+    const result = (await response.json()) as {
+      id: number;
+      subtotal: string;
+      discountTotal: string;
+      shippingTotal: string;
+      total: string;
+      paymentMethod: string;
+      paymentMethodTitle: string;
+    };
+    operationIds.push(result.id);
+    return result;
+  }
 
   expectStatus(
     await api('/api/orders', commercialCookie, {
@@ -190,9 +229,7 @@ try {
       method: 'POST',
       body: JSON.stringify({
         ...basePayload,
-        items: [{ productId: 2_147_483_647, quantity: 1, discountTotal: '0' }],
-        coupons: [],
-        shippingTotals: [],
+        items: [{ productId: 2_147_483_647, quantity: 1 }],
       }),
     }),
     404,
@@ -224,7 +261,20 @@ try {
     discountTotal: string;
     shippingTotal: string;
     total: string;
-    orders: Array<{ store: string; items: Array<{ priceModified: boolean }> }>;
+    paymentMethod: string;
+    paymentMethodTitle: string;
+    shippingMethod: string;
+    shippingMethodTitle: string;
+    couponId: number | null;
+    couponCode: string | null;
+    couponType: string | null;
+    couponAmount: string | null;
+    orders: Array<{
+      store: string;
+      discountTotal: string;
+      shippingTotal: string;
+      items: Array<{ priceModified: boolean }>;
+    }>;
   };
   operationIds.push(created.id);
   if (
@@ -232,26 +282,60 @@ try {
     created.source !== 'CRM' ||
     created.status !== 'PENDING' ||
     created.subtotal !== '240000.00' ||
-    created.discountTotal !== '10000.00' ||
-    created.shippingTotal !== '15000.00' ||
-    created.total !== '245000.00' ||
+    created.discountTotal !== '0.00' ||
+    created.shippingTotal !== '0.00' ||
+    created.total !== '240000.00' ||
+    created.paymentMethod !== 'avalpay' ||
+    created.paymentMethodTitle !== 'AvalPay' ||
+    created.shippingMethod !== 'free_shipping' ||
+    created.shippingMethodTitle !== 'Envío Gratis' ||
+    created.couponId !== coupon.id ||
+    created.couponCode !== coupon.coupon ||
+    created.couponType !== 'percent' ||
+    created.couponAmount !== '20.00' ||
     created.orders[0]?.store !== 'SERATUS' ||
+    created.orders[0].discountTotal !== '0.00' ||
+    created.orders[0].shippingTotal !== '0.00' ||
     created.orders[0].items[0]?.priceModified !== true
   ) {
     throw new Error('La creación no calculó o agrupó correctamente la operación local.');
   }
+
+  await prisma.coupon.update({ where: { id: coupon.id }, data: { amount: 15 } });
+  const historicalResponse = await api(`/api/orders/${created.id}`, commercialCookie);
+  expectStatus(historicalResponse, 200, 'Snapshot histórico del cupón');
+  const historical = (await historicalResponse.json()) as {
+    couponAmount: string | null;
+    discountTotal: string;
+  };
+  if (historical.couponAmount !== '20.00' || historical.discountTotal !== '0.00') {
+    throw new Error('El cambio del catálogo alteró el snapshot histórico del pedido.');
+  }
+  await prisma.coupon.update({ where: { id: coupon.id }, data: { amount: 20 } });
+
+  await prisma.coupon.update({ where: { id: coupon.id }, data: { active: false } });
+  expectStatus(
+    await api('/api/orders', commercialCookie, {
+      method: 'POST',
+      body: JSON.stringify(basePayload),
+    }),
+    400,
+    'Cupón desactivado',
+  );
+  await prisma.coupon.update({ where: { id: coupon.id }, data: { active: true } });
 
   const usdResponse = await api('/api/orders', commercialCookie, {
     method: 'POST',
     body: JSON.stringify({
       ...basePayload,
       currency: 'USD',
+      shippingMethod: 'custom',
+      customShippingTotal: 1.006,
+      couponId: null,
       items: [
-        { productId: seratus.id, quantity: 2, discountTotal: 0 },
-        { productId: pali.id, quantity: 3, unitPrice: 12.346, discountTotal: 0.006 },
+        { productId: seratus.id, quantity: 2 },
+        { productId: pali.id, quantity: 3, unitPrice: 12.346 },
       ],
-      coupons: [{ store: 'PALI', code: 'USD-ROUND', discountTotal: 0.006 }],
-      shippingTotals: [{ store: 'PALI', total: 1.006 }],
     }),
   });
   expectStatus(usdResponse, 201, 'Creación USD con redondeo');
@@ -278,18 +362,74 @@ try {
   if (
     usd.currency !== 'USD' ||
     usd.subtotal !== '137.05' ||
-    usd.discountTotal !== '0.01' ||
+    usd.discountTotal !== '0.00' ||
     usd.shippingTotal !== '1.01' ||
-    usd.total !== '138.05' ||
+    usd.total !== '138.06' ||
     usdSeratusItem?.originalPrice !== '50.00' ||
     usdSeratusItem.unitPrice !== '50.00' ||
     usdSeratusItem.priceModified ||
     usdPaliItem?.originalPrice !== '30.00' ||
     usdPaliItem.unitPrice !== '12.35' ||
-    usdPaliItem.discountTotal !== '0.01' ||
+    usdPaliItem.discountTotal !== '0.00' ||
     !usdPaliItem.priceModified
   ) {
     throw new Error('La operación USD no respetó precios, precisión o redondeo monetario.');
+  }
+
+  const copFlat = await createOrderCase('COP 99999 con precio fijo', {
+    paymentMethod: 'cod',
+    shippingMethod: 'flat_rate',
+    items: [{ productId: seratus.id, quantity: 1, unitPrice: '99999' }],
+  });
+  if (
+    copFlat.subtotal !== '99999.00' ||
+    copFlat.shippingTotal !== '16000.00' ||
+    copFlat.total !== '115999.00' ||
+    copFlat.paymentMethod !== 'cod' ||
+    copFlat.paymentMethodTitle !== 'Pago con Asesor Comercial'
+  ) {
+    throw new Error('La regla COP por debajo del umbral o el snapshot de pago son incorrectos.');
+  }
+
+  const copFree = await createOrderCase('COP 100000 con envío gratis', {
+    paymentMethod: 'binance',
+    shippingMethod: 'free_shipping',
+    items: [{ productId: seratus.id, quantity: 1, unitPrice: '100000' }],
+  });
+  if (
+    copFree.subtotal !== '100000.00' ||
+    copFree.shippingTotal !== '0.00' ||
+    copFree.paymentMethodTitle !== 'Binance Pay'
+  ) {
+    throw new Error('El umbral exacto COP no activó el envío gratis.');
+  }
+
+  const usdFlat = await createOrderCase('USD 99.99 con precio fijo', {
+    currency: 'USD',
+    paymentMethod: 'addi',
+    shippingMethod: 'flat_rate',
+    items: [{ productId: seratus.id, quantity: 1, unitPrice: '99.99' }],
+  });
+  if (
+    usdFlat.subtotal !== '99.99' ||
+    usdFlat.shippingTotal !== '20.00' ||
+    usdFlat.paymentMethodTitle !== 'Addi'
+  ) {
+    throw new Error('La regla USD por debajo del umbral es incorrecta.');
+  }
+
+  const usdFree = await createOrderCase('USD 100 con envío gratis', {
+    currency: 'USD',
+    paymentMethod: 'sistecredito',
+    shippingMethod: 'free_shipping',
+    items: [{ productId: seratus.id, quantity: 1, unitPrice: '100' }],
+  });
+  if (
+    usdFree.subtotal !== '100.00' ||
+    usdFree.shippingTotal !== '0.00' ||
+    usdFree.paymentMethodTitle !== 'SisteCredito'
+  ) {
+    throw new Error('El umbral exacto USD no activó el envío gratis.');
   }
 
   expectStatus(await api(`/api/orders/${created.id}`, commercialCookie), 200, 'Detalle comercial');
@@ -299,20 +439,70 @@ try {
   );
   expectStatus(searchResponse, 200, 'Búsqueda por SKU y tienda');
   const search = (await searchResponse.json()) as { pagination: { total: number } };
-  if (search.pagination.total !== 2) {
+  if (search.pagination.total !== 6) {
     throw new Error('El listado no encontró la operación por SKU y tienda.');
+  }
+
+  const copCustom = await createOrderCase('COP con envío personalizado', {
+    paymentMethod: 'cod',
+    shippingMethod: 'custom',
+    customShippingTotal: '22000',
+    items: [{ productId: seratus.id, quantity: 1, unitPrice: '100001' }],
+  });
+  if (
+    copCustom.subtotal !== '100001.00' ||
+    copCustom.shippingTotal !== '22000.00' ||
+    copCustom.total !== '122001.00'
+  ) {
+    throw new Error('El envío personalizado COP no conservó el valor indicado.');
+  }
+
+  const usdAboveThreshold = await createOrderCase('USD por encima del umbral', {
+    currency: 'USD',
+    paymentMethod: 'cod',
+    shippingMethod: 'free_shipping',
+    items: [{ productId: seratus.id, quantity: 1, unitPrice: '100.01' }],
+  });
+  if (
+    usdAboveThreshold.subtotal !== '100.01' ||
+    usdAboveThreshold.shippingTotal !== '0.00' ||
+    usdAboveThreshold.total !== '100.01'
+  ) {
+    throw new Error('La regla USD por encima del umbral es incorrecta.');
+  }
+
+  const currencyChangeResponse = await api(`/api/orders/${copFlat.id}`, commercialCookie, {
+    method: 'PATCH',
+    body: JSON.stringify({
+      ...basePayload,
+      currency: 'USD',
+      paymentMethod: 'cod',
+      shippingMethod: 'flat_rate',
+      couponId: null,
+      items: [{ productId: seratus.id, quantity: 1, unitPrice: '99.99' }],
+    }),
+  });
+  expectStatus(currencyChangeResponse, 200, 'Recálculo al cambiar de COP a USD');
+  const currencyChanged = (await currencyChangeResponse.json()) as {
+    currency: string;
+    subtotal: string;
+    shippingTotal: string;
+    total: string;
+  };
+  if (
+    currencyChanged.currency !== 'USD' ||
+    currencyChanged.subtotal !== '99.99' ||
+    currencyChanged.shippingTotal !== '20.00' ||
+    currencyChanged.total !== '119.99'
+  ) {
+    throw new Error('Cambiar la moneda no recalculó automáticamente el envío y los totales.');
   }
 
   const mixedPayload = {
     ...basePayload,
     items: [
-      { productId: seratus.id, quantity: 1, discountTotal: '0' },
-      { productId: pali.id, quantity: 1, unitPrice: '75000', discountTotal: '0' },
-    ],
-    coupons: [],
-    shippingTotals: [
-      { store: 'SERATUS', total: '5000' },
-      { store: 'PALI', total: '8000' },
+      { productId: seratus.id, quantity: 2 },
+      { productId: pali.id, quantity: 2, unitPrice: '75000' },
     ],
   };
   const mixedResponse = await api(`/api/orders/${created.id}`, commercialCookie, {
@@ -322,9 +512,26 @@ try {
   expectStatus(mixedResponse, 200, 'Agregar segunda tienda');
   const mixed = (await mixedResponse.json()) as {
     operationCode: string;
-    orders: Array<{ id: number; store: string; total: string }>;
+    subtotal: string;
+    discountTotal: string;
+    shippingTotal: string;
+    total: string;
+    orders: Array<{
+      id: number;
+      store: string;
+      discountTotal: string;
+      shippingTotal: string;
+      total: string;
+    }>;
   };
   if (
+    mixed.subtotal !== '404000.00' ||
+    mixed.discountTotal !== '50800.00' ||
+    mixed.shippingTotal !== '0.00' ||
+    mixed.total !== '353200.00' ||
+    mixed.orders.some(({ shippingTotal }) => shippingTotal !== '0.00') ||
+    mixed.orders.find(({ store }) => store === 'SERATUS')?.discountTotal !== '50800.00' ||
+    mixed.orders.find(({ store }) => store === 'PALI')?.discountTotal !== '0.00' ||
     mixed.orders
       .map(({ store }) => store)
       .sort()
@@ -365,9 +572,7 @@ try {
 
   const paliOnlyPayload = {
     ...basePayload,
-    items: [{ productId: pali.id, quantity: 2, discountTotal: '0' }],
-    coupons: [],
-    shippingTotals: [{ store: 'PALI', total: '8000' }],
+    items: [{ productId: pali.id, quantity: 2 }],
   };
   const paliOnlyResponse = await api(`/api/orders/${created.id}`, commercialCookie, {
     method: 'PATCH',
@@ -381,23 +586,63 @@ try {
   if (paliOnly.orders.length !== 1 || paliOnly.orders[0]?.store !== 'PALI') {
     throw new Error('La reconciliación no eliminó el Order local que quedó sin productos.');
   }
-  if (paliOnly.total !== '168000.00') {
+  if (paliOnly.total !== '128000.00') {
     throw new Error('La edición no recalculó el total consolidado de la operación.');
   }
 
-  const mismatchPayload = {
+  const withoutCouponResponse = await api(`/api/orders/${created.id}`, commercialCookie, {
+    method: 'PATCH',
+    body: JSON.stringify({ ...paliOnlyPayload, couponId: null }),
+  });
+  expectStatus(withoutCouponResponse, 200, 'Quitar cupón en operación pendiente');
+  const withoutCoupon = (await withoutCouponResponse.json()) as {
+    couponId: number | null;
+    couponCode: string | null;
+    discountTotal: string;
+    total: string;
+  };
+  if (
+    withoutCoupon.couponId !== null ||
+    withoutCoupon.couponCode !== null ||
+    withoutCoupon.discountTotal !== '0.00' ||
+    withoutCoupon.total !== '160000.00'
+  ) {
+    throw new Error('Quitar el cupón no limpió el snapshot o recalculó los totales.');
+  }
+
+  const invalidShippingPayload = {
     ...basePayload,
-    items: [{ productId: seratus.id, quantity: 1, discountTotal: '5000' }],
-    coupons: [],
-    shippingTotals: [],
+    shippingMethod: 'free_shipping',
+    couponId: null,
+    items: [{ productId: pali.id, quantity: 1 }],
   };
   expectStatus(
     await api(`/api/orders/${created.id}`, commercialCookie, {
       method: 'PATCH',
-      body: JSON.stringify(mismatchPayload),
+      body: JSON.stringify(invalidShippingPayload),
     }),
     400,
-    'Descuento inconsistente',
+    'Envío gratis por debajo del umbral',
+  );
+  expectStatus(
+    await api('/api/orders', commercialCookie, {
+      method: 'POST',
+      body: JSON.stringify({ ...basePayload, paymentMethod: 'browser_invented_method' }),
+    }),
+    400,
+    'Método de pago fuera del catálogo',
+  );
+  expectStatus(
+    await api('/api/orders', commercialCookie, {
+      method: 'POST',
+      body: JSON.stringify({
+        ...basePayload,
+        paymentMethodTitle: 'Título manipulado',
+        couponAmount: 99,
+      }),
+    }),
+    400,
+    'Campos comerciales manipulados por el navegador',
   );
 
   expectStatus(
@@ -555,13 +800,14 @@ try {
   }
 
   process.stdout.write(
-    'Orders smoke: authentication, RBAC, COP/USD rounding, list, search, detail, create, pending-only edit, admin-only soft-delete for any state, shipment history, Siigo quotation claims/retry, customer/product protection and store reconciliation checks passed.\n',
+    'Orders smoke: payment catalogs, COP/USD shipping thresholds, custom shipping, coupon snapshots, active validation, consolidated and per-store discounts, authentication, RBAC, list, create, pending edit and store reconciliation checks passed.\n',
   );
 } finally {
   if (operationIds.length > 0) {
     await prisma.notification.deleteMany({ where: { orderOperationId: { in: operationIds } } });
     await prisma.orderOperation.deleteMany({ where: { id: { in: operationIds } } });
   }
+  if (couponId !== null) await prisma.coupon.deleteMany({ where: { id: couponId } });
   if (productIds.length > 0) await prisma.product.deleteMany({ where: { id: { in: productIds } } });
   if (customerId !== null) await prisma.customer.deleteMany({ where: { id: customerId } });
   await prisma.user.deleteMany({ where: { id: { in: userIds } } });
