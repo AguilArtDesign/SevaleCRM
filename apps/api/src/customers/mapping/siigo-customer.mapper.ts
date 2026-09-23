@@ -128,9 +128,7 @@ export class SiigoCustomerMapper {
       vat_responsible: customer.vatResponsible,
       fiscal_responsibilities: customer.fiscalResponsibilities.map((code) => ({ code })),
       address: {
-        ...(address
-          ? { address: customer.country === 'CO' ? uppercase(address) : address }
-          : {}),
+        ...(address ? { address: customer.country === 'CO' ? uppercase(address) : address } : {}),
         city: {
           country_code: location.countryCode,
           state_code: location.stateCode,
