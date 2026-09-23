@@ -325,13 +325,14 @@ try {
   );
   expectStatus(listResponse, 200, 'Búsqueda y paginación');
   const list = (await listResponse.json()) as {
-    data: Array<{ id: number }>;
+    data: Array<{ id: number; usageCount: number }>;
     pagination: { total: number; pageSize: number };
   };
   if (
     list.pagination.total !== 1 ||
     list.pagination.pageSize !== 1 ||
-    list.data[0]?.id !== created.id
+    list.data[0]?.id !== created.id ||
+    list.data[0].usageCount !== 0
   ) {
     throw new Error('El listado no respetó la búsqueda, el tamaño de página ni el orden.');
   }

@@ -29,6 +29,9 @@ export class CouponsRepository {
         orderBy: [orderBy, { id: 'desc' }],
         skip: (page - 1) * pageSize,
         take: pageSize,
+        // El uso se cuenta sobre las operaciones del CRM que aplicaron el cupón: una operación es
+        // una compra, que es lo que cada tienda cuenta como un uso.
+        include: { _count: { select: { orderOperations: true } } },
       }),
       this.prisma.coupon.count({ where }),
     ]);

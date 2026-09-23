@@ -87,6 +87,14 @@ function dateTime(value: string | null): string {
   );
 }
 
+// La caducidad es una fecha de calendario, sin hora, y se muestra como «--» cuando no existe.
+function dateOnly(value: string | null): string {
+  if (!value) return '--';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '--';
+  return new Intl.DateTimeFormat('es-CO', { dateStyle: 'medium' }).format(date);
+}
+
 function typeTitle(type: string): string {
   return couponTypes.find((option) => option.type === type)?.title ?? type;
 }
@@ -462,8 +470,12 @@ export function CouponsPage() {
                   <Table.Column>Descripción</Table.Column>
                   <Table.Column>Tipo</Table.Column>
                   <Table.Column>Valor</Table.Column>
+                  <Table.Column>Uso / Límite</Table.Column>
+                  <Table.Column>Caducidad</Table.Column>
                   <Table.Column>Sincronización</Table.Column>
-                  <Table.Column className="inventory-actions-column">Acciones</Table.Column>
+                  {isAdmin && (
+                    <Table.Column className="inventory-actions-column">Acciones</Table.Column>
+                  )}
                 </Table.Header>
                 <Table.Body>
                   {coupons.map((listedCoupon) => (
@@ -487,13 +499,18 @@ export function CouponsPage() {
                         onClick={(event) => event.stopPropagation()}
                         onPointerDown={(event) => event.stopPropagation()}
                       >
-                        <strong>{listedCoupon.coupon}</strong>
+                        <span className="coupon-code-cell">{listedCoupon.coupon}</span>
                       </Table.Cell>
                       <Table.Cell
                         onClick={(event) => event.stopPropagation()}
                         onPointerDown={(event) => event.stopPropagation()}
                       >
-                        {listedCoupon.description || 'Sin descripción'}
+                        <span
+                          className="coupon-muted-cell coupon-description-cell"
+                          title={listedCoupon.description || undefined}
+                        >
+                          {listedCoupon.description || 'Sin descripción'}
+                        </span>
                       </Table.Cell>
                       <Table.Cell
                         onClick={(event) => event.stopPropagation()}
@@ -511,105 +528,123 @@ export function CouponsPage() {
                         onClick={(event) => event.stopPropagation()}
                         onPointerDown={(event) => event.stopPropagation()}
                       >
-                        <Chip color={syncStates[listedCoupon.syncStatus].color}>
-                          {syncStates[listedCoupon.syncStatus].label}
-                        </Chip>
+                        <span className="coupon-muted-cell">
+                          {listedCoupon.usageCount} / {listedCoupon.usageLimit ?? '∞'}
+                        </span>
                       </Table.Cell>
                       <Table.Cell
                         onClick={(event) => event.stopPropagation()}
                         onPointerDown={(event) => event.stopPropagation()}
                       >
-                        <div className="inventory-row-actions">
-                          <Dropdown>
-                            <Button
-                              className="inventory-actions-trigger"
-                              isIconOnly
-                              size="sm"
-                              variant="ghost"
-                              aria-label={`Acciones para el cupón ${listedCoupon.coupon}`}
-                            >
-                              <EllipsisVertical className="text-muted" width={17} height={17} />
-                            </Button>
-                            <Dropdown.Popover
-                              className="inventory-actions-popover"
-                              placement="bottom end"
-                            >
-                              <Dropdown.Menu
-                                aria-label={`Acciones para el cupón ${listedCoupon.coupon}`}
-                                onAction={(key) => {
-                                  if (String(key) === 'sync' && canSync) {
-                                    void synchronizeCoupon(listedCoupon);
-                                  }
-                                  if (String(key) === 'edit' && canUpdate) openEdit(listedCoupon);
-                                  if (String(key) === 'diagnostics' && isAdmin) {
-                                    setDiagnostics({
-                                      coupon: listedCoupon.coupon,
-                                      lastSyncAt: listedCoupon.lastSyncAt,
-                                      entries: storedEntries(listedCoupon),
-                                    });
-                                  }
-                                  if (String(key) === 'delete' && canDelete) {
-                                    setDeleteTarget(listedCoupon);
-                                  }
-                                }}
-                              >
-                                {(canSync ||
-                                  canUpdate ||
-                                  (isAdmin && hasStoredDiagnostics(listedCoupon))) && (
-                                  <Dropdown.Section>
-                                    {canSync && (
-                                      <Dropdown.Item id="sync" textValue="Sincronizar cupón">
-                                        <ArrowRotateRight
-                                          className="size-4 shrink-0 text-muted"
-                                          aria-hidden="true"
-                                        />
-                                        <Label>Sincronizar</Label>
-                                      </Dropdown.Item>
-                                    )}
-                                    {canUpdate && (
-                                      <Dropdown.Item id="edit" textValue="Editar cupón">
-                                        <Pencil
-                                          className="size-4 shrink-0 text-muted"
-                                          aria-hidden="true"
-                                        />
-                                        <Label>Editar</Label>
-                                      </Dropdown.Item>
-                                    )}
-                                    {isAdmin && hasStoredDiagnostics(listedCoupon) && (
-                                      <Dropdown.Item
-                                        id="diagnostics"
-                                        textValue="Ver diagnóstico de la sincronización"
-                                      >
-                                        <CircleInfo
-                                          className="size-4 shrink-0 text-muted"
-                                          aria-hidden="true"
-                                        />
-                                        <Label>Ver diagnóstico</Label>
-                                      </Dropdown.Item>
-                                    )}
-                                  </Dropdown.Section>
-                                )}
-                                {(canSync || canUpdate) && canDelete && <Separator />}
-                                {canDelete && (
-                                  <Dropdown.Section>
-                                    <Dropdown.Item
-                                      id="delete"
-                                      textValue="Eliminar cupón"
-                                      variant="danger"
-                                    >
-                                      <TrashBin
-                                        className="size-4 shrink-0 text-danger"
-                                        aria-hidden="true"
-                                      />
-                                      <Label>Eliminar</Label>
-                                    </Dropdown.Item>
-                                  </Dropdown.Section>
-                                )}
-                              </Dropdown.Menu>
-                            </Dropdown.Popover>
-                          </Dropdown>
-                        </div>
+                        <span className="coupon-muted-cell">
+                          {dateOnly(listedCoupon.dateExpires)}
+                        </span>
                       </Table.Cell>
+                      <Table.Cell
+                        onClick={(event) => event.stopPropagation()}
+                        onPointerDown={(event) => event.stopPropagation()}
+                      >
+                        <Chip color={syncStates[listedCoupon.syncStatus].color}>
+                          {syncStates[listedCoupon.syncStatus].label}
+                        </Chip>
+                      </Table.Cell>
+                      {isAdmin && (
+                        <Table.Cell
+                          onClick={(event) => event.stopPropagation()}
+                          onPointerDown={(event) => event.stopPropagation()}
+                        >
+                          <div className="inventory-row-actions">
+                            <Dropdown>
+                              <Button
+                                className="inventory-actions-trigger"
+                                isIconOnly
+                                size="sm"
+                                variant="ghost"
+                                aria-label={`Acciones para el cupón ${listedCoupon.coupon}`}
+                              >
+                                <EllipsisVertical className="text-muted" width={17} height={17} />
+                              </Button>
+                              <Dropdown.Popover
+                                className="inventory-actions-popover"
+                                placement="bottom end"
+                              >
+                                <Dropdown.Menu
+                                  aria-label={`Acciones para el cupón ${listedCoupon.coupon}`}
+                                  onAction={(key) => {
+                                    if (String(key) === 'sync' && canSync) {
+                                      void synchronizeCoupon(listedCoupon);
+                                    }
+                                    if (String(key) === 'edit' && canUpdate) openEdit(listedCoupon);
+                                    if (String(key) === 'diagnostics' && isAdmin) {
+                                      setDiagnostics({
+                                        coupon: listedCoupon.coupon,
+                                        lastSyncAt: listedCoupon.lastSyncAt,
+                                        entries: storedEntries(listedCoupon),
+                                      });
+                                    }
+                                    if (String(key) === 'delete' && canDelete) {
+                                      setDeleteTarget(listedCoupon);
+                                    }
+                                  }}
+                                >
+                                  {(canSync ||
+                                    canUpdate ||
+                                    (isAdmin && hasStoredDiagnostics(listedCoupon))) && (
+                                    <Dropdown.Section>
+                                      {canSync && (
+                                        <Dropdown.Item id="sync" textValue="Sincronizar cupón">
+                                          <ArrowRotateRight
+                                            className="size-4 shrink-0 text-muted"
+                                            aria-hidden="true"
+                                          />
+                                          <Label>Sincronizar</Label>
+                                        </Dropdown.Item>
+                                      )}
+                                      {canUpdate && (
+                                        <Dropdown.Item id="edit" textValue="Editar cupón">
+                                          <Pencil
+                                            className="size-4 shrink-0 text-muted"
+                                            aria-hidden="true"
+                                          />
+                                          <Label>Editar</Label>
+                                        </Dropdown.Item>
+                                      )}
+                                      {isAdmin && hasStoredDiagnostics(listedCoupon) && (
+                                        <Dropdown.Item
+                                          id="diagnostics"
+                                          textValue="Ver diagnóstico de la sincronización"
+                                        >
+                                          <CircleInfo
+                                            className="size-4 shrink-0 text-muted"
+                                            aria-hidden="true"
+                                          />
+                                          <Label>Ver diagnóstico</Label>
+                                        </Dropdown.Item>
+                                      )}
+                                    </Dropdown.Section>
+                                  )}
+                                  {(canSync || canUpdate) && canDelete && <Separator />}
+                                  {canDelete && (
+                                    <Dropdown.Section>
+                                      <Dropdown.Item
+                                        id="delete"
+                                        textValue="Eliminar cupón"
+                                        variant="danger"
+                                      >
+                                        <TrashBin
+                                          className="size-4 shrink-0 text-danger"
+                                          aria-hidden="true"
+                                        />
+                                        <Label>Eliminar</Label>
+                                      </Dropdown.Item>
+                                    </Dropdown.Section>
+                                  )}
+                                </Dropdown.Menu>
+                              </Dropdown.Popover>
+                            </Dropdown>
+                          </div>
+                        </Table.Cell>
+                      )}
                     </Table.Row>
                   ))}
                 </Table.Body>

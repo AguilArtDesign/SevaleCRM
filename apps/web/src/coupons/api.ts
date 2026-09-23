@@ -27,6 +27,8 @@ export type CouponRecord = {
   seratusCouponId: number | null;
   paliCouponId: number | null;
   syncStatus: CouponSyncStatus;
+  // Veces que el cupón se aplicó en operaciones del CRM; el panel lo muestra junto a su límite.
+  usageCount: number;
   // Diagnóstico del último intento. La API solo lo entrega a un administrador: para el resto de
   // los roles estos campos llegan siempre en null.
   lastSyncAt: string | null;

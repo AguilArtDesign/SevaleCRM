@@ -10,13 +10,20 @@ import type { Coupon } from '../generated/prisma/client.js';
 import { CouponSyncService, type CouponSyncOutcome } from './coupon-sync.service.js';
 import { CouponsRepository } from './coupons.repository.js';
 
+// El listado agrega el conteo de operaciones que aplicaron el cupón; el resto de respuestas no lo
+// incluye, así que el campo se expone igualmente para que el panel siempre tenga un número.
+type CouponWithUsage = Coupon & { _count?: { orderOperations: number } };
+
 // El diagnóstico técnico por tienda se reserva al administrador: quien consulta el listado necesita
 // saber que el cupón quedó incompleto, no el detalle interno de la integración.
-function serializeCoupon(coupon: Coupon, includeIntegrationErrors = false) {
+function serializeCoupon(coupon: Coupon | CouponWithUsage, includeIntegrationErrors = false) {
+  const { _count: count, ...fields } = coupon as CouponWithUsage;
   return {
-    ...coupon,
+    ...fields,
     amount: Number(coupon.amount),
     dateExpires: coupon.dateExpires ? coupon.dateExpires.toISOString() : null,
+    // Veces que el cupón se aplicó en operaciones del CRM; el panel lo muestra junto a su límite.
+    usageCount: count?.orderOperations ?? 0,
     seratusLastErrorCode: includeIntegrationErrors ? coupon.seratusLastErrorCode : null,
     seratusLastErrorMessage: includeIntegrationErrors ? coupon.seratusLastErrorMessage : null,
     paliLastErrorCode: includeIntegrationErrors ? coupon.paliLastErrorCode : null,

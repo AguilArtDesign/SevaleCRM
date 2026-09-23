@@ -312,6 +312,17 @@ try {
   }
   await prisma.coupon.update({ where: { id: coupon.id }, data: { amount: 20 } });
 
+  // El listado de cupones cuenta las operaciones del CRM que aplicaron el cupón.
+  const usageResponse = await api(`/api/coupons?search=${runId}&page=1&pageSize=20`, adminCookie);
+  expectStatus(usageResponse, 200, 'Uso del cupón');
+  const usageList = (await usageResponse.json()) as {
+    data: Array<{ id: number; usageCount: number }>;
+  };
+  const usedCoupon = usageList.data.find((row) => row.id === coupon.id);
+  if (!usedCoupon || usedCoupon.usageCount < 1) {
+    throw new Error('El uso del cupón no contó las operaciones del CRM que lo aplicaron.');
+  }
+
   // Un cupón ya no se desactiva: o existe o no existe. Un identificador desconocido se rechaza.
   expectStatus(
     await api('/api/orders', commercialCookie, {

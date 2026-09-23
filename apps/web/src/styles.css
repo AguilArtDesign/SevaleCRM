@@ -4149,6 +4149,28 @@ select {
   font-size: 0.78rem;
 }
 
+/* Celdas del listado: el código destaca y el resto se lee como dato secundario. */
+.coupon-code-cell {
+  color: var(--foreground);
+  font-size: 0.84rem;
+  font-weight: 500;
+  line-height: 1.25;
+}
+
+.coupon-muted-cell {
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+/* Una descripción larga se recorta sin alterar la altura de la fila; el título muestra el texto completo. */
+.coupon-description-cell {
+  display: block;
+  max-width: 24rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 @media (max-width: 640px) {
   .page-heading-row,
   .coupons-toolbar {
