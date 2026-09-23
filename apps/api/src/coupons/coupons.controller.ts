@@ -58,7 +58,7 @@ export class CouponsController {
 
   @Delete(':id')
   @RequirePermissions('coupons.delete')
-  deactivate(@Param('id') id: string) {
-    return this.coupons.deactivate(parseInput(couponIdSchema, id));
+  remove(@Param('id') id: string) {
+    return this.coupons.remove(parseInput(couponIdSchema, id));
   }
 }

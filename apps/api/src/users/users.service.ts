@@ -110,4 +110,22 @@ export class UsersService {
     if (accessChanged) await this.prisma.session.deleteMany({ where: { userId: id } });
     return updated;
   }
+
+  async remove(id: string, actorId: string) {
+    if (id === actorId) throw new BadRequestException('No puedes eliminar tu propia cuenta.');
+    return this.prisma.$transaction(async (transaction) => {
+      const current = await transaction.user.findUnique({ where: { id }, select: userSelect });
+      if (!current) throw new NotFoundException('El usuario no existe.');
+      if (current.role === 'ADMIN' && current.active) {
+        const activeAdmins = await transaction.user.count({
+          where: { role: 'ADMIN', active: true },
+        });
+        if (activeAdmins <= 1) {
+          throw new BadRequestException('Debe permanecer al menos un administrador activo.');
+        }
+      }
+      await transaction.productSyncJob.deleteMany({ where: { requestedById: id } });
+      return transaction.user.delete({ where: { id }, select: userSelect });
+    });
+  }
 }

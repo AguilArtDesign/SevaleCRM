@@ -40,4 +40,8 @@ export class CouponsRepository {
   update(id: number, data: UpdateCouponInput) {
     return this.prisma.coupon.update({ where: { id }, data });
   }
+
+  delete(id: number) {
+    return this.prisma.coupon.delete({ where: { id } });
+  }
 }

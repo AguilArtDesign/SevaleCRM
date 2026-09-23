@@ -72,7 +72,7 @@ El control de acceso no depende solo de la interfaz: la API aplica un mapa RBAC 
 
 ## Panel principal
 
-Después de iniciar sesión, el CRM abre `/inventory` dentro del shell administrativo. La navegación incluye únicamente Inventario y, para usuarios con rol `ADMIN`, Usuarios (`/users`). El shell incorpora navegación responsive, cabecera contextual, selector de tema, campana de notificaciones y menú de sesión. El centro persistente de notificaciones se incorporará en una fase posterior.
+Después de iniciar sesión, el CRM abre `/inventory` dentro del shell administrativo. La navegación incluye Inventario y Pedidos para todos los usuarios, Cupones cuando la cuenta tiene el permiso `coupons.read`, Clientes para `ADMIN` y `COMMERCIAL`, y Usuarios solo para `ADMIN`. El shell incorpora navegación responsive, cabecera contextual, selector de tema, campana de notificaciones y menú de sesión.
 
 ## Inventario local
 
@@ -91,6 +91,8 @@ El botón **Vincular producto**, visible solo para administradores, consulta `GE
 La API encapsula consultas externas de solo lectura a Siigo, WooCommerce Seratus y WooCommerce Pali. Todas las credenciales permanecen en variables de entorno del backend; React nunca consulta directamente a los proveedores ni recibe sus credenciales.
 
 WooCommerce utiliza `WOOCOMMERCE_SERATUS_CK`, `WOOCOMMERCE_SERATUS_CS`, `WOOCOMMERCE_PALI_CK` y `WOOCOMMERCE_PALI_CS`.
+
+La búsqueda de cliente por número de documento que alimenta el formulario de Clientes usa un endpoint propio de cada tienda: `GET /wp-json/sevale/v1/customer/crm/{identificación}`. Se autentica con `WOOCOMMERCE_USERNAME` (el mismo usuario de WordPress en ambas tiendas) y la contraseña de cada una, `SERATUS_PASSWORD` o `PALI_PASSWORD`. Son credenciales independientes de las CK/CS de la REST API de WooCommerce. La URL se resuelve contra el origen de `SERATUS_API_URL` o `PALI_API_URL`, porque ese endpoint vive fuera del namespace `wc/v3`. Las tres variables son obligatorias en producción.
 
 Rutas disponibles para usuarios con permiso de lectura de inventario:
 
@@ -160,6 +162,40 @@ PATCH /api/notifications/read-all
 ```
 
 La vinculación de un producto crea una notificación. Las actualizaciones de n8n crean notificaciones separadas para cambios reales de stock, precio y estado de sincronización. Si los valores recibidos son idénticos, solo se actualiza `last_check_at`: no se genera una notificación falsa. Después de persistir cada notificación, Socket.IO emite `notification.created` y los usuarios conectados reciben un toast HeroUI.
+
+## Pedidos y cupones
+
+La ruta `/orders` está disponible para cualquier usuario autenticado y `/coupons` exige el permiso `coupons.read`; `/customers` queda limitada a `ADMIN` y `COMMERCIAL`. Crear o editar una operación requiere `orders.create` o `orders.update`, completarla requiere `orders.complete` y la logística actualiza el envío con `orders.shipping.update`.
+
+Una operación se compone de un cliente, uno o más productos y las condiciones comerciales (moneda, método de pago, método de envío y, opcionalmente, un cupón). Cada operación se divide en un pedido por tienda (`SERATUS` y `PALI`) y los totales se consolidan a partir de esas filas.
+
+### Regla del precio manual
+
+El comercial puede modificar el precio unitario de un producto, pero ese precio **solo puede bajar**: puede volver a subir hasta igualar el valor original del producto, nunca superarlo. El valor de referencia es `wooPriceCop` o `wooPriceUsd` según la moneda de la operación.
+
+La API aplica el límite en `prepareItem`, la única puerta de entrada de precios, así que cubre tanto la creación como la edición de una operación pendiente. Un valor superior se rechaza con `400` y el código `ORDER_ITEM_PRICE_EXCEEDS_ORIGINAL`:
+
+```json
+{
+  "success": false,
+  "error": {
+    "code": "ORDER_ITEM_PRICE_EXCEEDS_ORIGINAL",
+    "message": "El precio de Producto de Ejemplo no puede superar su valor original de 127000.00."
+  }
+}
+```
+
+El formulario replica el límite para avisar antes de enviar, pero la API es la fuente de verdad: un precio nunca se acepta solo porque el navegador lo permita. El campo de precio admite únicamente números enteros; no se capturan centavos.
+
+### Regla del cupón
+
+Un producto cuyo precio fue modificado a la baja **queda excluido de la base del cupón**, mientras que los productos sin modificar sí lo reciben. Si un producto cuesta 127.000 y el comercial lo deja en 100.000, ese producto no participa del descuento aunque la operación tenga un cupón aplicado.
+
+El descuento se calcula por tienda sobre la suma de los productos elegibles y luego se consolida, de modo que un producto modificado en una tienda no altera la base del cupón de la otra. El catálogo de tipos de cupón se limita a porcentaje (`percent`) y vive en `packages/shared/src/coupon-types.json`. Solo se puede aplicar un cupón activo al crear o editar una operación pendiente.
+
+El código, el tipo y el importe del cupón se guardan como snapshot en la operación: editar, desactivar o eliminar el cupón después no modifica los pedidos ya creados.
+
+Como el precio manual nunca puede superar el valor original, toda modificación es por definición una baja: `price_modified` es verdadero exactamente en los productos que quedan fuera de la base del cupón. `npm run test:orders` verifica ese límite exacto, el rechazo por excederlo y la exclusión del cupón.
 
 ## Sistema visual
 

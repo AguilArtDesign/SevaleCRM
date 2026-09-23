@@ -7768,9 +7768,7 @@
         "name": "California",
         "wooCode": "CA",
         "cities": {
-          "08811": "California",
-          "0502": "Menlo Park, CA",
-          "0501": "Sacramento"
+          "01": "California"
         }
       },
       "33": {

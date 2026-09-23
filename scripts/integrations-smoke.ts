@@ -35,6 +35,21 @@ const upstream = createServer((request, response) => {
   let result: { status: number; body: string };
   if (url.searchParams.get('sku') === 'AUTH-FAIL') {
     result = respond(request, 401, { message: 'private upstream detail' });
+  } else if (
+    url.pathname === '/siigo/v1/products' &&
+    url.searchParams.get('code') === 'VALIDATION-FAIL'
+  ) {
+    result = respond(request, 400, {
+      Status: 400,
+      Errors: [
+        {
+          Code: 'invalid_value',
+          Message: 'The city code is invalid.',
+          Params: ['address.city.city_code'],
+          Detail: 'private upstream detail',
+        },
+      ],
+    });
   } else if (url.pathname === '/siigo/v1/products') {
     const sku = url.searchParams.get('code');
     result = respond(request, 200, {
@@ -236,6 +251,19 @@ try {
   expectStatus(missingResponse, 200, 'Producto externo inexistente');
   if ((await missingResponse.json()) !== null) {
     throw new Error('Un producto inexistente debe devolver null.');
+  }
+
+  const validationFailure = await api(
+    '/api/integrations/siigo/products?sku=VALIDATION-FAIL',
+    cookie,
+  );
+  expectStatus(validationFailure, 502, 'Validación externa rechazada');
+  const validationFailureText = await validationFailure.text();
+  if (
+    !validationFailureText.includes('The city code is invalid.') ||
+    validationFailureText.includes('private upstream detail')
+  ) {
+    throw new Error('El error de validación externo no se expuso de forma segura.');
   }
 
   expectStatus(

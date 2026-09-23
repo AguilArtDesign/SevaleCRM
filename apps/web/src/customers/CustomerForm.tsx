@@ -201,6 +201,30 @@ export function CustomerForm({
       if (conflict) clearConflict(conflict);
     };
 
+  const changePersonType = (selected: string) => {
+    const personType = selected as 'PERSON' | 'COMPANY';
+    setValue((current) => ({
+      ...current,
+      personType,
+      company: personType === 'COMPANY' ? current.company || current.displayName || null : null,
+    }));
+    clearConflict('name');
+  };
+
+  const changeDisplayName = (event: { target: { value: string } }) => {
+    const displayName = event.target.value;
+    setValue((current) => ({
+      ...current,
+      displayName,
+      company:
+        current.personType === 'COMPANY' &&
+        (!current.company || current.company === current.displayName)
+          ? displayName || null
+          : current.company,
+    }));
+    clearConflict('name');
+  };
+
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     if (!isEdit && lookupResult?.identification !== value.documentNumber.trim()) {
@@ -334,12 +358,7 @@ export function CustomerForm({
                         name="person-type"
                         orientation="horizontal"
                         value={value.personType}
-                        onChange={(selected) =>
-                          setValue((current) => ({
-                            ...current,
-                            personType: String(selected) as 'PERSON' | 'COMPANY',
-                          }))
-                        }
+                        onChange={(selected) => changePersonType(String(selected))}
                       >
                         <Radio className="customer-person-type-option" value="PERSON">
                           <Radio.Content>
@@ -389,7 +408,7 @@ export function CustomerForm({
                         variant="secondary"
                         placeholder="John Smith Doe Jones"
                         value={value.displayName}
-                        onChange={text('displayName', false, 'name')}
+                        onChange={changeDisplayName}
                       />
                     </TextField>
                     {!isEdit &&
@@ -403,7 +422,15 @@ export function CustomerForm({
                             onChange={(selected) => {
                               const option = lookupResult.conflicts.name?.options[Number(selected)];
                               if (!option) return;
-                              setValue((current) => ({ ...current, ...option.value }));
+                              setValue((current) => ({
+                                ...current,
+                                ...option.value,
+                                company:
+                                  current.personType === 'COMPANY' &&
+                                  (!current.company || current.company === current.displayName)
+                                    ? option.value.displayName || null
+                                    : current.company,
+                              }));
                               clearConflict('name');
                             }}
                           >

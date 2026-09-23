@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import {
   Alert,
+  AlertDialog,
   Button,
   Card,
   Label,
@@ -12,7 +13,7 @@ import {
   TextField,
   Typography,
 } from '@heroui/react';
-import { Magnifier, Pencil, PersonPlus, Persons, Xmark } from '@gravity-ui/icons';
+import { Magnifier, Pencil, PersonPlus, Persons, TrashBin, Xmark } from '@gravity-ui/icons';
 import { createUserSchema, updateUserSchema } from '@sevale/validation';
 import { Chip } from '../components/Chip';
 import { Input } from '../components/Input';
@@ -76,6 +77,8 @@ export function UsersPage() {
   const [email, setEmail] = useState('');
   const [role, setRole] = useState<UserRole>('COMMERCIAL');
   const [active, setActive] = useState(true);
+  const [deleteTarget, setDeleteTarget] = useState<UserRecord | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const loadUsers = async () => {
     setIsLoading(true);
@@ -166,6 +169,24 @@ export function UsersPage() {
     }
   };
 
+  const removeUser = async () => {
+    if (!deleteTarget || isDeleting) return;
+    const target = deleteTarget;
+    setIsDeleting(true);
+    setError('');
+    setNotice('');
+    try {
+      await usersApi.remove(target.id);
+      setDeleteTarget(null);
+      setNotice(`El usuario “${target.name}” fue eliminado definitivamente.`);
+      await loadUsers();
+    } catch (deleteError) {
+      setError(messageFrom(deleteError));
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
   return (
     <section className={`users-layout${formMode ? ' users-layout-with-form' : ''}`}>
       <Card className="users-card">
@@ -246,15 +267,28 @@ export function UsersPage() {
                         </Table.Cell>
                         <Table.Cell>{formatDate(listedUser.lastLoginAt)}</Table.Cell>
                         <Table.Cell>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onPress={() => openEdit(listedUser)}
-                            aria-label={`Editar a ${listedUser.name}`}
-                          >
-                            <Pencil width={16} height={16} />
-                            Editar
-                          </Button>
+                          <div className="user-row-actions">
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onPress={() => openEdit(listedUser)}
+                              aria-label={`Editar a ${listedUser.name}`}
+                            >
+                              <Pencil width={16} height={16} />
+                              Editar
+                            </Button>
+                            {listedUser.id !== currentUser?.id && (
+                              <Button
+                                size="sm"
+                                variant="danger-soft"
+                                onPress={() => setDeleteTarget(listedUser)}
+                                aria-label={`Eliminar a ${listedUser.name}`}
+                              >
+                                <TrashBin width={16} height={16} />
+                                Eliminar
+                              </Button>
+                            )}
+                          </div>
                         </Table.Cell>
                       </Table.Row>
                     ))}
@@ -417,6 +451,40 @@ export function UsersPage() {
           </Card.Content>
         </Card>
       )}
+
+      <AlertDialog
+        isOpen={deleteTarget !== null}
+        onOpenChange={(open) => !open && !isDeleting && setDeleteTarget(null)}
+      >
+        <AlertDialog.Backdrop>
+          <AlertDialog.Container size="sm">
+            <AlertDialog.Dialog>
+              <AlertDialog.Header>
+                <AlertDialog.Icon status="danger">
+                  <TrashBin />
+                </AlertDialog.Icon>
+                <AlertDialog.Heading>Eliminar usuario</AlertDialog.Heading>
+              </AlertDialog.Header>
+              <AlertDialog.Body>
+                Se eliminará definitivamente <strong>{deleteTarget?.name}</strong>, sus sesiones,
+                métodos de acceso y registros asociados. Esta acción no se puede deshacer.
+              </AlertDialog.Body>
+              <AlertDialog.Footer>
+                <Button
+                  variant="ghost"
+                  onPress={() => setDeleteTarget(null)}
+                  isDisabled={isDeleting}
+                >
+                  Cancelar
+                </Button>
+                <Button variant="danger" onPress={() => void removeUser()} isPending={isDeleting}>
+                  Eliminar definitivamente
+                </Button>
+              </AlertDialog.Footer>
+            </AlertDialog.Dialog>
+          </AlertDialog.Container>
+        </AlertDialog.Backdrop>
+      </AlertDialog>
     </section>
   );
 }

@@ -11,6 +11,8 @@ import {
 import {
   wooCommerceAuthorizationHeaders,
   wooCommerceConfiguration,
+  wooCommerceCrmAuthorizationHeaders,
+  wooCommerceCrmConfiguration,
   type WooCommerceConfiguration,
 } from '../../integrations/woocommerce/woocommerce-configuration.js';
 import type { CustomerMappingSource } from '../mapping/customer-mapping.types.js';
@@ -107,6 +109,49 @@ function normalizeCustomer(value: unknown): WooCustomerReference | null {
   };
 }
 
+// Payload del endpoint propio /wp-json/sevale/v1/customer/crm/{identificación}.
+// Se normaliza al mismo contrato que la REST API para que los consumidores no distingan el origen.
+function normalizeCrmCustomer(value: unknown): WooCustomerReference | null {
+  if (!isRecord(value) || value.found !== true) return null;
+  const id = identifier(value.customer_id);
+  const username = text(value.username);
+  if (!id || !username) return null;
+  const billing = isRecord(value.billing) ? value.billing : {};
+  const metadata = Array.isArray(value.meta_data) ? value.meta_data : [];
+  const meta_data: WooCustomerReference['meta_data'] = [];
+  for (const entry of metadata) {
+    if (!isRecord(entry)) continue;
+    const key = text(entry.key);
+    if (key !== 'billing_type_document' && key !== 'billing_identification') continue;
+    meta_data.push({ id: null, key, value: text(entry.value) });
+  }
+  return {
+    id,
+    email: text(value.email).toLowerCase(),
+    first_name: text(value.first_name),
+    last_name: text(value.last_name),
+    username,
+    billing: {
+      first_name: text(billing.first_name),
+      last_name: text(billing.last_name),
+      company: text(billing.company),
+      address_1: text(billing.address_1),
+      address_2: text(billing.address_2),
+      city: text(billing.city),
+      postcode: text(billing.postcode),
+      country: text(billing.country).toUpperCase(),
+      state: text(billing.state).toUpperCase(),
+      email: text(billing.email).toLowerCase(),
+      phone: text(billing.phone),
+    },
+    meta_data,
+  };
+}
+
+function declaredIdentification(customer: WooCustomerReference): string | null {
+  return customer.meta_data.find((entry) => entry.key === 'billing_identification')?.value ?? null;
+}
+
 function requireEmail(value: string | null): string {
   if (value) return value.trim().toLowerCase();
   throw new BadRequestException({
@@ -126,14 +171,26 @@ export class WooCustomerService {
     store: Store,
     documentNumber: string,
   ): Promise<WooCustomerReference | null> {
-    const config = wooCommerceConfiguration(store);
-    const username = documentNumber.trim();
-    const matches = (await this.search(config, 'search', username)).filter(
-      (result) => result.username === username,
+    const config = wooCommerceCrmConfiguration(store);
+    const identification = documentNumber.trim();
+    if (!identification) return null;
+    const response = await integrationGet(
+      integrationUrl(config.apiUrl, `customer/crm/${encodeURIComponent(identification)}`),
+      wooCommerceCrmAuthorizationHeaders(config),
+      config.label,
+      { timeoutMs: 15_000, retryCount: 1 },
     );
-    if (matches.length === 0) return null;
-    if (matches.length === 1) return matches[0] ?? null;
-    throw this.conflict(config.label);
+    if (!isRecord(response)) throw invalidIntegrationResponse(config.label);
+    if (response.found === false) return null;
+    const customer = normalizeCrmCustomer(response);
+    if (!customer) throw invalidIntegrationResponse(config.label);
+    // Salvaguarda: el endpoint resuelve por identificación, así que una identificación
+    // declarada distinta indica una respuesta inconsistente y no un acierto válido.
+    const declared = declaredIdentification(customer);
+    if (declared && declared !== identification) {
+      throw invalidIntegrationResponse(config.label);
+    }
+    return customer;
   }
 
   async findCustomer(

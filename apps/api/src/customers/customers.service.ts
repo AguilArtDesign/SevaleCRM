@@ -220,10 +220,19 @@ function serializeCustomer<
     cityCode: string | null;
     cityName: string | null;
     fiscalResponsibilities: unknown;
+    integrations: Array<{
+      lastErrorCode: string | null;
+      lastErrorMessage: string | null;
+    }>;
   },
->(customer: T) {
+>(customer: T, includeIntegrationErrors = false) {
   return {
     ...customer,
+    integrations: customer.integrations.map((integration) =>
+      includeIntegrationErrors
+        ? integration
+        : { ...integration, lastErrorCode: null, lastErrorMessage: null },
+    ),
     fiscalResponsibilities: Array.isArray(customer.fiscalResponsibilities)
       ? customer.fiscalResponsibilities
       : [],
@@ -254,13 +263,13 @@ export class CustomersService {
     private readonly customerDraftResolver: CustomerDraftResolverService,
   ) {}
 
-  async list(query: CustomerListQuery) {
+  async list(query: CustomerListQuery, includeIntegrationErrors = false) {
     const [customers, total] = await this.customers.list(
       query,
       query.country && query.country !== 'CO' ? [] : findCustomerColombiaCitiesByName(query.search),
     );
     return {
-      data: customers.map(serializeCustomer),
+      data: customers.map((customer) => serializeCustomer(customer, includeIntegrationErrors)),
       pagination: {
         page: query.page,
         pageSize: query.pageSize,
@@ -270,17 +279,17 @@ export class CustomersService {
     };
   }
 
-  async detail(id: number) {
+  async detail(id: number, includeIntegrationErrors = false) {
     const customer = await this.customers.findById(id);
     if (!customer) throw new NotFoundException('El cliente no existe.');
-    return serializeCustomer(customer);
+    return serializeCustomer(customer, includeIntegrationErrors);
   }
 
   resolve(identification: string) {
     return this.customerDraftResolver.resolve(identification);
   }
 
-  async create(input: CreateCustomerInput) {
+  async create(input: CreateCustomerInput, includeIntegrationErrors = false) {
     const sanitized = sanitizeCustomerInput(input);
     validateLocation(sanitized);
     if (await this.customers.findByDocumentNumber(sanitized.documentNumber)) {
@@ -330,7 +339,7 @@ export class CustomersService {
         this.realtime.emitCustomerIntegrationUpdated(customer, integration);
       }
       await this.publishNotification(this.notifications.createCustomerLocal(customer), 'creación');
-      return serializeCustomer(customer);
+      return serializeCustomer(customer, includeIntegrationErrors);
     } catch (error) {
       if (isUniqueConstraintError(error)) {
         throw new ConflictException('Ya existe un cliente con ese tipo y número de documento.');
@@ -339,7 +348,7 @@ export class CustomersService {
     }
   }
 
-  async update(id: number, input: UpdateCustomerInput) {
+  async update(id: number, input: UpdateCustomerInput, includeIntegrationErrors = false) {
     const current = await this.customers.findById(id);
     if (!current) throw new NotFoundException('El cliente no existe.');
 
@@ -398,7 +407,7 @@ export class CustomersService {
       for (const integration of customer.integrations) {
         this.realtime.emitCustomerIntegrationUpdated(customer, integration);
       }
-      return serializeCustomer(customer);
+      return serializeCustomer(customer, includeIntegrationErrors);
     } catch (error) {
       if (isUniqueConstraintError(error)) {
         throw new ConflictException('Ya existe un cliente con ese tipo y número de documento.');
@@ -407,7 +416,7 @@ export class CustomersService {
     }
   }
 
-  async sync(id: number, input: CustomerSyncInput) {
+  async sync(id: number, input: CustomerSyncInput, includeIntegrationErrors = false) {
     const customer = await this.customers.findById(id);
     if (!customer) throw new NotFoundException('El cliente no existe.');
     const providers = input.provider
@@ -415,8 +424,14 @@ export class CustomersService {
       : customer.integrations
           .filter((integration) => integration.status !== 'SYNCED')
           .map((integration) => integration.provider);
-    if (providers.length === 0) return serializeCustomer(customer);
+    if (providers.length === 0) return serializeCustomer(customer, includeIntegrationErrors);
     const results = await this.integrations.synchronize(customer, providers, input.siigoLocation);
+    const siigoResult = results.find(
+      (result) => result.provider === 'SIIGO' && result.status === 'SYNCED',
+    );
+    if (customer.personType === 'COMPANY' && siigoResult?.checkDigit) {
+      await this.customers.updateCheckDigit(customer.id, siigoResult.checkDigit);
+    }
     const synchronized = await this.customers.findById(customer.id);
     if (!synchronized) throw new NotFoundException('El cliente no existe.');
     for (const result of results) {
@@ -426,16 +441,25 @@ export class CustomersService {
       this.notifications.createCustomerRetrySummary(synchronized, results),
       'reintento',
     );
-    return serializeCustomer(synchronized);
+    return serializeCustomer(synchronized, includeIntegrationErrors);
   }
 
-  async remove(id: number) {
+  async remove(id: number, includeIntegrationErrors = false) {
     const customer = await this.customers.findById(id);
     if (!customer) throw new NotFoundException('El cliente no existe.');
     try {
       const deleted = await this.customers.delete(id);
+      if (!deleted) {
+        throw new ConflictException({
+          success: false,
+          error: {
+            code: 'CUSTOMER_HAS_ORDERS',
+            message: 'El cliente no puede eliminarse porque tiene operaciones asociadas.',
+          },
+        });
+      }
       this.realtime.emitCustomerDeleted(deleted);
-      return serializeCustomer(deleted);
+      return serializeCustomer(deleted, includeIntegrationErrors);
     } catch (error) {
       if (isForeignKeyConstraintError(error)) {
         throw new ConflictException({

@@ -270,7 +270,7 @@ export class OrdersService {
   }
 
   async remove(id: number) {
-    const result = await this.orders.softDelete(id);
+    const result = await this.orders.delete(id);
     if (result.outcome === 'NOT_FOUND') {
       throw businessError(NotFoundException, 'ORDER_NOT_FOUND', 'La operación no existe.');
     }
@@ -568,6 +568,13 @@ export class OrdersService {
   ): PreparedOrderItem {
     const originalPrice = currency === 'COP' ? product.wooPriceCop : product.wooPriceUsd;
     const unitPrice = input.unitPrice === undefined ? originalPrice : decimal(input.unitPrice);
+    if (unitPrice.greaterThan(originalPrice)) {
+      throw businessError(
+        BadRequestException,
+        'ORDER_ITEM_PRICE_EXCEEDS_ORIGINAL',
+        `El precio de ${product.productName} no puede superar su valor original de ${money(originalPrice)}.`,
+      );
+    }
     const subtotal = unitPrice.times(input.quantity);
     const discountTotal = zero();
     return {

@@ -6798,9 +6798,7 @@
       "05": {
         "name": "California",
         "cities": {
-          "0501": "Sacramento",
-          "0502": "Menlo Park, CA",
-          "08811": "California"
+          "01": "California"
         }
       },
       "14": {

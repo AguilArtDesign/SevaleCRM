@@ -86,7 +86,14 @@ export class CouponsService {
     }
   }
 
-  async deactivate(id: number) {
-    return this.update(id, { active: false });
+  async remove(id: number) {
+    const current = await this.coupons.findById(id);
+    if (!current) {
+      throw new NotFoundException({
+        success: false,
+        error: { code: 'COUPON_NOT_FOUND', message: 'El cupón no existe.' },
+      });
+    }
+    return serializeCoupon(await this.coupons.delete(id));
   }
 }

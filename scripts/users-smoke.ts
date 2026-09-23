@@ -58,7 +58,7 @@ async function api(path: string, cookie?: string, init?: RequestInit) {
   return fetch(`${baseUrl}${path}`, {
     ...init,
     headers: {
-      'content-type': 'application/json',
+      ...(init?.body ? { 'content-type': 'application/json' } : {}),
       origin,
       ...(cookie ? { cookie } : {}),
       ...init?.headers,
@@ -166,6 +166,23 @@ try {
   });
   expectStatus(selfAccessResponse, 400, 'Cambio del propio acceso');
 
+  const selfDeleteResponse = await api(`/api/users/${adminId}`, adminCookie, {
+    method: 'DELETE',
+  });
+  expectStatus(selfDeleteResponse, 400, 'Eliminación de la propia cuenta');
+
+  const forbiddenDelete = await api(`/api/users/${created.id}`, commercialCookie, {
+    method: 'DELETE',
+  });
+  expectStatus(forbiddenDelete, 403, 'Eliminación de usuario como comercial');
+
+  const deleteResponse = await api(`/api/users/${created.id}`, adminCookie, {
+    method: 'DELETE',
+  });
+  expectStatus(deleteResponse, 200, 'Eliminación física de usuario');
+  const deletedUser = await prisma.user.findUnique({ where: { id: created.id } });
+  if (deletedUser !== null) throw new Error('El usuario continuó en la base de datos.');
+
   const disableCommercial = await api(`/api/users/${commercialId}`, adminCookie, {
     method: 'PATCH',
     body: JSON.stringify({ active: false }),
@@ -176,7 +193,7 @@ try {
   expectStatus(revokedProfile, 401, 'Sesión revocada tras desactivación');
 
   process.stdout.write(
-    'Users smoke: authentication, ADMIN access, RBAC denial, create, duplicate, update, self-protection, disable and session revocation checks passed.\n',
+    'Users smoke: authentication, ADMIN access, RBAC denial, create, duplicate, update, self-protection, physical deletion, disable and session revocation checks passed.\n',
   );
 } finally {
   await prisma.user.deleteMany({

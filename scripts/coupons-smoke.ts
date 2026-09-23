@@ -248,13 +248,14 @@ try {
     throw new Error('La edición del cupón no persistió los valores esperados.');
   }
 
-  const forbiddenDeactivate = await api(`/api/coupons/${created.id}`, commercialCookie, {
+  const forbiddenDelete = await api(`/api/coupons/${created.id}`, commercialCookie, {
     method: 'DELETE',
   });
-  expectStatus(forbiddenDeactivate, 403, 'Desactivación como comercial');
+  expectStatus(forbiddenDelete, 403, 'Eliminación como comercial');
 
   const deactivateResponse = await api(`/api/coupons/${created.id}`, adminCookie, {
-    method: 'DELETE',
+    method: 'PATCH',
+    body: JSON.stringify({ active: false }),
   });
   expectStatus(deactivateResponse, 200, 'Desactivación de cupón');
   const deactivated = (await deactivateResponse.json()) as { active: boolean };
@@ -276,8 +277,16 @@ try {
   });
   expectStatus(reactivateResponse, 200, 'Reactivación de cupón');
 
+  const deleteResponse = await api(`/api/coupons/${created.id}`, adminCookie, {
+    method: 'DELETE',
+  });
+  expectStatus(deleteResponse, 200, 'Eliminación física de cupón');
+  const deleted = await prisma.coupon.findUnique({ where: { id: created.id } });
+  if (deleted !== null)
+    throw new Error('El cupón continuó en la base de datos después de borrarlo.');
+
   process.stdout.write(
-    'Coupons smoke: auth, RBAC, create, unique code, validation, search, edit, deactivate and reactivate checks passed.\n',
+    'Coupons smoke: auth, RBAC, create, unique code, validation, search, edit, active state and physical deletion checks passed.\n',
   );
 } finally {
   await prisma.coupon.deleteMany({ where: { coupon: { startsWith: 'smoke-' } } });

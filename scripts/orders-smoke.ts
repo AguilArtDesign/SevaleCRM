@@ -111,14 +111,14 @@ try {
       siigoId: `siigo-seratus-${runId}`,
       sku: `SERATUS-${runId}`,
       siigoPriceCop: 127000,
-      siigoPriceUsd: 50,
+      siigoPriceUsd: 150,
       siigoStock: 10,
       store: Store.SERATUS,
       wooParentId: BigInt(8000),
       wooVariationId: BigInt(8001),
       wooSku: `SERATUS-${runId}`,
       wooPriceCop: 127000,
-      wooPriceUsd: 50,
+      wooPriceUsd: 150,
       wooStock: 10,
       syncStatus: 'SYNCED',
       productName: 'Producto Seratus Pedidos',
@@ -361,12 +361,12 @@ try {
   const usdPaliItem = usd.orders.find(({ store }) => store === 'PALI')?.items[0];
   if (
     usd.currency !== 'USD' ||
-    usd.subtotal !== '137.05' ||
+    usd.subtotal !== '337.05' ||
     usd.discountTotal !== '0.00' ||
     usd.shippingTotal !== '1.01' ||
-    usd.total !== '138.06' ||
-    usdSeratusItem?.originalPrice !== '50.00' ||
-    usdSeratusItem.unitPrice !== '50.00' ||
+    usd.total !== '338.06' ||
+    usdSeratusItem?.originalPrice !== '150.00' ||
+    usdSeratusItem.unitPrice !== '150.00' ||
     usdSeratusItem.priceModified ||
     usdPaliItem?.originalPrice !== '30.00' ||
     usdPaliItem.unitPrice !== '12.35' ||
@@ -645,6 +645,51 @@ try {
     'Campos comerciales manipulados por el navegador',
   );
 
+  // El precio manual solo puede bajar: puede volver a subir hasta igualar el valor
+  // original, pero nunca superarlo. Un ítem con precio modificado a la baja queda
+  // fuera de la base del cupón; uno sin modificar sí lo recibe.
+  const restoredPriceResponse = await api('/api/orders', commercialCookie, {
+    method: 'POST',
+    body: JSON.stringify({
+      ...basePayload,
+      items: [{ productId: seratus.id, quantity: 1, unitPrice: '127000' }],
+    }),
+  });
+  expectStatus(restoredPriceResponse, 201, 'Precio manual igual al valor original');
+  const restoredPrice = (await restoredPriceResponse.json()) as {
+    id: number;
+    subtotal: string;
+    discountTotal: string;
+    orders: Array<{ items: Array<{ priceModified: boolean }> }>;
+  };
+  operationIds.push(restoredPrice.id);
+  if (
+    restoredPrice.subtotal !== '127000.00' ||
+    restoredPrice.discountTotal !== '25400.00' ||
+    restoredPrice.orders[0]?.items[0]?.priceModified !== false
+  ) {
+    throw new Error(
+      'El precio igual al valor original debe conservar el producto dentro de la base del cupón.',
+    );
+  }
+
+  const aboveOriginalResponse = await api('/api/orders', commercialCookie, {
+    method: 'POST',
+    body: JSON.stringify({
+      ...basePayload,
+      items: [{ productId: seratus.id, quantity: 1, unitPrice: '127001' }],
+    }),
+  });
+  expectStatus(aboveOriginalResponse, 400, 'Precio por encima del valor original');
+  const aboveOriginalError = (await aboveOriginalResponse.json()) as {
+    error?: { code?: string };
+  };
+  if (aboveOriginalError.error?.code !== 'ORDER_ITEM_PRICE_EXCEEDS_ORIGINAL') {
+    throw new Error(
+      'El rechazo por precio superior al original no devolvió el código ORDER_ITEM_PRICE_EXCEEDS_ORIGINAL.',
+    );
+  }
+
   expectStatus(
     await api(`/api/orders/${created.id}`, commercialCookie, { method: 'DELETE' }),
     403,
@@ -653,7 +698,7 @@ try {
   expectStatus(
     await api(`/api/orders/${created.id}`, adminCookie, { method: 'DELETE' }),
     200,
-    'Eliminación lógica administrativa',
+    'Eliminación física administrativa',
   );
   expectStatus(
     await api(`/api/orders/${created.id}`, adminCookie),
@@ -667,8 +712,9 @@ try {
   );
   expectStatus(deletedListResponse, 200, 'Listado después de eliminar');
   const deletedList = (await deletedListResponse.json()) as { pagination: { total: number } };
-  if (!deletedRow?.deletedAt || deletedList.pagination.total !== 0) {
-    throw new Error('El borrado lógico no conservó el registro o todavía lo expone en consultas.');
+  const deletedOrders = await prisma.order.count({ where: { operationId: created.id } });
+  if (deletedRow !== null || deletedOrders !== 0 || deletedList.pagination.total !== 0) {
+    throw new Error('La eliminación no borró físicamente la operación y sus pedidos asociados.');
   }
 
   const completedResponse = await api('/api/orders', adminCookie, {
@@ -795,12 +841,16 @@ try {
   const deletedCompleted = await prisma.orderOperation.findUnique({
     where: { id: completed.id },
   });
-  if (!deletedCompleted?.deletedAt || deletedCompleted.status !== 'COMPLETED') {
-    throw new Error('La eliminación administrativa no conservó el historial completado.');
+  const [remainingShipment, remainingQuotation] = await Promise.all([
+    prisma.shipment.count({ where: { operationId: completed.id } }),
+    prisma.siigoQuotation.count({ where: { operationId: completed.id } }),
+  ]);
+  if (deletedCompleted !== null || remainingShipment !== 0 || remainingQuotation !== 0) {
+    throw new Error('La eliminación administrativa no limpió la operación completada.');
   }
 
   process.stdout.write(
-    'Orders smoke: payment catalogs, COP/USD shipping thresholds, custom shipping, coupon snapshots, active validation, consolidated and per-store discounts, authentication, RBAC, list, create, pending edit and store reconciliation checks passed.\n',
+    'Orders smoke: payment catalogs, COP/USD shipping thresholds, custom shipping, coupon snapshots, active validation, consolidated and per-store discounts, manual price capped at the original value, authentication, RBAC, list, create, pending edit and store reconciliation checks passed.\n',
   );
 } finally {
   if (operationIds.length > 0) {

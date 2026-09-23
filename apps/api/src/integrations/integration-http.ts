@@ -23,6 +23,29 @@ export class IntegrationAuthenticationException extends BadGatewayException {
   }
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function integrationErrorMessage(payload: unknown): string | null {
+  if (!isRecord(payload)) return null;
+  const errors = payload.Errors;
+  if (!Array.isArray(errors)) return null;
+
+  const messages = errors
+    .map((error) => {
+      if (!isRecord(error)) return null;
+      const message = error.Message;
+      if (typeof message !== 'string') return null;
+      const normalized = message.trim().split(/\s+/u).join(' ');
+      return normalized ? normalized.slice(0, 300) : null;
+    })
+    .filter((message): message is string => message !== null)
+    .slice(0, 3);
+
+  return messages.length > 0 ? messages.join(' ').slice(0, 450) : null;
+}
+
 export function requireIntegrationValue(name: string, integration: string): string {
   const value = process.env[name]?.trim();
   if (!value) {
@@ -101,11 +124,15 @@ async function integrationRequest(
       if (authenticationFailure) throw new IntegrationAuthenticationException(integration);
       const transientFailure = response.status === 429 || response.status >= 500;
       if (transientFailure && attempt < retryCount) continue;
+      const payload = (await response.json().catch(() => null)) as unknown;
+      const detail = integrationErrorMessage(payload);
       throw new BadGatewayException({
         success: false,
         error: {
           code: 'INTEGRATION_REQUEST_FAILED',
-          message: `${integration} no pudo completar la consulta.`,
+          message: detail
+            ? `${integration} rechazó la solicitud: ${detail}`
+            : `${integration} no pudo completar la consulta.`,
         },
       });
     }

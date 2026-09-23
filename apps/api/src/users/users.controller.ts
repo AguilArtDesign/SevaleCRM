@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   Patch,
@@ -56,5 +57,11 @@ export class UsersController {
       parseInput(updateUserSchema, body),
       request.auth.user.id,
     );
+  }
+
+  @Delete(':id')
+  @RequirePermissions('users.delete')
+  remove(@Param('id') id: string, @Req() request: AuthenticatedRequest) {
+    return this.usersService.remove(parseInput(userIdSchema, id), request.auth.user.id);
   }
 }

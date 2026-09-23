@@ -64,5 +64,5 @@ export const couponsApi = {
       method: 'PATCH',
       body: JSON.stringify(input),
     }),
-  deactivate: (id: number) => apiRequest<CouponRecord>(`/api/coupons/${id}`, { method: 'DELETE' }),
+  remove: (id: number) => apiRequest<CouponRecord>(`/api/coupons/${id}`, { method: 'DELETE' }),
 };

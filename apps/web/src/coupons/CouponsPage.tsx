@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
 import {
   Alert,
+  AlertDialog,
   Button,
   Label,
   ListBox,
@@ -12,7 +13,7 @@ import {
   TextField,
   Typography,
 } from '@heroui/react';
-import { Pencil, Plus, Tag, Xmark } from '@gravity-ui/icons';
+import { Pencil, Plus, Tag, TrashBin, Xmark } from '@gravity-ui/icons';
 import { hasPermission } from '@sevale/permissions';
 import { couponTypes } from '@sevale/shared';
 import { createCouponSchema } from '@sevale/validation';
@@ -45,7 +46,7 @@ export function CouponsPage() {
   const role = user?.role;
   const canCreate = Boolean(role && hasPermission(role, 'coupons.create'));
   const canUpdate = Boolean(role && hasPermission(role, 'coupons.update'));
-  const canDeactivate = Boolean(role && hasPermission(role, 'coupons.delete'));
+  const canDelete = Boolean(role && hasPermission(role, 'coupons.delete'));
   const [coupons, setCoupons] = useState<CouponRecord[]>([]);
   const [searchDraft, setSearchDraft] = useState('');
   const [search, setSearch] = useState('');
@@ -65,6 +66,7 @@ export function CouponsPage() {
   const [type, setType] = useState('percent');
   const [amount, setAmount] = useState('');
   const [active, setActive] = useState(true);
+  const [deleteTarget, setDeleteTarget] = useState<CouponRecord | null>(null);
 
   const activeQuery = useMemo(
     () => (activeFilter === 'all' ? undefined : activeFilter === 'active'),
@@ -155,7 +157,7 @@ export function CouponsPage() {
     setNotice('');
     try {
       if (selected.active) {
-        await couponsApi.deactivate(selected.id);
+        await couponsApi.update(selected.id, { active: false });
         setNotice(`El cupón “${selected.coupon}” fue desactivado.`);
       } else {
         await couponsApi.update(selected.id, { active: true });
@@ -164,6 +166,24 @@ export function CouponsPage() {
       await loadCoupons();
     } catch (changeError) {
       setError(messageFrom(changeError));
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const removeCoupon = async () => {
+    if (!deleteTarget || busyId !== null) return;
+    const target = deleteTarget;
+    setBusyId(target.id);
+    setError('');
+    setNotice('');
+    try {
+      await couponsApi.remove(target.id);
+      setDeleteTarget(null);
+      setNotice(`El cupón “${target.coupon}” fue eliminado definitivamente.`);
+      await loadCoupons();
+    } catch (deleteError) {
+      setError(messageFrom(deleteError));
     } finally {
       setBusyId(null);
     }
@@ -298,7 +318,7 @@ export function CouponsPage() {
                               Editar
                             </Button>
                           )}
-                          {(listedCoupon.active ? canDeactivate : canUpdate) && (
+                          {canUpdate && (
                             <Button
                               size="sm"
                               variant="ghost"
@@ -306,6 +326,16 @@ export function CouponsPage() {
                               onPress={() => void changeActive(listedCoupon)}
                             >
                               {listedCoupon.active ? 'Desactivar' : 'Activar'}
+                            </Button>
+                          )}
+                          {canDelete && (
+                            <Button
+                              size="sm"
+                              variant="danger-soft"
+                              onPress={() => setDeleteTarget(listedCoupon)}
+                            >
+                              <TrashBin width={16} height={16} />
+                              Eliminar
                             </Button>
                           )}
                         </div>
@@ -471,6 +501,44 @@ export function CouponsPage() {
           </Modal.Container>
         </Modal.Backdrop>
       </Modal>
+
+      <AlertDialog
+        isOpen={deleteTarget !== null}
+        onOpenChange={(open) => !open && busyId === null && setDeleteTarget(null)}
+      >
+        <AlertDialog.Backdrop>
+          <AlertDialog.Container size="sm">
+            <AlertDialog.Dialog>
+              <AlertDialog.Header>
+                <AlertDialog.Icon status="danger">
+                  <TrashBin />
+                </AlertDialog.Icon>
+                <AlertDialog.Heading>Eliminar cupón</AlertDialog.Heading>
+              </AlertDialog.Header>
+              <AlertDialog.Body>
+                Se eliminará definitivamente <strong>{deleteTarget?.coupon}</strong>. Los pedidos
+                que ya lo utilizaron conservarán la información histórica del cupón.
+              </AlertDialog.Body>
+              <AlertDialog.Footer>
+                <Button
+                  variant="ghost"
+                  onPress={() => setDeleteTarget(null)}
+                  isDisabled={busyId !== null}
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  variant="danger"
+                  onPress={() => void removeCoupon()}
+                  isPending={busyId === deleteTarget?.id}
+                >
+                  Eliminar definitivamente
+                </Button>
+              </AlertDialog.Footer>
+            </AlertDialog.Dialog>
+          </AlertDialog.Container>
+        </AlertDialog.Backdrop>
+      </AlertDialog>
     </section>
   );
 }

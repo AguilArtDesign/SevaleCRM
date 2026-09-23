@@ -2543,6 +2543,13 @@ select {
   line-height: 1.35;
 }
 
+.customer-integration-error {
+  margin-top: 0.35rem;
+  color: var(--danger);
+  font-size: 0.75rem;
+  line-height: 1.35;
+}
+
 .customer-siigo-location-card {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr)) auto;
@@ -4049,8 +4056,14 @@ select {
   text-align: center;
 }
 
-.coupon-actions {
+.coupon-actions,
+.user-row-actions {
   gap: 0.3rem;
+}
+
+.user-row-actions {
+  display: flex;
+  align-items: center;
 }
 
 .coupon-form-modal form {

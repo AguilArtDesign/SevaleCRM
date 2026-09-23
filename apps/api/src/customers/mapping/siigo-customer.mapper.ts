@@ -2,6 +2,8 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import {
   mapPhoneToSiigo,
   normalizePhoneE164,
+  resolveCustomerCountryName,
+  resolveCustomerRegionName,
   resolveCustomerSiigoCity,
   resolveCustomerSiigoCountryByWooCode,
 } from '@sevale/shared';
@@ -36,6 +38,22 @@ export type SiigoCustomerPayload = {
 
 function cleanAddress(line1: string | null | undefined, line2: string | null | undefined): string {
   return [line1?.trim(), line2?.trim()].filter(Boolean).join(', ');
+}
+
+function addressForSiigo(customer: SiigoReadyCustomer): string {
+  if (customer.country === 'CO') {
+    return cleanAddress(customer.addressLine1, customer.addressLine2);
+  }
+  return [
+    customer.addressLine1?.trim(),
+    customer.addressLine2?.trim(),
+    customer.cityName?.trim(),
+    resolveCustomerRegionName(customer.country, customer.region),
+    customer.postalCode?.trim(),
+    resolveCustomerCountryName(customer.country),
+  ]
+    .filter((part): part is string => Boolean(part))
+    .join(', ');
 }
 
 function uppercase(value: string): string {
@@ -92,7 +110,7 @@ export class SiigoCustomerMapper {
         : [customer.company].filter((part): part is string => Boolean(part));
     const canonicalName = nameParts.join(' ');
     const name = nameParts.map(uppercase);
-    const address = cleanAddress(customer.addressLine1, customer.addressLine2);
+    const address = addressForSiigo(customer);
     const contactFirstName = customer.firstName?.trim();
     const normalizedPhone = customer.phone
       ? normalizePhoneE164(customer.phone, customer.country)
@@ -110,7 +128,9 @@ export class SiigoCustomerMapper {
       vat_responsible: customer.vatResponsible,
       fiscal_responsibilities: customer.fiscalResponsibilities.map((code) => ({ code })),
       address: {
-        ...(address ? { address: uppercase(address) } : {}),
+        ...(address
+          ? { address: customer.country === 'CO' ? uppercase(address) : address }
+          : {}),
         city: {
           country_code: location.countryCode,
           state_code: location.stateCode,

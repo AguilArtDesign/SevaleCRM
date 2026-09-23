@@ -186,6 +186,7 @@ function customerToastContent(
 function CustomerDetail({
   customer,
   canRetry,
+  canViewIntegrationErrors,
   retryingProviders,
   onRetry,
   siigoResolution,
@@ -195,6 +196,7 @@ function CustomerDetail({
 }: {
   customer: CustomerRecord;
   canRetry: boolean;
+  canViewIntegrationErrors: boolean;
   retryingProviders: ReadonlySet<CustomerProvider>;
   onRetry: (provider: CustomerProvider) => void;
   siigoResolution: {
@@ -314,6 +316,13 @@ function CustomerDetail({
                     )}
                   </div>
                   <span className="customer-integration-date">{activity}</span>
+                  {canViewIntegrationErrors &&
+                    integration.status === 'ERROR' &&
+                    integration.lastErrorMessage && (
+                      <span className="customer-integration-error" role="alert">
+                        {integration.lastErrorMessage}
+                      </span>
+                    )}
                 </article>
                 {integration.provider === 'SIIGO' && siigoResolution && (
                   <article className="customer-siigo-location-card">
@@ -1095,6 +1104,7 @@ export function CustomersPage() {
                   <CustomerDetail
                     customer={detailQuery.data}
                     canRetry={canManageCustomers}
+                    canViewIntegrationErrors={isAdmin}
                     retryingProviders={retryingProviders}
                     onRetry={(provider) => void retryProvider(provider)}
                     siigoResolution={

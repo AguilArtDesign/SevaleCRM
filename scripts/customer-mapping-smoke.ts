@@ -268,6 +268,30 @@ if (
   throw new Error('SiigoCustomerMapper no utilizó la selección internacional explícita.');
 }
 
+const siigoUnitedStates = siigoMapper.map(
+  {
+    ...customer,
+    phone: '+18312622128',
+    country: 'US',
+    region: 'CA',
+    cityCode: null,
+    cityName: 'Los Ángeles',
+    postalCode: '90038',
+    addressLine1: '1230 N. BEACHWOOD DR',
+    addressLine2: 'APT 1/8',
+  },
+  { stateCode: '05', cityCode: '01' },
+);
+if (
+  siigoUnitedStates.address.address !==
+    '1230 N. BEACHWOOD DR, APT 1/8, Los Ángeles, California, 90038, Estados Unidos (EEUU)' ||
+  siigoUnitedStates.address.city.country_code !== 'Us' ||
+  siigoUnitedStates.address.city.state_code !== '05' ||
+  siigoUnitedStates.address.city.city_code !== '01'
+) {
+  throw new Error('SiigoCustomerMapper no construyó la dirección internacional completa.');
+}
+
 let missingSiigoSelectionRejected = false;
 try {
   siigoMapper.map({

@@ -98,9 +98,31 @@ export class CustomersRepository {
     });
   }
 
+  updateCheckDigit(id: number, checkDigit: string) {
+    return this.prisma.customer.update({ where: { id }, data: { checkDigit } });
+  }
+
   delete(id: number) {
     return this.prisma.$transaction(async (transaction) => {
-      await transaction.notification.deleteMany({ where: { customerId: id } });
+      const validOperations = await transaction.orderOperation.count({
+        where: { customerId: id, deletedAt: null },
+      });
+      if (validOperations > 0) return null;
+
+      const legacyOrders = await transaction.order.findMany({
+        where: { operation: { customerId: id } },
+        select: { id: true },
+      });
+      const legacyOrderIds = legacyOrders.map(({ id: orderId }) => orderId);
+      if (legacyOrderIds.length > 0) {
+        await transaction.wooOrderDelivery.deleteMany({
+          where: { orderId: { in: legacyOrderIds } },
+        });
+      }
+      await transaction.notification.deleteMany({
+        where: { OR: [{ customerId: id }, { orderOperation: { customerId: id } }] },
+      });
+      await transaction.orderOperation.deleteMany({ where: { customerId: id } });
       return transaction.customer.delete({ where: { id }, include: customerInclude });
     });
   }

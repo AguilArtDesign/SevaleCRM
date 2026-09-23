@@ -832,8 +832,9 @@ export function OrderForm({
     const quantity = Math.max(1, money(item.quantity));
     const effectiveUnitPrice =
       (money(item.unitPrice) * quantity - money(item.discountTotal)) / quantity;
+    const maximumUnitPrice = Math.floor(money(productPrice(item.product, currency)));
     setEditingPriceId(item.product.id);
-    setPriceDraft(String(Math.round(effectiveUnitPrice)));
+    setPriceDraft(String(Math.min(Math.round(effectiveUnitPrice), maximumUnitPrice)));
   };
   const cancelPriceEdit = () => {
     setEditingPriceId(null);
@@ -841,6 +842,14 @@ export function OrderForm({
   };
   const savePriceEdit = (item: FormItem) => {
     if (!priceDraft.trim() || money(priceDraft) < 0) return cancelPriceEdit();
+    const maximumUnitPrice = money(productPrice(item.product, currency));
+    if (money(priceDraft) > maximumUnitPrice) {
+      setError(
+        `El precio de ${item.product.productName} no puede superar ${formattedProductPrice(maximumUnitPrice, currency)}.`,
+      );
+      return cancelPriceEdit();
+    }
+    setError('');
     updateItem(item.product.id, {
       unitPrice: fixed(money(priceDraft)),
       discountTotal: '0.00',
@@ -889,6 +898,10 @@ export function OrderForm({
     for (const item of items) {
       if (money(item.quantity) < 1 || !Number.isInteger(money(item.quantity)))
         return setError('Las cantidades deben ser números enteros mayores a cero.');
+      if (money(item.unitPrice) > money(productPrice(item.product, currency)))
+        return setError(
+          `El precio de ${item.product.productName} no puede superar su valor original.`,
+        );
     }
     const effectiveShipping = differentShipping ? shipping : withoutEmail(billing);
     await onSubmit({

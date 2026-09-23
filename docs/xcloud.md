@@ -62,6 +62,9 @@ El archivo `.env.production.example` contiene únicamente placeholders y sirve c
 | `PALI_API_URL`                                                 | Sí                    | Base HTTPS de WooCommerce Pali.                      |
 | `WOOCOMMERCE_PALI_CK`                                          | Sí                    | Consumer key privada.                                |
 | `WOOCOMMERCE_PALI_CS`                                          | Sí                    | Consumer secret privado.                             |
+| `WOOCOMMERCE_USERNAME`                                         | Sí                    | Usuario de WordPress del endpoint propio de Sevale.  |
+| `SERATUS_PASSWORD`                                             | Sí                    | Contraseña del endpoint propio en Seratus.           |
+| `PALI_PASSWORD`                                                | Sí                    | Contraseña del endpoint propio en Pali.              |
 | `N8N_API_KEY`                                                  | Sí                    | API key aleatoria de al menos 32 caracteres.         |
 | `INITIAL_ADMIN_EMAIL`                                          | Solo seed inicial     | Correo del administrador inicial.                    |
 | `INITIAL_ADMIN_PASSWORD`                                       | Opcional y temporal   | Contraseña inicial; retirarla después del seed.      |

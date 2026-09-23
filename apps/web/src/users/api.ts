@@ -25,7 +25,10 @@ async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${apiUrl}${path}`, {
     ...init,
     credentials: 'include',
-    headers: { 'content-type': 'application/json', ...init?.headers },
+    headers: {
+      ...(init?.body ? { 'content-type': 'application/json' } : {}),
+      ...init?.headers,
+    },
   });
   if (!response.ok) {
     const body = (await response.json().catch(() => ({}))) as ApiErrorBody;
@@ -47,4 +50,5 @@ export const usersApi = {
       method: 'PATCH',
       body: JSON.stringify(input),
     }),
+  remove: (id: string) => apiRequest<UserRecord>(`/api/users/${id}`, { method: 'DELETE' }),
 };

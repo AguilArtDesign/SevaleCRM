@@ -696,19 +696,20 @@ export class OrdersRepository {
     });
   }
 
-  async softDelete(id: number): Promise<DeleteResult> {
+  async delete(id: number): Promise<DeleteResult> {
     return this.prisma.$transaction(async (transaction) => {
       const current = await transaction.orderOperation.findFirst({
         where: { id, deletedAt: null },
         include: orderDetailInclude,
       });
       if (!current) return { outcome: 'NOT_FOUND' };
-      const operation = await transaction.orderOperation.update({
-        where: { id },
-        data: { deletedAt: new Date() },
-        include: orderDetailInclude,
-      });
-      return { outcome: 'UPDATED', operation };
+      const orderIds = current.orders.map(({ id: orderId }) => orderId);
+      if (orderIds.length > 0) {
+        await transaction.wooOrderDelivery.deleteMany({ where: { orderId: { in: orderIds } } });
+      }
+      await transaction.notification.deleteMany({ where: { orderOperationId: id } });
+      await transaction.orderOperation.delete({ where: { id } });
+      return { outcome: 'UPDATED', operation: current };
     });
   }
 }

@@ -5,7 +5,7 @@ import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fa
 import { hashPassword } from 'better-auth/crypto';
 import { AppModule } from '../apps/api/src/app.module.js';
 import { PrismaService } from '../apps/api/src/database/prisma.service.js';
-import { Role } from '../apps/api/src/generated/prisma/client.js';
+import { OperationStatus, OrderSource, Role } from '../apps/api/src/generated/prisma/client.js';
 import { SiigoCustomerService } from '../apps/api/src/customers/integrations/siigo-customer.service.js';
 import { WooCustomerService } from '../apps/api/src/customers/integrations/woo-customer.service.js';
 import { NotificationsService } from '../apps/api/src/notifications/notifications.service.js';
@@ -95,6 +95,7 @@ siigoCustomers.lookupCustomer = (identification) =>
                   : siigoExternalId,
             identification,
             personType: 'Person',
+            checkDigit: null,
           },
           prefill: {
             personType: 'PERSON',
@@ -128,6 +129,7 @@ siigoCustomers.createCustomer = (customer) => {
     id: siigoExternalId,
     identification: customer.documentNumber,
     personType: customer.personType === 'PERSON' ? 'Person' : 'Company',
+    checkDigit: customer.personType === 'COMPANY' ? '7' : null,
   });
 };
 siigoCustomers.updateCustomer = (_externalId, customer) => {
@@ -136,6 +138,7 @@ siigoCustomers.updateCustomer = (_externalId, customer) => {
     id: siigoExternalId,
     identification: customer.documentNumber,
     personType: customer.personType === 'PERSON' ? 'Person' : 'Company',
+    checkDigit: customer.personType === 'COMPANY' ? '7' : null,
   });
 };
 wooCustomers.findCustomer = () => Promise.resolve(null);
@@ -539,7 +542,39 @@ try {
     throw new Error('El listado no respetó búsqueda por ciudad, filtro o paginación.');
   }
 
-  expectStatus(await api(`/api/customers/${created.id}`, commercialCookie), 200, 'Detalle');
+  await prisma.customerIntegration.update({
+    where: { customerId_provider: { customerId: created.id, provider: 'SIIGO' } },
+    data: {
+      status: 'ERROR',
+      lastErrorCode: 'INTEGRATION_REQUEST_FAILED',
+      lastErrorMessage: "The city doesn't exist: Us|05|08811",
+    },
+  });
+  const commercialDetailResponse = await api(`/api/customers/${created.id}`, commercialCookie);
+  expectStatus(commercialDetailResponse, 200, 'Detalle comercial');
+  const commercialDetail = (await commercialDetailResponse.json()) as {
+    integrations: Array<{
+      provider: string;
+      lastErrorCode: string | null;
+      lastErrorMessage: string | null;
+    }>;
+  };
+  const commercialSiigo = commercialDetail.integrations.find(
+    ({ provider }) => provider === 'SIIGO',
+  );
+  if (commercialSiigo?.lastErrorCode !== null || commercialSiigo.lastErrorMessage !== null) {
+    throw new Error('El detalle comercial expuso el diagnóstico técnico de la integración.');
+  }
+  const adminDetailResponse = await api(`/api/customers/${created.id}`, adminCookie);
+  expectStatus(adminDetailResponse, 200, 'Detalle administrativo');
+  const adminDetail = (await adminDetailResponse.json()) as typeof commercialDetail;
+  const adminSiigo = adminDetail.integrations.find(({ provider }) => provider === 'SIIGO');
+  if (
+    adminSiigo?.lastErrorCode !== 'INTEGRATION_REQUEST_FAILED' ||
+    adminSiigo.lastErrorMessage !== "The city doesn't exist: Us|05|08811"
+  ) {
+    throw new Error('El detalle administrativo ocultó el diagnóstico técnico de la integración.');
+  }
   expectStatus(
     await api(`/api/customers/${created.id}`, commercialCookie, {
       method: 'PATCH',
@@ -624,6 +659,24 @@ try {
     'Sincronización aislada de un fallo de notificaciones',
   );
   notifications.createCustomerRetrySummary = createCustomerRetrySummary;
+  await prisma.customer.update({
+    where: { id: created.id },
+    data: {
+      personType: 'COMPANY',
+      company: updated.displayName,
+      documentType: '31',
+      checkDigit: null,
+    },
+  });
+  const companySyncResponse = await api(`/api/customers/${created.id}/sync`, adminCookie, {
+    method: 'POST',
+    body: JSON.stringify({ provider: 'SIIGO' }),
+  });
+  expectStatus(companySyncResponse, 201, 'Dígito de verificación devuelto por Siigo');
+  const companySynchronized = (await companySyncResponse.json()) as { checkDigit: string | null };
+  if (companySynchronized.checkDigit !== '7') {
+    throw new Error('El CRM no guardó el dígito de verificación devuelto por Siigo.');
+  }
   expectStatus(
     await api(`/api/customers/${created.id}/sync`, adminCookie, {
       method: 'POST',
@@ -665,8 +718,44 @@ try {
   const recreated = (await recreateResponse.json()) as { id: number };
   customerIds.push(recreated.id);
 
+  const associatedOperation = await prisma.orderOperation.create({
+    data: {
+      operationCode: `OP${Date.now()}TST`,
+      source: OrderSource.CRM,
+      status: OperationStatus.PENDING,
+      customerId: recreated.id,
+      currency: 'COP',
+      subtotal: 0,
+      discountTotal: 0,
+      shippingTotal: 0,
+      total: 0,
+    },
+  });
+  expectStatus(
+    await api(`/api/customers/${recreated.id}`, adminCookie, { method: 'DELETE' }),
+    409,
+    'Cliente con operación válida',
+  );
+  await prisma.orderOperation.update({
+    where: { id: associatedOperation.id },
+    data: { deletedAt: new Date() },
+  });
+  expectStatus(
+    await api(`/api/customers/${recreated.id}`, adminCookie, { method: 'DELETE' }),
+    200,
+    'Cliente con únicamente operación eliminada heredada',
+  );
+  const [removedCustomer, removedOperation, remainingIntegrations] = await Promise.all([
+    prisma.customer.findUnique({ where: { id: recreated.id } }),
+    prisma.orderOperation.findUnique({ where: { id: associatedOperation.id } }),
+    prisma.customerIntegration.count({ where: { customerId: recreated.id } }),
+  ]);
+  if (removedCustomer !== null || removedOperation !== null || remainingIntegrations !== 0) {
+    throw new Error('La eliminación física no limpió el cliente y sus registros asociados.');
+  }
+
   process.stdout.write(
-    'Customers smoke: safe Siigo lookup, local-only create/delete, same-document recreation, RBAC, duplicates, geography, search, pagination, detail, update and notification isolation checks passed.\n',
+    'Customers smoke: safe Siigo lookup, physical deletion, valid-operation protection, legacy cleanup, same-document recreation, RBAC, duplicates, geography, search, pagination, detail, update and notification isolation checks passed.\n',
   );
 } finally {
   if (customerIds.length > 0) {

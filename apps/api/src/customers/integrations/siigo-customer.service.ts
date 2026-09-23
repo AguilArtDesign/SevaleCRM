@@ -31,6 +31,7 @@ export type SiigoCustomerReference = {
   id: string;
   identification: string;
   personType: 'Person' | 'Company';
+  checkDigit: string | null;
 };
 
 export type SiigoCustomerPrefill = {
@@ -72,6 +73,7 @@ function normalizeCustomer(value: unknown): SiigoCustomerReference | null {
   const identification =
     typeof value.identification === 'string' ? value.identification.trim() : '';
   const personType = value.person_type;
+  const rawCheckDigit = typeof value.check_digit === 'string' ? value.check_digit.trim() : '';
   if (
     !UUID_PATTERN.test(id) ||
     !identification ||
@@ -79,7 +81,12 @@ function normalizeCustomer(value: unknown): SiigoCustomerReference | null {
   ) {
     return null;
   }
-  return { id, identification, personType };
+  return {
+    id,
+    identification,
+    personType,
+    checkDigit: /^\d$/.test(rawCheckDigit) ? rawCheckDigit : null,
+  };
 }
 
 const documentTypes = new Set<string>(customerDocumentTypes.map(({ value }) => value));

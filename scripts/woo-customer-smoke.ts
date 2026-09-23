@@ -33,8 +33,35 @@ const customerResponse = (id: number, email = 'marcos.castillo@example.com') => 
     { id: 67, key: 'wc_last_active', value: '1788290866' },
   ],
 });
+// Payload del endpoint propio /wp-json/sevale/v1/customer/crm/{identificación}.
+const crmCustomerResponse = (customerId: number) => ({
+  found: true,
+  customer_id: customerId,
+  username: '13832081',
+  email: 'marcos.castillo@example.com',
+  first_name: 'Marcos',
+  last_name: 'Castillo',
+  billing: {
+    first_name: 'Marcos',
+    last_name: 'Castillo',
+    company: 'Ejemplo S.A.S.',
+    address_1: 'Cra. 18 #79A - 42',
+    address_2: 'Apto 301',
+    city: 'Medellín',
+    state: 'CO-ANT',
+    postcode: '050001',
+    country: 'CO',
+    email: 'marcos.castillo@example.com',
+    phone: '+57 300 600 3345',
+  },
+  shipping: { address_1: 'Este dato no debe conservarse' },
+  meta_data: [
+    { key: 'billing_identification', value: '13832081' },
+    { key: 'billing_type_document', value: '13' },
+  ],
+});
 const responses: Response[] = [
-  Response.json([customerResponse(8)]),
+  Response.json(crmCustomerResponse(8)),
   Response.json([customerResponse(21)]),
   Response.json([customerResponse(21)]),
   Response.json([]),
@@ -91,6 +118,9 @@ process.env.WOOCOMMERCE_SERATUS_CS = 'seratus-secret';
 process.env.PALI_API_URL = 'https://pali.test/wp-json/wc/v3';
 process.env.WOOCOMMERCE_PALI_CK = 'pali-key';
 process.env.WOOCOMMERCE_PALI_CS = 'pali-secret';
+process.env.WOOCOMMERCE_USERNAME = 'sevale-crm';
+process.env.SERATUS_PASSWORD = 'seratus-crm-password';
+process.env.PALI_PASSWORD = 'pali-crm-password';
 
 const mapper = new WooCustomerMapper();
 const service = new WooCustomerService(mapper);
@@ -187,16 +217,24 @@ const [
   seratusPost,
   paliPost,
 ] = requests;
+const seratusDocumentAuthorization = new Headers(seratusDocument?.init?.headers).get(
+  'authorization',
+);
 if (
-  !seratusDocument?.url.includes('/customers?search=13832081') ||
-  !seratusDocument.url.includes('role=all') ||
+  !seratusDocument?.url.includes('/wp-json/sevale/v1/customer/crm/13832081') ||
+  new URL(seratusDocument.url).search !== '' ||
+  seratusDocument.init?.method !== 'GET' ||
+  seratusDocumentAuthorization !==
+    `Basic ${Buffer.from('sevale-crm:seratus-crm-password').toString('base64')}` ||
   !seratusEmail?.url.includes('/customers?email=marcos.castillo%40example.com') ||
   !seratusEmail.url.includes('role=all') ||
   !seratusUsername?.url.includes('/customers?search=13832081') ||
   !paliEmail?.url.startsWith('https://pali.test/') ||
   !paliUsername?.url.startsWith('https://pali.test/')
 ) {
-  throw new Error('El preflight no consultó email y username en la tienda correcta.');
+  throw new Error(
+    'La consulta por documento no usó el endpoint de Sevale con sus propias credenciales, o el preflight no consultó email y username en la tienda correcta.',
+  );
 }
 const seratusAuthorization = new Headers(seratusPost?.init?.headers).get('authorization');
 const paliAuthorization = new Headers(paliPost?.init?.headers).get('authorization');
@@ -253,6 +291,41 @@ if (
   throw new Error('La creación no utilizó el endpoint de clientes en ambas tiendas.');
 }
 
+globalThis.fetch = () => Promise.resolve(Response.json({ found: false, customer_id: null }));
+if ((await service.findCustomerByDocument('PALI', '999999')) !== null) {
+  throw new Error('Una identificación inexistente debe resolverse como null y no como error.');
+}
+
+// Una respuesta sin el indicador found no puede interpretarse como "no existe":
+// eso crearía un cliente duplicado a partir de una respuesta que no se entendió.
+globalThis.fetch = () => Promise.resolve(Response.json({ customer_id: 2, username: '904940' }));
+let missingFlagRejected = false;
+try {
+  await service.findCustomerByDocument('PALI', '904940');
+} catch {
+  missingFlagRejected = true;
+}
+if (!missingFlagRejected) {
+  throw new Error('Una respuesta sin found debe rechazarse en lugar de asumirse como inexistente.');
+}
+
+globalThis.fetch = () =>
+  Promise.resolve(
+    Response.json({
+      ...crmCustomerResponse(2),
+      meta_data: [{ key: 'billing_identification', value: '999999' }],
+    }),
+  );
+let mismatchedIdentificationRejected = false;
+try {
+  await service.findCustomerByDocument('PALI', '904940');
+} catch {
+  mismatchedIdentificationRejected = true;
+}
+if (!mismatchedIdentificationRejected) {
+  throw new Error('Una identificación declarada distinta debe rechazarse.');
+}
+
 process.stdout.write(
-  'Woo customer smoke: Seratus/Pali preflight, conflicts, create, email update, credentials, IDs and payload checks passed.\n',
+  'Woo customer smoke: Sevale document lookup, Seratus/Pali preflight, conflicts, create, email update, credentials, IDs and payload checks passed.\n',
 );

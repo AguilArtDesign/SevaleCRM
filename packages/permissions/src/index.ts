@@ -5,6 +5,7 @@ export const permissions = [
   'users.create',
   'users.update',
   'users.disable',
+  'users.delete',
   'inventory.read',
   'inventory.create',
   'inventory.update',

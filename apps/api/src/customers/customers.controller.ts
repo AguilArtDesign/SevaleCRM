@@ -8,6 +8,7 @@ import {
   Patch,
   Post,
   Query,
+  Req,
 } from '@nestjs/common';
 import {
   createCustomerSchema,
@@ -18,6 +19,7 @@ import {
   updateCustomerSchema,
 } from '@sevale/validation';
 import type { ZodType } from 'zod';
+import type { AuthenticatedRequest } from '../auth/auth.guard.js';
 import { RequirePermissions } from '../permissions/require-permissions.decorator.js';
 import { CustomersService } from './customers.service.js';
 
@@ -33,14 +35,21 @@ function parseInput<T>(schema: ZodType<T>, input: unknown): T {
   });
 }
 
+function canViewIntegrationErrors(request: AuthenticatedRequest): boolean {
+  return request.auth.user.role === 'ADMIN';
+}
+
 @Controller('customers')
 export class CustomersController {
   constructor(private readonly customers: CustomersService) {}
 
   @Get()
   @RequirePermissions('customers.read')
-  list(@Query() query: unknown) {
-    return this.customers.list(parseInput(customerListQuerySchema, query));
+  list(@Query() query: unknown, @Req() request: AuthenticatedRequest) {
+    return this.customers.list(
+      parseInput(customerListQuerySchema, query),
+      canViewIntegrationErrors(request),
+    );
   }
 
   @Get('siigo-lookup')
@@ -59,37 +68,48 @@ export class CustomersController {
 
   @Get(':id')
   @RequirePermissions('customers.read')
-  detail(@Param('id') id: string) {
-    return this.customers.detail(parseInput(customerIdSchema, id));
+  detail(@Param('id') id: string, @Req() request: AuthenticatedRequest) {
+    return this.customers.detail(
+      parseInput(customerIdSchema, id),
+      canViewIntegrationErrors(request),
+    );
   }
 
   @Post()
   @RequirePermissions('customers.create')
-  create(@Body() body: unknown) {
-    return this.customers.create(parseInput(createCustomerSchema, body));
+  create(@Body() body: unknown, @Req() request: AuthenticatedRequest) {
+    return this.customers.create(
+      parseInput(createCustomerSchema, body),
+      canViewIntegrationErrors(request),
+    );
   }
 
   @Patch(':id')
   @RequirePermissions('customers.update')
-  update(@Param('id') id: string, @Body() body: unknown) {
+  update(@Param('id') id: string, @Body() body: unknown, @Req() request: AuthenticatedRequest) {
     return this.customers.update(
       parseInput(customerIdSchema, id),
       parseInput(updateCustomerSchema, body),
+      canViewIntegrationErrors(request),
     );
   }
 
   @Delete(':id')
   @RequirePermissions('customers.delete')
-  remove(@Param('id') id: string) {
-    return this.customers.remove(parseInput(customerIdSchema, id));
+  remove(@Param('id') id: string, @Req() request: AuthenticatedRequest) {
+    return this.customers.remove(
+      parseInput(customerIdSchema, id),
+      canViewIntegrationErrors(request),
+    );
   }
 
   @Post(':id/sync')
   @RequirePermissions('customers.sync')
-  sync(@Param('id') id: string, @Body() body: unknown) {
+  sync(@Param('id') id: string, @Body() body: unknown, @Req() request: AuthenticatedRequest) {
     return this.customers.sync(
       parseInput(customerIdSchema, id),
       parseInput(customerSyncSchema, body),
+      canViewIntegrationErrors(request),
     );
   }
 }

@@ -81,6 +81,9 @@ export function validateRuntimeEnvironment(): RuntimeEnvironment {
         PALI_API_URL: httpsUrlSchema,
         WOOCOMMERCE_PALI_CK: requiredText,
         WOOCOMMERCE_PALI_CS: requiredText,
+        WOOCOMMERCE_USERNAME: requiredText,
+        SERATUS_PASSWORD: requiredText,
+        PALI_PASSWORD: requiredText,
         N8N_API_KEY: z.string().min(32),
       })
       .safeParse(process.env);

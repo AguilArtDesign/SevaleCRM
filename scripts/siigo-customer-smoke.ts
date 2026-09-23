@@ -82,6 +82,7 @@ const responses: Response[] = [
       type: 'Customer',
       person_type: 'Company',
       identification: '900746054',
+      check_digit: '4',
     },
     { status: 201 },
   ),
@@ -90,6 +91,7 @@ const responses: Response[] = [
     type: 'Customer',
     person_type: 'Company',
     identification: '900746054',
+    check_digit: '4',
   }),
   Response.json({ pagination: { page: 1, page_size: 25, total_results: 0 }, results: [] }),
   Response.json({
@@ -185,11 +187,11 @@ const company: CreateCustomerInput = {
 };
 
 const created = await service.createCustomer(company);
-if (created.id !== companyId || created.personType !== 'Company') {
+if (created.id !== companyId || created.personType !== 'Company' || created.checkDigit !== '4') {
   throw new Error('createCustomer no conservó el UUID confirmado por Siigo.');
 }
 const updated = await service.updateCustomer(companyId, company);
-if (updated.id !== companyId) {
+if (updated.id !== companyId || updated.checkDigit !== '4') {
   throw new Error('updateCustomer no confirmó el mismo UUID externo.');
 }
 if ((await service.findCustomer('000000000')) !== null) {

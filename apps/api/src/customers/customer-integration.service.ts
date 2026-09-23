@@ -20,7 +20,13 @@ export type CustomerIntegrationResult = {
   provider: CustomerIntegrationProvider;
   status: 'SYNCED' | 'ERROR';
   externalId: string | null;
+  checkDigit: string | null;
   message: string | null;
+};
+
+type CustomerIntegrationSendResult = {
+  externalId: string;
+  checkDigit: string | null;
 };
 
 type SafeError = { code: string; message: string };
@@ -124,7 +130,13 @@ export class CustomerIntegrationService {
       if (result.status === 'fulfilled') return result.value;
       const provider = providers[index] as CustomerIntegrationProvider;
       const error = safeError(result.reason, provider);
-      return { provider, status: 'ERROR', externalId: null, message: error.message };
+      return {
+        provider,
+        status: 'ERROR',
+        externalId: null,
+        checkDigit: null,
+        message: error.message,
+      };
     });
   }
 
@@ -170,16 +182,23 @@ export class CustomerIntegrationService {
         provider,
         siigoLocation,
       );
-      externalId = await this.send(
+      const sent = await this.send(
         provider,
         source,
         externalId,
         customer.id,
         effectiveSiigoLocation,
       );
+      externalId = sent.externalId;
       const syncedAt = new Date();
       await this.integrations.markSynced(customer.id, provider, externalId, syncedAt);
-      return { provider, status: 'SYNCED', externalId, message: null };
+      return {
+        provider,
+        status: 'SYNCED',
+        externalId,
+        checkDigit: sent.checkDigit,
+        message: null,
+      };
     } catch (error) {
       const safe = safeError(error, provider);
       await this.integrations.markError(
@@ -189,7 +208,7 @@ export class CustomerIntegrationService {
         safe.code,
         safe.message,
       );
-      return { provider, status: 'ERROR', externalId, message: safe.message };
+      return { provider, status: 'ERROR', externalId, checkDigit: null, message: safe.message };
     }
   }
 
@@ -244,30 +263,42 @@ export class CustomerIntegrationService {
     externalId: string | null,
     customerId: number,
     siigoLocation?: SiigoLocationSelection,
-  ): Promise<string> {
+  ): Promise<CustomerIntegrationSendResult> {
     if (provider === 'SIIGO') {
       if (externalId) {
-        return (await this.siigo.updateCustomer(externalId, customer, siigoLocation)).id;
+        const updated = await this.siigo.updateCustomer(externalId, customer, siigoLocation);
+        return { externalId: updated.id, checkDigit: updated.checkDigit };
       }
       const existing = await this.siigo.findCustomer(customer.documentNumber);
       if (existing) {
         const expectedType = customer.personType === 'PERSON' ? 'Person' : 'Company';
         if (existing.personType !== expectedType) throw this.conflict('Siigo');
         await this.integrations.rememberExternalId(customerId, provider, existing.id);
-        return (await this.siigo.updateCustomer(existing.id, customer, siigoLocation)).id;
+        const updated = await this.siigo.updateCustomer(existing.id, customer, siigoLocation);
+        return { externalId: updated.id, checkDigit: updated.checkDigit };
       }
-      return (await this.siigo.createCustomer(customer, siigoLocation)).id;
+      const created = await this.siigo.createCustomer(customer, siigoLocation);
+      return { externalId: created.id, checkDigit: created.checkDigit };
     }
 
     if (externalId) {
-      return (await this.woo.updateCustomer(provider, externalId, customer)).id;
+      return {
+        externalId: (await this.woo.updateCustomer(provider, externalId, customer)).id,
+        checkDigit: null,
+      };
     }
     const existing = await this.woo.findCustomer(provider, customer);
     if (existing) {
       await this.integrations.rememberExternalId(customerId, provider, existing.id);
-      return (await this.woo.updateCustomer(provider, existing.id, customer)).id;
+      return {
+        externalId: (await this.woo.updateCustomer(provider, existing.id, customer)).id,
+        checkDigit: null,
+      };
     }
-    return (await this.woo.createCustomer(provider, customer)).id;
+    return {
+      externalId: (await this.woo.createCustomer(provider, customer)).id,
+      checkDigit: null,
+    };
   }
 
   private conflict(label: string): ConflictException {

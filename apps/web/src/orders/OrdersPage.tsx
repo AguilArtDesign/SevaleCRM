@@ -1144,8 +1144,9 @@ export function OrdersPage() {
                 <AlertDialog.Heading>Eliminar pedido</AlertDialog.Heading>
               </AlertDialog.Header>
               <AlertDialog.Body>
-                Se eliminará <strong>{deleteTarget?.operationCode}</strong> únicamente del CRM. Los
-                pedidos ya creados en WooCommerce no se eliminarán.
+                Se eliminará definitivamente la operación{' '}
+                <strong>{deleteTarget?.operationCode}</strong> y todos sus pedidos asociados del CRM
+                local. Los pedidos ya creados en WooCommerce no se eliminarán.
               </AlertDialog.Body>
               <AlertDialog.Footer>
                 <Button
