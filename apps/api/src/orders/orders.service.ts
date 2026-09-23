@@ -398,7 +398,7 @@ export class OrdersService {
     const [customer, products, coupon] = await Promise.all([
       this.orders.findCustomer(input.customerId),
       this.orders.findProducts(input.items.map(({ productId }) => productId)),
-      input.couponId ? this.orders.findActiveCoupon(input.couponId) : Promise.resolve(null),
+      input.couponId ? this.orders.findCoupon(input.couponId) : Promise.resolve(null),
     ]);
     if (!customer) {
       throw businessError(NotFoundException, 'CUSTOMER_NOT_FOUND', 'El cliente no existe.');
@@ -414,7 +414,7 @@ export class OrdersService {
       throw businessError(
         BadRequestException,
         'ORDER_COUPON_NOT_AVAILABLE',
-        'El cupón seleccionado no existe o está desactivado.',
+        'El cupón seleccionado no existe.',
       );
     }
     if (coupon && !resolveCouponType(coupon.type)) {

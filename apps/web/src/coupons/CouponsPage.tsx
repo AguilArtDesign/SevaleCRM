@@ -1,19 +1,36 @@
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import type { Selection } from '@heroui/react';
 import {
   Alert,
   AlertDialog,
   Button,
+  Calendar,
+  Checkbox,
+  DateField,
+  DatePicker,
+  Dropdown,
   Label,
   ListBox,
   Modal,
   SearchField,
+  Separator,
   Spinner,
   Switch,
   Table,
   TextField,
   Typography,
+  toast,
 } from '@heroui/react';
-import { Pencil, Plus, Tag, TrashBin, Xmark } from '@gravity-ui/icons';
+import { parseDate, type CalendarDate } from '@internationalized/date';
+import {
+  EllipsisVertical,
+  ArrowRotateRight,
+  Pencil,
+  Plus,
+  Tag,
+  TrashBin,
+  Xmark,
+} from '@gravity-ui/icons';
 import { hasPermission } from '@sevale/permissions';
 import { couponTypes } from '@sevale/shared';
 import { createCouponSchema } from '@sevale/validation';
@@ -22,16 +39,38 @@ import { Input } from '../components/Input';
 import { getPaginationItems, Pagination } from '../components/Pagination';
 import { Select } from '../components/Select';
 import { useCurrentUser } from '../users/useCurrentUser';
-import { couponsApi, type CouponRecord } from './api';
+import {
+  couponsApi,
+  type CouponRecord,
+  type CouponSyncOutcome,
+  type CouponSyncStatus,
+} from './api';
 
-type ActiveFilter = 'all' | 'active' | 'inactive';
 type FormMode = 'create' | 'edit' | null;
 
-const activeOptions = [
-  { value: 'all', label: 'Todos los estados' },
-  { value: 'active', label: 'Activos' },
-  { value: 'inactive', label: 'Inactivos' },
-] as const;
+const storeLabels: Record<CouponSyncOutcome['store'], string> = {
+  SERATUS: 'Seratus',
+  PALI: 'Pali',
+};
+
+const syncActions: Record<CouponSyncOutcome['action'], string> = {
+  CREATED: 'creado en WooCommerce',
+  UPDATED: 'actualizado en WooCommerce',
+  DELETED: 'eliminado en WooCommerce',
+  SKIPPED: 'no existía previamente',
+  FAILED: 'error',
+};
+
+// Estado de sincronización que se muestra en la tabla.
+const syncStates: Record<
+  CouponSyncStatus,
+  { label: string; color: 'default' | 'success' | 'warning' | 'danger' }
+> = {
+  PENDING: { label: 'Pendiente', color: 'default' },
+  SYNCED: { label: 'Sincronizado', color: 'success' },
+  PARTIAL: { label: 'Parcial', color: 'warning' },
+  ERROR: { label: 'Error', color: 'danger' },
+};
 
 function messageFrom(error: unknown): string {
   return error instanceof Error ? error.message : 'No pudimos completar la solicitud.';
@@ -41,43 +80,70 @@ function typeTitle(type: string): string {
   return couponTypes.find((option) => option.type === type)?.title ?? type;
 }
 
+// El panel maneja la caducidad como 'YYYY-MM-DD' y HeroUI necesita un CalendarDate.
+function expiryValue(value: string): CalendarDate | null {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+  try {
+    return parseDate(value);
+  } catch {
+    return null;
+  }
+}
+
+// Resumen por tienda: cada una se sincroniza de forma independiente y el usuario debe saber cuál falló.
+function syncSummary(outcomes: CouponSyncOutcome[]): string {
+  return outcomes
+    .map((outcome) => {
+      const label = storeLabels[outcome.store];
+      if (outcome.action === 'FAILED') {
+        return `${label}: error (${outcome.errorMessage ?? 'sin detalle'})`;
+      }
+      return `${label}: ${syncActions[outcome.action]}`;
+    })
+    .join(' · ');
+}
+
+function failedStores(outcomes: CouponSyncOutcome[]): CouponSyncOutcome[] {
+  return outcomes.filter((outcome) => outcome.action === 'FAILED');
+}
+
 export function CouponsPage() {
   const { user } = useCurrentUser();
   const role = user?.role;
   const canCreate = Boolean(role && hasPermission(role, 'coupons.create'));
   const canUpdate = Boolean(role && hasPermission(role, 'coupons.update'));
   const canDelete = Boolean(role && hasPermission(role, 'coupons.delete'));
+  const canSync = Boolean(role && hasPermission(role, 'coupons.sync'));
   const [coupons, setCoupons] = useState<CouponRecord[]>([]);
   const [searchDraft, setSearchDraft] = useState('');
   const [search, setSearch] = useState('');
-  const [activeFilter, setActiveFilter] = useState<ActiveFilter>('all');
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
   const [total, setTotal] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [busyId, setBusyId] = useState<number | null>(null);
   const [error, setError] = useState('');
-  const [notice, setNotice] = useState('');
   const [formMode, setFormMode] = useState<FormMode>(null);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [coupon, setCoupon] = useState('');
   const [description, setDescription] = useState('');
   const [type, setType] = useState('percent');
   const [amount, setAmount] = useState('');
-  const [active, setActive] = useState(true);
+  const [dateExpires, setDateExpires] = useState('');
+  const [individualUse, setIndividualUse] = useState(false);
+  const [excludeSaleItems, setExcludeSaleItems] = useState(false);
+  const [usageLimit, setUsageLimit] = useState('');
+  const [usageLimitPerUser, setUsageLimitPerUser] = useState('');
   const [deleteTarget, setDeleteTarget] = useState<CouponRecord | null>(null);
-
-  const activeQuery = useMemo(
-    () => (activeFilter === 'all' ? undefined : activeFilter === 'active'),
-    [activeFilter],
-  );
+  const [selectedKeys, setSelectedKeys] = useState<Selection>(new Set());
 
   const loadCoupons = useCallback(async () => {
     setIsLoading(true);
     setError('');
     try {
-      const result = await couponsApi.list({ search, active: activeQuery, page });
+      const result = await couponsApi.list({ search, page, pageSize });
       setCoupons(result.data);
       setTotal(result.pagination.total);
       setTotalPages(result.pagination.totalPages);
@@ -87,11 +153,28 @@ export function CouponsPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [activeQuery, page, search]);
+  }, [page, pageSize, search]);
 
   useEffect(() => {
     void loadCoupons();
   }, [loadCoupons]);
+
+  // La selección se guarda por identificador y se acota a la página actual, igual que en las
+  // tablas de Inventario y Clientes. Las acciones en lote se añadirán más adelante.
+  const selectedIdSet = selectedKeys === 'all' ? new Set<number>() : selectedKeys;
+  const currentPageIds = new Set(coupons.map((coupon) => coupon.id));
+  const currentPageSelection = new Set(
+    [...selectedIdSet].filter((key) => currentPageIds.has(Number(key))),
+  );
+  const updatePageSelection = (selection: Selection) => {
+    setSelectedKeys((current) => {
+      const next = new Set(current === 'all' ? [] : current);
+      currentPageIds.forEach((id) => next.delete(id));
+      if (selection === 'all') currentPageIds.forEach((id) => next.add(id));
+      else selection.forEach((key) => next.add(Number(key)));
+      return next;
+    });
+  };
 
   const closeForm = () => {
     setFormMode(null);
@@ -100,33 +183,50 @@ export function CouponsPage() {
     setDescription('');
     setType('percent');
     setAmount('');
-    setActive(true);
+    setDateExpires('');
+    setIndividualUse(false);
+    setExcludeSaleItems(false);
+    setUsageLimit('');
+    setUsageLimitPerUser('');
   };
 
   const openCreate = () => {
     setError('');
-    setNotice('');
     closeForm();
     setFormMode('create');
   };
 
   const openEdit = (selected: CouponRecord) => {
     setError('');
-    setNotice('');
     setFormMode('edit');
     setEditingId(selected.id);
     setCoupon(selected.coupon);
     setDescription(selected.description ?? '');
     setType(selected.type);
     setAmount(String(selected.amount));
-    setActive(selected.active);
+    setDateExpires(selected.dateExpires ? selected.dateExpires.slice(0, 10) : '');
+    setIndividualUse(selected.individualUse);
+    setExcludeSaleItems(selected.excludeSaleItems);
+    setUsageLimit(selected.usageLimit === null ? '' : String(selected.usageLimit));
+    setUsageLimitPerUser(
+      selected.usageLimitPerUser === null ? '' : String(selected.usageLimitPerUser),
+    );
   };
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     setError('');
-    setNotice('');
-    const payload = { coupon, description, type, amount, active };
+    const payload = {
+      coupon,
+      description,
+      type,
+      amount,
+      dateExpires: dateExpires || null,
+      individualUse,
+      excludeSaleItems,
+      usageLimit: usageLimit || null,
+      usageLimitPerUser: usageLimitPerUser || null,
+    };
     const parsed = createCouponSchema.safeParse(payload);
     if (!parsed.success) {
       setError(parsed.error.issues[0]?.message || 'Revisa los datos del cupón.');
@@ -135,13 +235,12 @@ export function CouponsPage() {
 
     setIsSubmitting(true);
     try {
-      if (formMode === 'create') {
-        await couponsApi.create(parsed.data);
-        setNotice('Cupón creado correctamente.');
-      } else if (editingId) {
-        await couponsApi.update(editingId, parsed.data);
-        setNotice('Cupón actualizado correctamente.');
-      }
+      const verb = formMode === 'create' ? 'creado' : 'actualizado';
+      if (formMode === 'create') await couponsApi.create(parsed.data);
+      else if (editingId) await couponsApi.update(editingId, parsed.data);
+      toast.success(
+        `Cupón ${verb} en el CRM. Usa Sincronizar en las acciones para enviarlo a Seratus y Pali.`,
+      );
       closeForm();
       await loadCoupons();
     } catch (submitError) {
@@ -151,36 +250,20 @@ export function CouponsPage() {
     }
   };
 
-  const changeActive = async (selected: CouponRecord) => {
-    setBusyId(selected.id);
-    setError('');
-    setNotice('');
-    try {
-      if (selected.active) {
-        await couponsApi.update(selected.id, { active: false });
-        setNotice(`El cupón “${selected.coupon}” fue desactivado.`);
-      } else {
-        await couponsApi.update(selected.id, { active: true });
-        setNotice(`El cupón “${selected.coupon}” fue activado.`);
-      }
-      await loadCoupons();
-    } catch (changeError) {
-      setError(messageFrom(changeError));
-    } finally {
-      setBusyId(null);
-    }
-  };
-
   const removeCoupon = async () => {
     if (!deleteTarget || busyId !== null) return;
     const target = deleteTarget;
     setBusyId(target.id);
     setError('');
-    setNotice('');
     try {
-      await couponsApi.remove(target.id);
+      const result = await couponsApi.remove(target.id);
+      setSelectedKeys((current) => {
+        const next = new Set(current === 'all' ? [] : current);
+        next.delete(target.id);
+        return next;
+      });
       setDeleteTarget(null);
-      setNotice(`El cupón “${target.coupon}” fue eliminado definitivamente.`);
+      toast.success(`El cupón “${target.coupon}” fue eliminado. ${syncSummary(result.sync)}`);
       await loadCoupons();
     } catch (deleteError) {
       setError(messageFrom(deleteError));
@@ -189,14 +272,36 @@ export function CouponsPage() {
     }
   };
 
+  const synchronizeCoupon = async (selected: CouponRecord) => {
+    if (busyId !== null) return;
+    setBusyId(selected.id);
+    setError('');
+    try {
+      const result = await couponsApi.synchronize(selected.id);
+      const failures = failedStores(result.sync);
+      if (failures.length > 0) {
+        setError(
+          `El cupón “${selected.coupon}” no se sincronizó por completo. ${syncSummary(failures)}`,
+        );
+      } else {
+        toast.success(
+          `El cupón “${selected.coupon}” quedó sincronizado. ${syncSummary(result.sync)}`,
+        );
+      }
+      await loadCoupons();
+    } catch (syncError) {
+      setError(messageFrom(syncError));
+    } finally {
+      setBusyId(null);
+    }
+  };
+
   return (
     <section className="coupons-layout">
       <div className="page-heading-row">
-        <div>
+        <div className="coupons-heading">
           <Typography.Heading level={2}>Cupones</Typography.Heading>
-          <Typography.Paragraph color="muted" size="sm">
-            Administra los descuentos permitidos para nuevas operaciones.
-          </Typography.Paragraph>
+          <Chip>{total}</Chip>
         </div>
         {canCreate && (
           <Button variant="primary" onPress={openCreate}>
@@ -227,43 +332,12 @@ export function CouponsPage() {
             <SearchField.ClearButton />
           </SearchField.Group>
         </SearchField>
-
-        <Select
-          aria-label="Filtrar cupones por estado"
-          value={activeFilter}
-          onChange={(value) => {
-            setActiveFilter(String(value) as ActiveFilter);
-            setPage(1);
-          }}
-        >
-          <Select.Trigger>
-            <Select.Value />
-            <Select.Indicator />
-          </Select.Trigger>
-          <Select.Popover>
-            <ListBox>
-              {activeOptions.map((option) => (
-                <ListBox.Item key={option.value} id={option.value} textValue={option.label}>
-                  {option.label}
-                  <ListBox.ItemIndicator />
-                </ListBox.Item>
-              ))}
-            </ListBox>
-          </Select.Popover>
-        </Select>
       </div>
 
       {error && !formMode && (
         <Alert status="danger">
           <Alert.Content>
             <Alert.Description>{error}</Alert.Description>
-          </Alert.Content>
-        </Alert>
-      )}
-      {notice && (
-        <Alert status="success">
-          <Alert.Content>
-            <Alert.Description>{notice}</Alert.Description>
           </Alert.Content>
         </Alert>
       )}
@@ -281,20 +355,54 @@ export function CouponsPage() {
             <span>Crea el primero o cambia los filtros.</span>
           </div>
         ) : (
-          <Table variant="secondary">
+          <Table>
             <Table.ScrollContainer>
-              <Table.Content aria-label="Cupones del CRM">
+              <Table.Content
+                aria-label="Cupones del CRM"
+                selectionMode={canDelete ? 'multiple' : 'none'}
+                selectedKeys={canDelete ? currentPageSelection : new Set()}
+                onSelectionChange={canDelete ? updatePageSelection : undefined}
+              >
                 <Table.Header>
+                  {canDelete && (
+                    <Table.Column id="selection" className="inventory-selection-column">
+                      <Checkbox
+                        slot="selection"
+                        aria-label="Seleccionar todos los cupones de esta página"
+                      >
+                        <Checkbox.Content>
+                          <Checkbox.Control>
+                            <Checkbox.Indicator />
+                          </Checkbox.Control>
+                        </Checkbox.Content>
+                      </Checkbox>
+                    </Table.Column>
+                  )}
                   <Table.Column isRowHeader>Cupón</Table.Column>
                   <Table.Column>Descripción</Table.Column>
                   <Table.Column>Tipo</Table.Column>
                   <Table.Column>Valor</Table.Column>
-                  <Table.Column>Estado</Table.Column>
-                  <Table.Column>Acciones</Table.Column>
+                  <Table.Column>Sincronización</Table.Column>
+                  <Table.Column className="inventory-actions-column">Acciones</Table.Column>
                 </Table.Header>
                 <Table.Body>
                   {coupons.map((listedCoupon) => (
                     <Table.Row key={listedCoupon.id} id={listedCoupon.id}>
+                      {canDelete && (
+                        <Table.Cell className="inventory-selection-cell">
+                          <Checkbox
+                            slot="selection"
+                            aria-label={`Seleccionar ${listedCoupon.coupon}`}
+                            variant="secondary"
+                          >
+                            <Checkbox.Content>
+                              <Checkbox.Control>
+                                <Checkbox.Indicator />
+                              </Checkbox.Control>
+                            </Checkbox.Content>
+                          </Checkbox>
+                        </Table.Cell>
+                      )}
                       <Table.Cell>
                         <strong>{listedCoupon.coupon}</strong>
                       </Table.Cell>
@@ -302,42 +410,82 @@ export function CouponsPage() {
                       <Table.Cell>{typeTitle(listedCoupon.type)}</Table.Cell>
                       <Table.Cell>{listedCoupon.amount}%</Table.Cell>
                       <Table.Cell>
-                        <Chip color={listedCoupon.active ? 'success' : 'default'}>
-                          {listedCoupon.active ? 'Activo' : 'Inactivo'}
+                        <Chip color={syncStates[listedCoupon.syncStatus].color}>
+                          {syncStates[listedCoupon.syncStatus].label}
                         </Chip>
                       </Table.Cell>
-                      <Table.Cell>
-                        <div className="coupon-actions">
-                          {canUpdate && (
+                      <Table.Cell
+                        onClick={(event) => event.stopPropagation()}
+                        onPointerDown={(event) => event.stopPropagation()}
+                      >
+                        <div className="inventory-row-actions">
+                          <Dropdown>
                             <Button
+                              className="inventory-actions-trigger"
+                              isIconOnly
                               size="sm"
                               variant="ghost"
-                              onPress={() => openEdit(listedCoupon)}
+                              aria-label={`Acciones para el cupón ${listedCoupon.coupon}`}
                             >
-                              <Pencil width={16} height={16} />
-                              Editar
+                              <EllipsisVertical className="text-muted" width={17} height={17} />
                             </Button>
-                          )}
-                          {canUpdate && (
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              isPending={busyId === listedCoupon.id}
-                              onPress={() => void changeActive(listedCoupon)}
+                            <Dropdown.Popover
+                              className="inventory-actions-popover"
+                              placement="bottom end"
                             >
-                              {listedCoupon.active ? 'Desactivar' : 'Activar'}
-                            </Button>
-                          )}
-                          {canDelete && (
-                            <Button
-                              size="sm"
-                              variant="danger-soft"
-                              onPress={() => setDeleteTarget(listedCoupon)}
-                            >
-                              <TrashBin width={16} height={16} />
-                              Eliminar
-                            </Button>
-                          )}
+                              <Dropdown.Menu
+                                aria-label={`Acciones para el cupón ${listedCoupon.coupon}`}
+                                onAction={(key) => {
+                                  if (String(key) === 'sync' && canSync) {
+                                    void synchronizeCoupon(listedCoupon);
+                                  }
+                                  if (String(key) === 'edit' && canUpdate) openEdit(listedCoupon);
+                                  if (String(key) === 'delete' && canDelete) {
+                                    setDeleteTarget(listedCoupon);
+                                  }
+                                }}
+                              >
+                                {(canSync || canUpdate) && (
+                                  <Dropdown.Section>
+                                    {canSync && (
+                                      <Dropdown.Item id="sync" textValue="Sincronizar cupón">
+                                        <ArrowRotateRight
+                                          className="size-4 shrink-0 text-muted"
+                                          aria-hidden="true"
+                                        />
+                                        <Label>Sincronizar</Label>
+                                      </Dropdown.Item>
+                                    )}
+                                    {canUpdate && (
+                                      <Dropdown.Item id="edit" textValue="Editar cupón">
+                                        <Pencil
+                                          className="size-4 shrink-0 text-muted"
+                                          aria-hidden="true"
+                                        />
+                                        <Label>Editar</Label>
+                                      </Dropdown.Item>
+                                    )}
+                                  </Dropdown.Section>
+                                )}
+                                {(canSync || canUpdate) && canDelete && <Separator />}
+                                {canDelete && (
+                                  <Dropdown.Section>
+                                    <Dropdown.Item
+                                      id="delete"
+                                      textValue="Eliminar cupón"
+                                      variant="danger"
+                                    >
+                                      <TrashBin
+                                        className="size-4 shrink-0 text-danger"
+                                        aria-hidden="true"
+                                      />
+                                      <Label>Eliminar</Label>
+                                    </Dropdown.Item>
+                                  </Dropdown.Section>
+                                )}
+                              </Dropdown.Menu>
+                            </Dropdown.Popover>
+                          </Dropdown>
                         </div>
                       </Table.Cell>
                     </Table.Row>
@@ -350,7 +498,33 @@ export function CouponsPage() {
 
         <Pagination aria-label="Paginación de cupones">
           <Pagination.Summary>
-            {total} {total === 1 ? 'cupón' : 'cupones'}
+            <span className="customers-page-size-control">
+              Filas por página
+              <Select
+                className="customers-page-size"
+                value={String(pageSize)}
+                aria-label="Filas por página"
+                onChange={(selected) => {
+                  setPageSize(Number(selected));
+                  setPage(1);
+                }}
+              >
+                <Select.Trigger>
+                  <Select.Value />
+                  <Select.Indicator />
+                </Select.Trigger>
+                <Select.Popover>
+                  <ListBox>
+                    {[10, 20, 50, 100].map((size) => (
+                      <ListBox.Item key={size} id={String(size)}>
+                        {size}
+                        <ListBox.ItemIndicator />
+                      </ListBox.Item>
+                    ))}
+                  </ListBox>
+                </Select.Popover>
+              </Select>
+            </span>
           </Pagination.Summary>
           <Pagination.Content>
             <Pagination.Item>
@@ -476,17 +650,104 @@ export function CouponsPage() {
                       placeholder="20"
                     />
                   </TextField>
+                  <DatePicker
+                    name="dateExpires"
+                    value={expiryValue(dateExpires)}
+                    onChange={(value) => setDateExpires(value ? value.toString() : '')}
+                  >
+                    <Label>Fecha de caducidad</Label>
+                    <DateField.Group fullWidth variant="secondary">
+                      <DateField.Input>
+                        {(segment) => <DateField.Segment segment={segment} />}
+                      </DateField.Input>
+                      <DateField.Suffix>
+                        <DatePicker.Trigger>
+                          <DatePicker.TriggerIndicator />
+                        </DatePicker.Trigger>
+                      </DateField.Suffix>
+                    </DateField.Group>
+                    <DatePicker.Popover>
+                      <Calendar aria-label="Fecha de caducidad del cupón">
+                        <Calendar.Header>
+                          <Calendar.YearPickerTrigger>
+                            <Calendar.YearPickerTriggerHeading />
+                            <Calendar.YearPickerTriggerIndicator />
+                          </Calendar.YearPickerTrigger>
+                          <Calendar.NavButton slot="previous" />
+                          <Calendar.NavButton slot="next" />
+                        </Calendar.Header>
+                        <Calendar.Grid>
+                          <Calendar.GridHeader>
+                            {(day) => <Calendar.HeaderCell>{day}</Calendar.HeaderCell>}
+                          </Calendar.GridHeader>
+                          <Calendar.GridBody>
+                            {(date) => <Calendar.Cell date={date} />}
+                          </Calendar.GridBody>
+                        </Calendar.Grid>
+                        <Calendar.YearPickerGrid>
+                          <Calendar.YearPickerGridBody>
+                            {({ year }) => <Calendar.YearPickerCell year={year} />}
+                          </Calendar.YearPickerGridBody>
+                        </Calendar.YearPickerGrid>
+                      </Calendar>
+                    </DatePicker.Popover>
+                  </DatePicker>
                   <div className="coupon-active-control">
                     <div>
-                      <strong>Cupón activo</strong>
-                      <span>Solo los cupones activos aparecen en nuevos pedidos.</span>
+                      <strong>Uso individual</strong>
+                      <span>Impide combinar el cupón con otros descuentos.</span>
                     </div>
-                    <Switch aria-label="Cupón activo" isSelected={active} onChange={setActive}>
-                      <Switch.Control>
-                        <Switch.Thumb />
-                      </Switch.Control>
+                    <Switch
+                      aria-label="Uso individual"
+                      isSelected={individualUse}
+                      onChange={setIndividualUse}
+                    >
+                      <Switch.Content>
+                        <Switch.Control>
+                          <Switch.Thumb />
+                        </Switch.Control>
+                      </Switch.Content>
                     </Switch>
                   </div>
+                  <div className="coupon-active-control">
+                    <div>
+                      <strong>Excluir artículos rebajados</strong>
+                      <span>No aplica el descuento a productos en promoción.</span>
+                    </div>
+                    <Switch
+                      aria-label="Excluir artículos rebajados"
+                      isSelected={excludeSaleItems}
+                      onChange={setExcludeSaleItems}
+                    >
+                      <Switch.Content>
+                        <Switch.Control>
+                          <Switch.Thumb />
+                        </Switch.Control>
+                      </Switch.Content>
+                    </Switch>
+                  </div>
+                  <TextField fullWidth name="usageLimit" type="number">
+                    <Label>Límite de uso por cupón</Label>
+                    <Input
+                      variant="secondary"
+                      min="1"
+                      step="1"
+                      value={usageLimit}
+                      onChange={(event) => setUsageLimit(event.target.value)}
+                      placeholder="Sin límite"
+                    />
+                  </TextField>
+                  <TextField fullWidth name="usageLimitPerUser" type="number">
+                    <Label>Límite de uso por usuario</Label>
+                    <Input
+                      variant="secondary"
+                      min="1"
+                      step="1"
+                      value={usageLimitPerUser}
+                      onChange={(event) => setUsageLimitPerUser(event.target.value)}
+                      placeholder="Sin límite"
+                    />
+                  </TextField>
                 </Modal.Body>
                 <Modal.Footer>
                   <Button variant="ghost" onPress={closeForm} isDisabled={isSubmitting}>
@@ -516,8 +777,9 @@ export function CouponsPage() {
                 <AlertDialog.Heading>Eliminar cupón</AlertDialog.Heading>
               </AlertDialog.Header>
               <AlertDialog.Body>
-                Se eliminará definitivamente <strong>{deleteTarget?.coupon}</strong>. Los pedidos
-                que ya lo utilizaron conservarán la información histórica del cupón.
+                Se eliminará definitivamente <strong>{deleteTarget?.coupon}</strong> del CRM, de
+                Seratus y de Pali. Los pedidos que ya lo utilizaron conservarán la información
+                histórica del cupón.
               </AlertDialog.Body>
               <AlertDialog.Footer>
                 <Button

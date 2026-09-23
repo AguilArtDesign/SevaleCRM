@@ -191,9 +191,25 @@ El formulario replica el límite para avisar antes de enviar, pero la API es la 
 
 Un producto cuyo precio fue modificado a la baja **queda excluido de la base del cupón**, mientras que los productos sin modificar sí lo reciben. Si un producto cuesta 127.000 y el comercial lo deja en 100.000, ese producto no participa del descuento aunque la operación tenga un cupón aplicado.
 
-El descuento se calcula por tienda sobre la suma de los productos elegibles y luego se consolida, de modo que un producto modificado en una tienda no altera la base del cupón de la otra. El catálogo de tipos de cupón se limita a porcentaje (`percent`) y vive en `packages/shared/src/coupon-types.json`. Solo se puede aplicar un cupón activo al crear o editar una operación pendiente.
+El descuento se calcula por tienda sobre la suma de los productos elegibles y luego se consolida, de modo que un producto modificado en una tienda no altera la base del cupón de la otra. El catálogo de tipos de cupón se limita a porcentaje (`percent`) y vive en `packages/shared/src/coupon-types.json`.
 
-El código, el tipo y el importe del cupón se guardan como snapshot en la operación: editar, desactivar o eliminar el cupón después no modifica los pedidos ya creados.
+El código, el tipo y el importe del cupón se guardan como snapshot en la operación: editar o eliminar el cupón después no modifica los pedidos ya creados. La relación con la operación es `onDelete: SetNull`, de modo que el histórico sobrevive al borrado del cupón.
+
+### Sincronización de cupones con Seratus y Pali
+
+El CRM es la fuente principal de los cupones. Crear o editar un cupón **solo** modifica el registro local: el envío a las tiendas es una acción explícita, `POST /api/coupons/:id/sync`, disponible en el menú de acciones de cada fila y protegida por el permiso `coupons.sync`.
+
+La sincronización usa `POST {SERATUS_API_URL}/coupons` y `POST {PALI_API_URL}/coupons`, o `PUT /coupons/{id}` cuando el cupón ya tiene identificador externo. Así el mismo botón recupera una sincronización parcial anterior: las tiendas con identificador se actualizan y solo las que no lo tienen crean el cupón. El borrado sí actúa sobre las tiendas y usa `DELETE /coupons/{id}?force=true` en ambas.
+
+Los datos se mapean a `code`, `description`, `discount_type`, `amount`, `date_expires`, `individual_use`, `exclude_sale_items`, `usage_limit` y `usage_limit_per_user`. El tipo de descuento se envía tal como está almacenado, sin codificarlo. La caducidad se guarda como fecha de calendario a las 23:59:59 UTC y se recompone en la zona horaria del sitio, que es la que espera WooCommerce.
+
+Las dos tiendas son sincronizaciones independientes: cada identificador se persiste en `seratus_coupon_id` o `pali_coupon_id` en cuanto la tienda confirma, aunque la otra falle. Un fallo de WooCommerce no revierte el cupón local ni pierde el identificador ya obtenido.
+
+El campo `sync_status` resume el resultado y es lo que muestra la columna Sincronización: `SYNCED` cuando ambas tiendas quedaron al día, `PARTIAL` cuando solo una, `ERROR` cuando fallaron las dos y `PENDING` mientras el cupón no se haya enviado o tenga cambios locales posteriores. Toda edición devuelve el cupón a `PENDING`, porque los identificadores externos por sí solos no permiten distinguir «pendiente» de «error»: si ambas tiendas fallan, ningún identificador se guarda y sin este campo el cupón parecería recién creado.
+
+En los campos opcionales, «sin restricción» no se expresa igual en todos: la caducidad se envía como cadena vacía, porque su campo es de tipo texto y WooCommerce la normaliza a «sin expiración» con `StringUtil::is_null_or_empty`. Los límites de uso son enteros y WordPress rechaza la cadena vacía con `400 Invalid parameter(s): usage_limit`, mientras que un `null` es ignorado por el controlador y no borraría nada; por eso se envía `0`, que es el mismo valor que guarda el panel de WooCommerce al dejar el campo vacío y que su validación interpreta como «sin límite». De ese modo, quitar una fecha o un límite desde el CRM también lo quita en las tiendas.
+
+El borrado se propaga a las dos tiendas **antes** de eliminar el registro local. Si una tienda falla, el cupón se conserva con su identificador para poder reintentar y la API responde `409` con el código `COUPON_DELETE_INCOMPLETE`. Así nunca queda un cupón vigente en WooCommerce sin forma de localizarlo. La tabla del panel muestra, por cupón, si está sincronizado en Seratus y en Pali.
 
 Como el precio manual nunca puede superar el valor original, toda modificación es por definición una baja: `price_modified` es verdadero exactamente en los productos que quedan fuera de la base del cupón. `npm run test:orders` verifica ese límite exacto, el rechazo por excederlo y la exclusión del cupón.
 

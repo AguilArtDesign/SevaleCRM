@@ -3994,7 +3994,6 @@ select {
 
 .page-heading-row,
 .coupons-toolbar,
-.coupon-actions,
 .coupon-active-control {
   display: flex;
   align-items: center;
@@ -4026,6 +4025,12 @@ select {
   width: 12rem;
 }
 
+.coupons-heading {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+}
+
 .coupons-table-shell {
   display: flex;
   min-height: 28rem;
@@ -4039,6 +4044,17 @@ select {
 
 .coupons-table-shell .table {
   flex: 1;
+}
+
+.coupons-table-shell .table__content {
+  min-width: 62rem;
+}
+
+.coupons-table-shell .table__row:last-child,
+.coupons-table-shell .table__row:only-child,
+.coupons-table-shell .table__row:last-child .table__cell,
+.coupons-table-shell .table__row:only-child .table__cell {
+  border-bottom: 0;
 }
 
 .coupons-table-shell .pagination {
@@ -4056,7 +4072,6 @@ select {
   text-align: center;
 }
 
-.coupon-actions,
 .user-row-actions {
   gap: 0.3rem;
 }
@@ -4073,6 +4088,7 @@ select {
 .coupon-form-body {
   display: grid;
   gap: 1rem;
+  overflow-y: auto;
 }
 
 .coupon-active-control {

@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import type { Store } from '../../generated/prisma/client.js';
 import {
+  integrationDelete,
   integrationGet,
   integrationPost,
   integrationPut,
@@ -75,6 +76,26 @@ export type WooCommerceShipmentUpdate = {
   carrier: string;
   trackingNumber: string;
   status: string;
+};
+
+export type WooCommerceCouponPayload = {
+  code: string;
+  description: string;
+  discount_type: string;
+  amount: string;
+  date_expires: string;
+  individual_use: boolean;
+  exclude_sale_items: boolean;
+  // Sin límite se envía 0, no cadena vacía ni null: WordPress rechaza la cadena vacía en campos
+  // de tipo entero y el controlador ignora un null, de modo que 0 es el único valor que borra la
+  // restricción. Es además lo que almacena el propio panel de WooCommerce al dejar el campo vacío
+  // (WC_Coupon::set_usage_limit aplica absint) y su validación lo interpreta como "sin límite".
+  usage_limit: number;
+  usage_limit_per_user: number;
+};
+
+export type WooCommerceCouponReference = {
+  id: string;
 };
 
 function isRecord(value: unknown): value is UnknownRecord {
@@ -390,5 +411,73 @@ export class WooCommerceService {
           : `${config.label} no confirmó la actualización del producto.`;
       return { productId: update.productId, success: false, error: message };
     });
+  }
+
+  async createCoupon(
+    store: Store,
+    payload: WooCommerceCouponPayload,
+  ): Promise<WooCommerceCouponReference> {
+    const config = wooCommerceConfiguration(store);
+    const response = await integrationPost(
+      integrationUrl(config.apiUrl, 'coupons'),
+      wooCommerceAuthorizationHeaders(config),
+      payload,
+      config.label,
+      { timeoutMs: 20_000 },
+    );
+    return this.confirmCoupon(response, payload, config.label);
+  }
+
+  async updateCoupon(
+    store: Store,
+    couponId: number,
+    payload: WooCommerceCouponPayload,
+  ): Promise<WooCommerceCouponReference> {
+    const config = wooCommerceConfiguration(store);
+    const id = identifier(couponId);
+    if (!id) throw invalidIntegrationResponse(config.label);
+    const response = await integrationPut(
+      integrationUrl(config.apiUrl, `coupons/${id}`),
+      wooCommerceAuthorizationHeaders(config),
+      payload,
+      config.label,
+      { timeoutMs: 20_000, retryCount: 1 },
+    );
+    const result = this.confirmCoupon(response, payload, config.label);
+    if (result.id !== id) throw invalidIntegrationResponse(config.label);
+    return result;
+  }
+
+  async deleteCoupon(store: Store, couponId: number): Promise<void> {
+    const config = wooCommerceConfiguration(store);
+    const id = identifier(couponId);
+    if (!id) throw invalidIntegrationResponse(config.label);
+    const url = integrationUrl(config.apiUrl, `coupons/${id}`);
+    // Sin force, WooCommerce mueve el cupón a la papelera y mantiene el código ocupado.
+    url.searchParams.set('force', 'true');
+    const response = await integrationDelete(
+      url,
+      wooCommerceAuthorizationHeaders(config),
+      config.label,
+      { timeoutMs: 20_000, retryCount: 1 },
+    );
+    if (!isRecord(response) || response.deleted !== true) {
+      throw invalidIntegrationResponse(config.label);
+    }
+  }
+
+  private confirmCoupon(
+    response: unknown,
+    expected: WooCommerceCouponPayload,
+    label: string,
+  ): WooCommerceCouponReference {
+    if (!isRecord(response)) throw invalidIntegrationResponse(label);
+    const id = identifier(response.id);
+    if (!id) throw invalidIntegrationResponse(label);
+    // WooCommerce normaliza el código a minúsculas; el CRM lo envía ya normalizado.
+    if (typeof response.code === 'string' && response.code !== expected.code) {
+      throw invalidIntegrationResponse(label);
+    }
+    return { id };
   }
 }

@@ -28,6 +28,7 @@ export const permissions = [
   'coupons.create',
   'coupons.update',
   'coupons.delete',
+  'coupons.sync',
 ] as const;
 
 export type Role = (typeof roles)[number];

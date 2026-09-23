@@ -56,6 +56,12 @@ export class CouponsController {
     );
   }
 
+  @Post(':id/sync')
+  @RequirePermissions('coupons.sync')
+  synchronize(@Param('id') id: string) {
+    return this.coupons.synchronize(parseInput(couponIdSchema, id));
+  }
+
   @Delete(':id')
   @RequirePermissions('coupons.delete')
   remove(@Param('id') id: string) {

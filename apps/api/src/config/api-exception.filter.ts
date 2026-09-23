@@ -36,6 +36,14 @@ function isSafeError(value: unknown): value is SafeError {
   );
 }
 
+// El cliente recibe siempre un mensaje genérico; la causa técnica queda solo en el log del servidor,
+// porque sin ella un 500 no es diagnosticable (por ejemplo, un error de esquema de Prisma).
+function describeCause(exception: unknown): string {
+  if (exception instanceof HttpException) return '';
+  if (exception instanceof Error) return exception.message;
+  return typeof exception === 'string' ? exception : '';
+}
+
 @Catch()
 export class ApiExceptionFilter implements ExceptionFilter {
   private readonly logger = new Logger(ApiExceptionFilter.name);
@@ -59,8 +67,9 @@ export class ApiExceptionFilter implements ExceptionFilter {
         };
 
     if (status >= 500) {
+      const cause = describeCause(exception);
       this.logger.error(
-        `Solicitud fallida (${status}) ${request.method} ${request.routeOptions?.url || 'ruta desconocida'}`,
+        `Solicitud fallida (${status}) ${request.method} ${request.routeOptions?.url || 'ruta desconocida'}${cause ? `: ${cause}` : ''}`,
       );
     }
     void reply.status(status).send(payload);

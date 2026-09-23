@@ -166,8 +166,8 @@ function operationData(operation: PreparedOperation) {
 export class OrdersRepository {
   constructor(private readonly prisma: PrismaService) {}
 
-  findActiveCoupon(id: number) {
-    return this.prisma.coupon.findFirst({ where: { id, active: true } });
+  findCoupon(id: number) {
+    return this.prisma.coupon.findUnique({ where: { id } });
   }
 
   list(query: OrderListQuery) {

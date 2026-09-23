@@ -1,15 +1,42 @@
 import type { CreateCouponInput, UpdateCouponInput } from '@sevale/validation';
 import { apiUrl } from '../config/api-url';
 
+export type CouponSyncAction = 'CREATED' | 'UPDATED' | 'DELETED' | 'SKIPPED' | 'FAILED';
+
+export type CouponSyncStatus = 'PENDING' | 'SYNCED' | 'PARTIAL' | 'ERROR';
+
+export type CouponSyncOutcome = {
+  store: 'SERATUS' | 'PALI';
+  action: CouponSyncAction;
+  externalId: number | null;
+  errorCode: string | null;
+  errorMessage: string | null;
+};
+
 export type CouponRecord = {
   id: number;
   coupon: string;
   description: string | null;
   type: string;
   amount: number;
-  active: boolean;
+  dateExpires: string | null;
+  individualUse: boolean;
+  excludeSaleItems: boolean;
+  usageLimit: number | null;
+  usageLimitPerUser: number | null;
+  seratusCouponId: number | null;
+  paliCouponId: number | null;
+  syncStatus: CouponSyncStatus;
   createdAt: string;
   updatedAt: string;
+};
+
+export type CouponSyncResult = CouponRecord & { sync: CouponSyncOutcome[] };
+
+export type CouponDeleteResult = {
+  deleted: true;
+  coupon: CouponRecord;
+  sync: CouponSyncOutcome[];
 };
 
 export type CouponListResponse = {
@@ -19,7 +46,6 @@ export type CouponListResponse = {
 
 type CouponListInput = {
   search: string;
-  active?: boolean;
   page: number;
   pageSize?: number;
 };
@@ -43,7 +69,7 @@ async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const couponsApi = {
-  list: ({ search, active, page, pageSize = 20 }: CouponListInput) => {
+  list: ({ search, page, pageSize = 20 }: CouponListInput) => {
     const query = new URLSearchParams({
       search,
       page: String(page),
@@ -51,7 +77,6 @@ export const couponsApi = {
       sort: 'createdAt',
       order: 'desc',
     });
-    if (active !== undefined) query.set('active', String(active));
     return apiRequest<CouponListResponse>(`/api/coupons?${query}`);
   },
   create: (input: CreateCouponInput) =>
@@ -64,5 +89,8 @@ export const couponsApi = {
       method: 'PATCH',
       body: JSON.stringify(input),
     }),
-  remove: (id: number) => apiRequest<CouponRecord>(`/api/coupons/${id}`, { method: 'DELETE' }),
+  synchronize: (id: number) =>
+    apiRequest<CouponSyncResult>(`/api/coupons/${id}/sync`, { method: 'POST' }),
+  remove: (id: number) =>
+    apiRequest<CouponDeleteResult>(`/api/coupons/${id}`, { method: 'DELETE' }),
 };

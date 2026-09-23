@@ -81,6 +81,13 @@ enum WebhookDeliveryStatus {
   ERROR
 }
 
+enum CouponSyncStatus {
+  PENDING
+  SYNCED
+  PARTIAL
+  ERROR
+}
+
 model User {
   id                String             @id @default(uuid()) @db.VarChar(36)
   name              String             @db.VarChar(191)
@@ -287,17 +294,23 @@ model Product {
 }
 
 model Coupon {
-  id              Int              @id @default(autoincrement())
-  coupon          String           @unique @db.VarChar(64)
-  description     String?          @db.VarChar(255)
-  type            String           @db.VarChar(32)
-  amount          Decimal          @db.Decimal(7, 2)
-  active          Boolean          @default(true)
-  createdAt       DateTime         @default(now()) @map("created_at")
-  updatedAt       DateTime         @updatedAt @map("updated_at")
-  orderOperations OrderOperation[]
+  id                Int              @id @default(autoincrement())
+  coupon            String           @unique @db.VarChar(64)
+  description       String?          @db.VarChar(255)
+  type              String           @db.VarChar(32)
+  amount            Decimal          @db.Decimal(7, 2)
+  dateExpires       DateTime?        @map("date_expires")
+  individualUse     Boolean          @default(false) @map("individual_use")
+  excludeSaleItems  Boolean          @default(false) @map("exclude_sale_items")
+  usageLimit        Int?             @map("usage_limit")
+  usageLimitPerUser Int?             @map("usage_limit_per_user")
+  seratusCouponId   Int?             @map("seratus_coupon_id")
+  paliCouponId      Int?             @map("pali_coupon_id")
+  syncStatus        CouponSyncStatus @default(PENDING) @map("sync_status")
+  createdAt         DateTime         @default(now()) @map("created_at")
+  updatedAt         DateTime         @updatedAt @map("updated_at")
+  orderOperations   OrderOperation[]
 
-  @@index([active])
   @@index([type])
   @@index([createdAt])
   @@map("coupons")

@@ -520,6 +520,51 @@ const couponCodeSchema = z
     'El cupón solo puede contener letras, números, guiones y guiones bajos.',
   );
 
+const couponIsoDatePattern = /^(\d{4})-(\d{1,2})-(\d{1,2})/;
+
+// El formulario valida con este mismo esquema antes de enviar y serializa el Date resultante
+// como datetime ISO, de modo que la API recibe 'YYYY-MM-DDTHH:mm:ss.sssZ'. Se normaliza
+// cualquier variante al día para que el esquema sea idempotente sobre su propia salida.
+function normalizeCouponExpires(value: string): string {
+  const match = couponIsoDatePattern.exec(value);
+  if (!match) return value;
+  const [, year, month, day] = match;
+  return `${year}-${month!.padStart(2, '0')}-${day!.padStart(2, '0')}`;
+}
+
+const couponDateOnlySchema = z
+  .string()
+  .trim()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, 'Selecciona una fecha de caducidad válida.')
+  .refine((value) => {
+    const date = new Date(`${value}T23:59:59.000Z`);
+    return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
+  }, 'Selecciona una fecha de caducidad válida.');
+
+const couponExpiresInputSchema = z
+  .string()
+  .transform(normalizeCouponExpires)
+  .pipe(couponDateOnlySchema);
+
+// La caducidad se maneja como fecha de calendario a las 23:59:59 UTC. Así el día es
+// inequívoco y se recompone en la zona horaria del sitio al enviarla a WooCommerce.
+const couponExpiresSchema = z
+  .union([couponExpiresInputSchema, z.literal(''), z.null(), z.undefined()])
+  .transform((value) => (value ? new Date(`${value}T23:59:59.000Z`) : null));
+
+const couponUsageLimitSchema = z
+  .union([
+    z.coerce
+      .number()
+      .int('El límite debe ser un número entero.')
+      .min(1, 'El límite debe ser al menos 1.')
+      .max(1_000_000, 'El límite es demasiado alto.'),
+    z.literal(''),
+    z.null(),
+    z.undefined(),
+  ])
+  .transform((value) => (value === '' || value === null || value === undefined ? null : value));
+
 const couponFieldsSchema = z.object({
   coupon: couponCodeSchema,
   description: z
@@ -531,7 +576,11 @@ const couponFieldsSchema = z.object({
     .finite()
     .gt(0, 'El valor debe ser mayor que 0.')
     .lte(100, 'El porcentaje no puede superar 100.'),
-  active: z.boolean().default(true),
+  dateExpires: couponExpiresSchema,
+  individualUse: z.boolean().default(false),
+  excludeSaleItems: z.boolean().default(false),
+  usageLimit: couponUsageLimitSchema,
+  usageLimitPerUser: couponUsageLimitSchema,
 });
 
 export const createCouponSchema = couponFieldsSchema;
@@ -544,10 +593,6 @@ export const couponIdSchema = z.coerce
   .positive('El identificador del cupón no es válido.');
 export const couponListQuerySchema = z.object({
   search: z.string().trim().max(191, 'La búsqueda es demasiado larga.').default(''),
-  active: z
-    .enum(['true', 'false'])
-    .transform((value) => value === 'true')
-    .optional(),
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(20),
   sort: z.enum(['coupon', 'amount', 'createdAt', 'updatedAt']).default('createdAt'),

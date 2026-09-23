@@ -14,6 +14,7 @@
     "@gravity-ui/icons": "2.22.0",
     "@heroui/react": "3.2.4",
     "@heroui/styles": "3.2.4",
+    "@internationalized/date": "3.12.4",
     "@sevale/permissions": "*",
     "@sevale/shared": "*",
     "@sevale/validation": "*",

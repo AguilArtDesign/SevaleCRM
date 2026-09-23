@@ -534,7 +534,7 @@ function CouponSearch({
   const query = useQuery({
     queryKey: ['orders', 'coupon-search', debounced],
     enabled: !selected && Boolean(debounced),
-    queryFn: () => couponsApi.list({ search: debounced, active: true, page: 1, pageSize: 8 }),
+    queryFn: () => couponsApi.list({ search: debounced, page: 1, pageSize: 8 }),
   });
   const isLoadingResults = search.trim() !== debounced || query.isFetching;
 
@@ -698,7 +698,7 @@ export function OrderForm({
     setSelectedCoupon(null);
     if (couponCode) {
       void couponsApi
-        .list({ search: couponCode, active: true, page: 1, pageSize: 8 })
+        .list({ search: couponCode, page: 1, pageSize: 8 })
         .then(({ data }) => {
           if (!active) return;
           setSelectedCoupon(

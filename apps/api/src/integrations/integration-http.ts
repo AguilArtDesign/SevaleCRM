@@ -1,10 +1,12 @@
 import {
   BadGatewayException,
   GatewayTimeoutException,
+  Logger,
   ServiceUnavailableException,
 } from '@nestjs/common';
 
 const REQUEST_TIMEOUT_MS = 10_000;
+const integrationLogger = new Logger('Integrations');
 
 export type IntegrationRequestOptions = {
   timeoutMs?: number;
@@ -30,20 +32,28 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function integrationErrorMessage(payload: unknown): string | null {
   if (!isRecord(payload)) return null;
   const errors = payload.Errors;
-  if (!Array.isArray(errors)) return null;
+  if (Array.isArray(errors)) {
+    const messages = errors
+      .map((error) => {
+        if (!isRecord(error)) return null;
+        const message = error.Message;
+        if (typeof message !== 'string') return null;
+        const normalized = message.trim().split(/\s+/u).join(' ');
+        return normalized ? normalized.slice(0, 300) : null;
+      })
+      .filter((message): message is string => message !== null)
+      .slice(0, 3);
 
-  const messages = errors
-    .map((error) => {
-      if (!isRecord(error)) return null;
-      const message = error.Message;
-      if (typeof message !== 'string') return null;
-      const normalized = message.trim().split(/\s+/u).join(' ');
-      return normalized ? normalized.slice(0, 300) : null;
-    })
-    .filter((message): message is string => message !== null)
-    .slice(0, 3);
+    if (messages.length > 0) return messages.join(' ').slice(0, 450);
+  }
 
-  return messages.length > 0 ? messages.join(' ').slice(0, 450) : null;
+  // La REST API de WooCommerce responde { code, message } cuando rechaza una solicitud.
+  if (typeof payload.message === 'string') {
+    const normalized = payload.message.trim().split(/\s+/u).join(' ');
+    return normalized ? normalized.slice(0, 450) : null;
+  }
+
+  return null;
 }
 
 export function requireIntegrationValue(name: string, integration: string): string {
@@ -80,6 +90,31 @@ export function integrationUrl(baseUrl: string, path: string): URL {
       },
     });
   }
+}
+
+// Registra el estado HTTP y el mensaje del proveedor sin exponer credenciales ni datos del cliente.
+async function logIntegrationFailure(
+  url: URL,
+  integration: string,
+  response: Response,
+): Promise<void> {
+  let providerMessage = '';
+  try {
+    const parsed: unknown = await response.clone().json();
+    if (
+      parsed !== null &&
+      typeof parsed === 'object' &&
+      'message' in parsed &&
+      typeof (parsed as { message?: unknown }).message === 'string'
+    ) {
+      providerMessage = (parsed as { message: string }).message;
+    }
+  } catch {
+    // La respuesta de error no era JSON: el estado HTTP es suficiente para el diagnóstico.
+  }
+  integrationLogger.error(
+    `${integration} respondió ${response.status} en ${url.pathname}${providerMessage ? `: ${providerMessage}` : ''}`,
+  );
 }
 
 async function integrationRequest(
@@ -121,9 +156,13 @@ async function integrationRequest(
 
     if (!response.ok) {
       const authenticationFailure = response.status === 401 || response.status === 403;
-      if (authenticationFailure) throw new IntegrationAuthenticationException(integration);
+      if (authenticationFailure) {
+        await logIntegrationFailure(url, integration, response);
+        throw new IntegrationAuthenticationException(integration);
+      }
       const transientFailure = response.status === 429 || response.status >= 500;
       if (transientFailure && attempt < retryCount) continue;
+      await logIntegrationFailure(url, integration, response);
       const payload = (await response.json().catch(() => null)) as unknown;
       const detail = integrationErrorMessage(payload);
       throw new BadGatewayException({
@@ -198,6 +237,15 @@ export function integrationPut(
     },
     options,
   );
+}
+
+export function integrationDelete(
+  url: URL,
+  headers: HeadersInit,
+  integration: string,
+  options?: IntegrationRequestOptions,
+): Promise<unknown> {
+  return integrationRequest(url, integration, { method: 'DELETE', headers }, options);
 }
 
 export function invalidIntegrationResponse(integration: string): BadGatewayException {

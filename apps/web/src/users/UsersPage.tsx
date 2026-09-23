@@ -427,9 +427,11 @@ export function UsersPage() {
                   onChange={setActive}
                   isDisabled={editingId === currentUser?.id}
                 >
-                  <Switch.Control>
-                    <Switch.Thumb />
-                  </Switch.Control>
+                  <Switch.Content>
+                    <Switch.Control>
+                      <Switch.Thumb />
+                    </Switch.Control>
+                  </Switch.Content>
                 </Switch>
               </div>
 
