@@ -483,27 +483,36 @@ if (!invalidInternationalStateRejected) {
   throw new Error('WooCustomerMapper aceptó un state Siigo como si fuera un state Woo.');
 }
 
-let missingInternationalCityRejected = false;
-try {
-  wooMapper.map({
-    ...customer,
-    phone: null,
-    country: 'PA',
-    region: 'PA-8',
-    cityCode: null,
-    cityName: null,
-  });
-} catch (error) {
-  const response = error instanceof BadRequestException ? error.getResponse() : null;
-  missingInternationalCityRejected =
-    typeof response === 'object' &&
-    response !== null &&
-    'error' in response &&
-    (response as { error?: { code?: string } }).error?.code ===
-      'WOOCOMMERCE_CUSTOMER_LOCATION_REQUIRED';
+const wooInternationalCountryOnly = wooMapper.map({
+  ...customer,
+  phone: null,
+  country: 'PA',
+  region: null,
+  cityCode: null,
+  cityName: null,
+});
+if (
+  wooInternationalCountryOnly.billing.country !== 'PA' ||
+  wooInternationalCountryOnly.billing.state !== undefined ||
+  wooInternationalCountryOnly.billing.city !== undefined
+) {
+  throw new Error('WooCustomerMapper no permitió sincronizar únicamente el país internacional.');
 }
-if (!missingInternationalCityRejected) {
-  throw new Error('WooCustomerMapper permitió un país internacional sin ciudad libre.');
+
+const wooColombiaCountryOnly = wooMapper.map({
+  ...customer,
+  phone: null,
+  country: 'CO',
+  region: null,
+  cityCode: null,
+  cityName: null,
+});
+if (
+  wooColombiaCountryOnly.billing.country !== 'CO' ||
+  wooColombiaCountryOnly.billing.state !== undefined ||
+  wooColombiaCountryOnly.billing.city !== undefined
+) {
+  throw new Error('WooCustomerMapper exigió departamento o ciudad para Colombia.');
 }
 
 const wooWithUppercaseNames = wooMapper.map({

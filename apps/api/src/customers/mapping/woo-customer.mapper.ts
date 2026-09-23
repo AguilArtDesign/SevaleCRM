@@ -38,7 +38,7 @@ function uppercase(value: string): string {
   return value.toLocaleUpperCase('es-CO');
 }
 
-type WooLocation = { country: string; state?: string; city: string };
+type WooLocation = { country: string; state?: string; city?: string };
 
 function locationError(code: string, message: string): BadRequestException {
   return new BadRequestException({ success: false, error: { code, message } });
@@ -69,13 +69,23 @@ function resolveWooLocation(customer: CustomerMappingSource): WooLocation | null
       state && customer.cityCode
         ? resolveCustomerColombiaCity(state.code, customer.cityCode)
         : null;
-    if (!state || !city) {
+    if (customer.region && !state) {
       throw locationError(
         'WOOCOMMERCE_CUSTOMER_LOCATION_INVALID',
-        'Selecciona un departamento y una ciudad válidos de Colombia antes de sincronizar.',
+        'El departamento seleccionado no es válido para WooCommerce.',
       );
     }
-    return { country: 'CO', state: state.code, city: city.name };
+    if (customer.cityCode && !city) {
+      throw locationError(
+        'WOOCOMMERCE_CUSTOMER_LOCATION_INVALID',
+        'La ciudad seleccionada no pertenece al departamento indicado.',
+      );
+    }
+    return {
+      country: 'CO',
+      ...(state ? { state: state.code } : {}),
+      ...(city ? { city: city.name } : {}),
+    };
   }
 
   if (customer.cityCode) {
@@ -85,28 +95,26 @@ function resolveWooLocation(customer: CustomerMappingSource): WooLocation | null
     );
   }
   const city = customer.cityName?.trim();
-  if (!city) {
-    throw locationError(
-      'WOOCOMMERCE_CUSTOMER_LOCATION_REQUIRED',
-      'Escribe la ciudad antes de sincronizar el cliente con WooCommerce.',
-    );
-  }
   const states = getCustomerWooStates(countryCode);
   if (states.length > 0) {
     const state = customer.region ? resolveCustomerWooState(countryCode, customer.region) : null;
-    if (!state) {
+    if (customer.region && !state) {
       throw locationError(
         'WOOCOMMERCE_CUSTOMER_LOCATION_INVALID',
         'Selecciona una región válida de WooCommerce antes de sincronizar.',
       );
     }
-    return { country: countryCode, state: state.code, city };
+    return {
+      country: countryCode,
+      ...(state ? { state: state.code } : {}),
+      ...(city ? { city } : {}),
+    };
   }
   const freeRegion = customer.region?.trim();
   return {
     country: countryCode,
     ...(freeRegion ? { state: freeRegion } : {}),
-    city,
+    ...(city ? { city } : {}),
   };
 }
 
@@ -149,7 +157,7 @@ export class WooCustomerMapper {
         ...(customer.company ? { company: customer.company } : {}),
         ...(customer.addressLine1 ? { address_1: uppercase(customer.addressLine1) } : {}),
         ...(customer.addressLine2 ? { address_2: uppercase(customer.addressLine2) } : {}),
-        ...(location ? { city: location.city } : {}),
+        ...(location?.city ? { city: location.city } : {}),
         ...(location?.state ? { state: location.state } : {}),
         ...(customer.postalCode ? { postcode: customer.postalCode } : {}),
         ...(location ? { country: location.country } : {}),
