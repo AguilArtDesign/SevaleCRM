@@ -403,13 +403,34 @@ export function CouponsPage() {
                           </Checkbox>
                         </Table.Cell>
                       )}
-                      <Table.Cell>
+                      <Table.Cell
+                        onClick={(event) => event.stopPropagation()}
+                        onPointerDown={(event) => event.stopPropagation()}
+                      >
                         <strong>{listedCoupon.coupon}</strong>
                       </Table.Cell>
-                      <Table.Cell>{listedCoupon.description || 'Sin descripción'}</Table.Cell>
-                      <Table.Cell>{typeTitle(listedCoupon.type)}</Table.Cell>
-                      <Table.Cell>{listedCoupon.amount}%</Table.Cell>
-                      <Table.Cell>
+                      <Table.Cell
+                        onClick={(event) => event.stopPropagation()}
+                        onPointerDown={(event) => event.stopPropagation()}
+                      >
+                        {listedCoupon.description || 'Sin descripción'}
+                      </Table.Cell>
+                      <Table.Cell
+                        onClick={(event) => event.stopPropagation()}
+                        onPointerDown={(event) => event.stopPropagation()}
+                      >
+                        {typeTitle(listedCoupon.type)}
+                      </Table.Cell>
+                      <Table.Cell
+                        onClick={(event) => event.stopPropagation()}
+                        onPointerDown={(event) => event.stopPropagation()}
+                      >
+                        {listedCoupon.amount}%
+                      </Table.Cell>
+                      <Table.Cell
+                        onClick={(event) => event.stopPropagation()}
+                        onPointerDown={(event) => event.stopPropagation()}
+                      >
                         <Chip color={syncStates[listedCoupon.syncStatus].color}>
                           {syncStates[listedCoupon.syncStatus].label}
                         </Chip>

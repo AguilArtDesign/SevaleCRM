@@ -4032,13 +4032,10 @@ select {
 }
 
 .coupons-table-shell {
-  display: flex;
-  min-height: 28rem;
-  flex: 1;
-  flex-direction: column;
-  overflow: hidden;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  height: calc(100vh - 200px);
   background: var(--surface-secondary);
-  border: 1px solid var(--border);
   border-radius: 1rem;
 }
 
