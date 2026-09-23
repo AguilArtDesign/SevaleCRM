@@ -3994,7 +3994,7 @@ select {
 
 .page-heading-row,
 .coupons-toolbar,
-.coupon-active-control {
+.coupon-switch-row {
   display: flex;
   align-items: center;
 }
@@ -4131,7 +4131,7 @@ select {
   overflow-wrap: anywhere;
 }
 
-.coupon-active-control {
+.coupon-switch-row {
   justify-content: space-between;
   gap: 1rem;
   padding: 0.8rem;
@@ -4139,12 +4139,12 @@ select {
   border-radius: 0.8rem;
 }
 
-.coupon-active-control > div {
+.coupon-switch-row > div {
   display: grid;
   gap: 0.15rem;
 }
 
-.coupon-active-control span {
+.coupon-switch-row span {
   color: var(--muted-foreground);
   font-size: 0.78rem;
 }

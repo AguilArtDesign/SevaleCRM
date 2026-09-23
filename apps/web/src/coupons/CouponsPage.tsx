@@ -814,7 +814,7 @@ export function CouponsPage() {
                       </Calendar>
                     </DatePicker.Popover>
                   </DatePicker>
-                  <div className="coupon-active-control">
+                  <div className="coupon-switch-row">
                     <div>
                       <strong>Uso individual</strong>
                       <span>Impide combinar el cupón con otros descuentos.</span>
@@ -831,7 +831,7 @@ export function CouponsPage() {
                       </Switch.Content>
                     </Switch>
                   </div>
-                  <div className="coupon-active-control">
+                  <div className="coupon-switch-row">
                     <div>
                       <strong>Excluir artículos rebajados</strong>
                       <span>No aplica el descuento a productos en promoción.</span>
