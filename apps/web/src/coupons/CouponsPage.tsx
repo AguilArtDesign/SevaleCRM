@@ -64,12 +64,13 @@ const syncActions: Record<CouponSyncOutcome['action'], string> = {
   FAILED: 'error',
 };
 
-// Estado de sincronización que se muestra en la tabla.
+// Estado de sincronización que se muestra en la tabla. «Pendiente» comparte el color de
+// «Parcial» a propósito: ambos son estados que piden una acción sobre el cupón.
 const syncStates: Record<
   CouponSyncStatus,
   { label: string; color: 'default' | 'success' | 'warning' | 'danger' }
 > = {
-  PENDING: { label: 'Pendiente', color: 'default' },
+  PENDING: { label: 'Pendiente', color: 'warning' },
   SYNCED: { label: 'Sincronizado', color: 'success' },
   PARTIAL: { label: 'Parcial', color: 'warning' },
   ERROR: { label: 'Error', color: 'danger' },
