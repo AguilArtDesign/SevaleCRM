@@ -62,7 +62,6 @@ const outboundOrderInclude = {
       },
     },
   },
-  coupons: { orderBy: { id: 'asc' as const } },
 } as const;
 
 export type OutboundOrder = Prisma.OrderGetPayload<{ include: typeof outboundOrderInclude }>;

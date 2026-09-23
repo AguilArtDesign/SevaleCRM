@@ -1,5 +1,6 @@
 import { HttpException, Injectable } from '@nestjs/common';
-import type { Store } from '../generated/prisma/client.js';
+import { formatPhoneInternational } from '@sevale/shared';
+import type { Prisma, Store } from '../generated/prisma/client.js';
 import {
   WooCommerceService,
   type WooCommerceOrderCreatePayload,
@@ -18,6 +19,49 @@ export class WooOrderOutboundError extends Error {
 
 function storeLabel(store: Store): string {
   return store === 'SERATUS' ? 'Seratus' : 'Pali';
+}
+
+// El teléfono viaja como lo muestra la tienda (+57 304 4251788), con el mismo formato que usa el
+// cliente de WooCommerce.
+function displayPhone(value: string | null, country: string | null): string | null {
+  if (!value) return null;
+  return formatPhoneInternational(value, country ?? '') ?? value;
+}
+
+// La segunda línea de la dirección se envía como texto normal, no en mayúsculas sostenidas.
+function displayAddressLine(value: string | null): string | null {
+  if (!value) return null;
+  return value
+    .toLocaleLowerCase('es-CO')
+    .split(' ')
+    .map((word) => (word ? word.charAt(0).toLocaleUpperCase('es-CO') + word.slice(1) : word))
+    .join(' ');
+}
+
+// El descuento del cupón se reparte entre las líneas elegibles (las que no llevan el precio
+// modificado) y viaja dentro del total de cada una, sin `coupon_lines`: así WooCommerce, el CRM y la
+// cotización de Siigo muestran los mismos importes, sin depender de cómo reparte WooCommerce sus
+// cupones. La última línea elegible absorbe el redondeo para que la suma coincida con el descuento
+// guardado en el pedido al centavo.
+function distributedDiscounts(order: OutboundOrder): Map<number, Prisma.Decimal> {
+  const discounts = new Map<number, Prisma.Decimal>();
+  const eligible = order.items.filter((item) => !item.priceModified);
+  if (order.discountTotal.lessThanOrEqualTo(0) || eligible.length === 0) return discounts;
+  const eligibleSubtotal = eligible.reduce(
+    (total, item) => total.plus(item.subtotal),
+    order.discountTotal.times(0),
+  );
+  if (eligibleSubtotal.lessThanOrEqualTo(0)) return discounts;
+  let assigned = order.discountTotal.times(0);
+  eligible.forEach((item, index) => {
+    const isLast = index === eligible.length - 1;
+    const share = isLast
+      ? order.discountTotal.minus(assigned)
+      : item.subtotal.times(order.discountTotal).dividedBy(eligibleSubtotal).toDecimalPlaces(2);
+    assigned = assigned.plus(share);
+    discounts.set(item.id, share);
+  });
+  return discounts;
 }
 
 function positiveIdentifier(
@@ -74,11 +118,12 @@ function customerExternalId(order: OutboundOrder): string {
   return integration.externalId;
 }
 
-function orderPayload(
+export function orderPayload(
   order: OutboundOrder,
   externalCustomerId: string,
 ): WooCommerceOrderCreatePayload {
   const operation = order.operation;
+  const discounts = distributedDiscounts(order);
   const lineItems = order.items.map((item) => {
     const product = item.product;
     if (!product || product.store !== order.store || !product.wooVariationId) {
@@ -98,15 +143,19 @@ function orderPayload(
         `El producto ${item.skuSnapshot} no tiene un identificador válido en ${storeLabel(order.store)}.`,
       );
     }
+    const discount = discounts.get(item.id) ?? item.subtotal.times(0);
     return {
       product_id: productId,
       ...(variationId === null ? {} : { variation_id: variationId }),
       quantity: item.quantity,
       subtotal: item.subtotal.toFixed(2),
-      total: item.total.toFixed(2),
+      // El descuento del cupón ya viene incluido en el total de la línea: no se envían `coupon_lines`.
+      total: item.subtotal.minus(discount).toFixed(2),
     };
   });
 
+  // El teléfono se formatea con el país del número: el de facturación y, si no hay, el del cliente.
+  const phoneCountry = operation.billingCountry ?? operation.customer.country;
   const shippingTotal = order.shippingTotal.toFixed(2);
   if (
     order.shippingTotal.greaterThan(0) &&
@@ -125,6 +174,8 @@ function orderPayload(
       `El vínculo del cliente con ${storeLabel(order.store)} no es válido.`,
     ),
     currency: operation.currency,
+    // El comercial solo envía operaciones con el pago acordado, así que el pedido nace completado.
+    status: 'completed',
     ...(operation.paymentMethod ? { payment_method: operation.paymentMethod } : {}),
     ...(operation.paymentMethodTitle ? { payment_method_title: operation.paymentMethodTitle } : {}),
     set_paid: true,
@@ -133,25 +184,25 @@ function orderPayload(
       last_name: operation.billingLastName,
       company: operation.billingCompany,
       address_1: operation.billingAddress1,
-      address_2: operation.billingAddress2,
+      address_2: displayAddressLine(operation.billingAddress2),
       city: operation.billingCity,
       state: operation.billingState,
       postcode: operation.billingPostcode,
       country: operation.billingCountry,
       email: operation.billingEmail,
-      phone: operation.billingPhone,
+      phone: displayPhone(operation.billingPhone, phoneCountry),
     }),
     shipping: compactAddress({
       first_name: operation.shippingFirstName,
       last_name: operation.shippingLastName,
       company: operation.shippingCompany,
       address_1: operation.shippingAddress1,
-      address_2: operation.shippingAddress2,
+      address_2: displayAddressLine(operation.shippingAddress2),
       city: operation.shippingCity,
       state: operation.shippingState,
       postcode: operation.shippingPostcode,
       country: operation.shippingCountry,
-      phone: operation.shippingPhone,
+      phone: displayPhone(operation.shippingPhone, phoneCountry),
     }),
     line_items: lineItems,
     ...(operation.shippingMethod && operation.shippingMethodTitle
@@ -165,7 +216,6 @@ function orderPayload(
           ],
         }
       : {}),
-    ...(order.coupons.length ? { coupon_lines: order.coupons.map(({ code }) => ({ code })) } : {}),
     meta_data: [
       { key: 'sevale_crm_order_key', value: externalKey(order) },
       { key: 'sevale_crm_order_id', value: String(order.id) },

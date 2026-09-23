@@ -48,6 +48,9 @@ export type WooCommerceBatchUpdateResult = {
 export type WooCommerceOrderCreatePayload = {
   customer_id: number;
   currency: string;
+  // El CRM solo envía operaciones que el comercial ya marcó como completadas, es decir, con el pago
+  // acordado: el pedido viaja siempre como «completed».
+  status: string;
   payment_method?: string;
   payment_method_title?: string;
   set_paid: true;
@@ -61,7 +64,7 @@ export type WooCommerceOrderCreatePayload = {
     total: string;
   }>;
   shipping_lines?: Array<{ method_id: string; method_title: string; total: string }>;
-  coupon_lines?: Array<{ code: string }>;
+  // El descuento del cupón viaja dentro del total de cada línea, por lo que no se envían `coupon_lines`.
   meta_data: Array<{ key: string; value: string }>;
 };
 

@@ -78,7 +78,8 @@ async function handleWooRequest(request: IncomingMessage, response: ServerRespon
   const order: CapturedOrder = {
     ...payload,
     id: store === 'SERATUS' ? 97001 : 98001,
-    status: 'processing',
+    // WooCommerce respeta el estado recibido al crear el pedido y lo devuelve en la respuesta.
+    status: typeof payload.status === 'string' ? payload.status : 'processing',
     date_created: '2026-09-17T16:00:00-05:00',
     date_modified: '2026-09-17T16:00:00-05:00',
   };
@@ -396,6 +397,17 @@ try {
     !metadata?.some(({ key }) => key === 'sevale_crm_order_key')
   ) {
     throw new Error('El payload outbound no respetó Customer, Product o metadata canónica.');
+  }
+  // El pedido viaja completado y con el descuento dentro del total de cada línea, sin `coupon_lines`.
+  if (
+    seratusPayload?.status !== 'completed' ||
+    paliPayload?.status !== 'completed' ||
+    seratusPayload?.coupon_lines !== undefined ||
+    paliPayload?.coupon_lines !== undefined ||
+    typeof seratusItems?.[0]?.total !== 'string' ||
+    typeof seratusItems?.[0]?.subtotal !== 'string'
+  ) {
+    throw new Error('El payload outbound no envió el estado completado o los importes por línea.');
   }
   const shipmentMetadata = seratusPayload?.meta_data as Array<Record<string, unknown>> | undefined;
   if (
