@@ -151,7 +151,6 @@ try {
       description: 'Cupón porcentual para pruebas de pedidos',
       type: 'percent',
       amount: 20,
-      active: true,
     },
   });
   couponId = coupon.id;
@@ -313,16 +312,15 @@ try {
   }
   await prisma.coupon.update({ where: { id: coupon.id }, data: { amount: 20 } });
 
-  await prisma.coupon.update({ where: { id: coupon.id }, data: { active: false } });
+  // Un cupón ya no se desactiva: o existe o no existe. Un identificador desconocido se rechaza.
   expectStatus(
     await api('/api/orders', commercialCookie, {
       method: 'POST',
-      body: JSON.stringify(basePayload),
+      body: JSON.stringify({ ...basePayload, couponId: coupon.id + 1_000_000 }),
     }),
     400,
-    'Cupón desactivado',
+    'Cupón inexistente',
   );
-  await prisma.coupon.update({ where: { id: coupon.id }, data: { active: true } });
 
   const usdResponse = await api('/api/orders', commercialCookie, {
     method: 'POST',
@@ -850,7 +848,7 @@ try {
   }
 
   process.stdout.write(
-    'Orders smoke: payment catalogs, COP/USD shipping thresholds, custom shipping, coupon snapshots, active validation, consolidated and per-store discounts, manual price capped at the original value, authentication, RBAC, list, create, pending edit and store reconciliation checks passed.\n',
+    'Orders smoke: payment catalogs, COP/USD shipping thresholds, custom shipping, coupon snapshots, missing coupon rejection, consolidated and per-store discounts, manual price capped at the original value, authentication, RBAC, list, create, pending edit and store reconciliation checks passed.\n',
   );
 } finally {
   if (operationIds.length > 0) {
