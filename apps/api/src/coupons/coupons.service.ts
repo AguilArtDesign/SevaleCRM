@@ -10,12 +10,23 @@ import type { Coupon } from '../generated/prisma/client.js';
 import { CouponSyncService, type CouponSyncOutcome } from './coupon-sync.service.js';
 import { CouponsRepository } from './coupons.repository.js';
 
-function serializeCoupon(coupon: Coupon) {
+// El diagnóstico técnico por tienda se reserva al administrador: quien consulta el listado necesita
+// saber que el cupón quedó incompleto, no el detalle interno de la integración.
+function serializeCoupon(coupon: Coupon, includeIntegrationErrors = false) {
   return {
     ...coupon,
     amount: Number(coupon.amount),
     dateExpires: coupon.dateExpires ? coupon.dateExpires.toISOString() : null,
+    seratusLastErrorCode: includeIntegrationErrors ? coupon.seratusLastErrorCode : null,
+    seratusLastErrorMessage: includeIntegrationErrors ? coupon.seratusLastErrorMessage : null,
+    paliLastErrorCode: includeIntegrationErrors ? coupon.paliLastErrorCode : null,
+    paliLastErrorMessage: includeIntegrationErrors ? coupon.paliLastErrorMessage : null,
   };
+}
+
+function serializeOutcomes(outcomes: CouponSyncOutcome[], includeIntegrationErrors: boolean) {
+  if (includeIntegrationErrors) return outcomes;
+  return outcomes.map((outcome) => ({ ...outcome, errorCode: null, errorMessage: null }));
 }
 
 function storeLabels(failures: CouponSyncOutcome[]): string {
@@ -62,10 +73,10 @@ export class CouponsService {
     private readonly sync: CouponSyncService,
   ) {}
 
-  async list(query: CouponListQuery) {
+  async list(query: CouponListQuery, includeIntegrationErrors = false) {
     const [coupons, total] = await this.coupons.list(query);
     return {
-      data: coupons.map(serializeCoupon),
+      data: coupons.map((coupon) => serializeCoupon(coupon, includeIntegrationErrors)),
       pagination: {
         page: query.page,
         pageSize: query.pageSize,
@@ -98,17 +109,20 @@ export class CouponsService {
     }
   }
 
-  async synchronize(id: number) {
+  async synchronize(id: number, includeIntegrationErrors = false) {
     const current = await this.coupons.findById(id);
     if (!current) throw missingCoupon();
     // Una tienda con identificador se actualiza; una sin identificador crea el cupón allí,
     // de modo que el mismo botón sirve para recuperar una sincronización parcial anterior.
     const sync = await this.sync.synchronize(current);
     const stored = (await this.coupons.findById(id)) ?? current;
-    return { ...serializeCoupon(stored), sync };
+    return {
+      ...serializeCoupon(stored, includeIntegrationErrors),
+      sync: serializeOutcomes(sync, includeIntegrationErrors),
+    };
   }
 
-  async remove(id: number) {
+  async remove(id: number, includeIntegrationErrors = false) {
     const current = await this.coupons.findById(id);
     if (!current) throw missingCoupon();
     // Las tiendas se limpian antes que el registro local: si se borrara primero, un fallo
@@ -121,10 +135,16 @@ export class CouponsService {
         error: {
           code: 'COUPON_DELETE_INCOMPLETE',
           message: `El cupón no se eliminó porque ${storeLabels(failures)} no pudo borrarlo. Vuelve a intentarlo para completar la eliminación.`,
+          // El detalle viaja con el error para que el panel pueda explicar la causa del fallo.
+          ...(includeIntegrationErrors ? { details: serializeOutcomes(sync, true) } : {}),
         },
       });
     }
     await this.coupons.delete(id);
-    return { deleted: true as const, coupon: serializeCoupon(current), sync };
+    return {
+      deleted: true as const,
+      coupon: serializeCoupon(current, includeIntegrationErrors),
+      sync: serializeOutcomes(sync, includeIntegrationErrors),
+    };
   }
 }

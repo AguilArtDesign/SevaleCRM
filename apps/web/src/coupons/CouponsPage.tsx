@@ -25,6 +25,7 @@ import { parseDate, type CalendarDate } from '@internationalized/date';
 import {
   EllipsisVertical,
   ArrowRotateRight,
+  CircleInfo,
   Pencil,
   Plus,
   Tag,
@@ -41,6 +42,7 @@ import { Select } from '../components/Select';
 import { useCurrentUser } from '../users/useCurrentUser';
 import {
   couponsApi,
+  CouponRequestError,
   type CouponRecord,
   type CouponSyncOutcome,
   type CouponSyncStatus,
@@ -57,6 +59,7 @@ const syncActions: Record<CouponSyncOutcome['action'], string> = {
   CREATED: 'creado en WooCommerce',
   UPDATED: 'actualizado en WooCommerce',
   DELETED: 'eliminado en WooCommerce',
+  MISSING: 'ya no existía en WooCommerce',
   SKIPPED: 'no existía previamente',
   FAILED: 'error',
 };
@@ -74,6 +77,14 @@ const syncStates: Record<
 
 function messageFrom(error: unknown): string {
   return error instanceof Error ? error.message : 'No pudimos completar la solicitud.';
+}
+
+// El mismo formato de fecha que usan Inventario y Usuarios.
+function dateTime(value: string | null): string {
+  if (!value) return 'Sin registro';
+  return new Intl.DateTimeFormat('es-CO', { dateStyle: 'medium', timeStyle: 'short' }).format(
+    new Date(value),
+  );
 }
 
 function typeTitle(type: string): string {
@@ -107,9 +118,66 @@ function failedStores(outcomes: CouponSyncOutcome[]): CouponSyncOutcome[] {
   return outcomes.filter((outcome) => outcome.action === 'FAILED');
 }
 
+const couponStores: CouponSyncOutcome['store'][] = ['SERATUS', 'PALI'];
+
+// Una fila del diagnóstico: la tienda, qué ocurrió y el detalle técnico que solo ve un administrador.
+type CouponDiagnosticEntry = {
+  store: CouponSyncOutcome['store'];
+  label: string;
+  color: 'default' | 'success' | 'danger';
+  externalId: number | null;
+  errorCode: string | null;
+  errorMessage: string | null;
+};
+
+type CouponDiagnostics = {
+  coupon: string;
+  lastSyncAt: string | null;
+  entries: CouponDiagnosticEntry[];
+};
+
+function outcomeEntries(outcomes: CouponSyncOutcome[]): CouponDiagnosticEntry[] {
+  return outcomes.map((outcome) => ({
+    store: outcome.store,
+    label: syncActions[outcome.action],
+    color: outcome.action === 'FAILED' ? 'danger' : 'success',
+    externalId: outcome.externalId,
+    errorCode: outcome.errorCode,
+    errorMessage: outcome.errorMessage,
+  }));
+}
+
+// El cupón solo conserva el diagnóstico de las tiendas que fallaron en el último intento.
+function storedEntries(coupon: CouponRecord): CouponDiagnosticEntry[] {
+  return couponStores
+    .map((store) => {
+      const isSeratus = store === 'SERATUS';
+      return {
+        store,
+        label: 'Error en el último intento',
+        color: 'danger' as const,
+        externalId: isSeratus ? coupon.seratusCouponId : coupon.paliCouponId,
+        errorCode: isSeratus ? coupon.seratusLastErrorCode : coupon.paliLastErrorCode,
+        errorMessage: isSeratus ? coupon.seratusLastErrorMessage : coupon.paliLastErrorMessage,
+      };
+    })
+    .filter((entry) => entry.errorCode !== null || entry.errorMessage !== null);
+}
+
+function hasStoredDiagnostics(coupon: CouponRecord): boolean {
+  return Boolean(
+    coupon.seratusLastErrorCode ||
+    coupon.seratusLastErrorMessage ||
+    coupon.paliLastErrorCode ||
+    coupon.paliLastErrorMessage,
+  );
+}
+
 export function CouponsPage() {
   const { user } = useCurrentUser();
   const role = user?.role;
+  // El detalle técnico de las integraciones se reserva al administrador, igual que en Clientes.
+  const isAdmin = role === 'ADMIN';
   const canCreate = Boolean(role && hasPermission(role, 'coupons.create'));
   const canUpdate = Boolean(role && hasPermission(role, 'coupons.update'));
   const canDelete = Boolean(role && hasPermission(role, 'coupons.delete'));
@@ -138,10 +206,10 @@ export function CouponsPage() {
   const [usageLimitPerUser, setUsageLimitPerUser] = useState('');
   const [deleteTarget, setDeleteTarget] = useState<CouponRecord | null>(null);
   const [selectedKeys, setSelectedKeys] = useState<Selection>(new Set());
+  const [diagnostics, setDiagnostics] = useState<CouponDiagnostics | null>(null);
 
   const loadCoupons = useCallback(async () => {
     setIsLoading(true);
-    setError('');
     try {
       const result = await couponsApi.list({ search, page, pageSize });
       setCoupons(result.data);
@@ -149,7 +217,8 @@ export function CouponsPage() {
       setTotalPages(result.pagination.totalPages);
       if (page > result.pagination.totalPages) setPage(result.pagination.totalPages);
     } catch (loadError) {
-      setError(messageFrom(loadError));
+      // El panel informa los fallos con toasts: el aviso de página se reserva al formulario.
+      toast.danger('No pudimos cargar los cupones.', { description: messageFrom(loadError) });
     } finally {
       setIsLoading(false);
     }
@@ -254,7 +323,6 @@ export function CouponsPage() {
     if (!deleteTarget || busyId !== null) return;
     const target = deleteTarget;
     setBusyId(target.id);
-    setError('');
     try {
       const result = await couponsApi.remove(target.id);
       setSelectedKeys((current) => {
@@ -266,7 +334,19 @@ export function CouponsPage() {
       toast.success(`El cupón “${target.coupon}” fue eliminado. ${syncSummary(result.sync)}`);
       await loadCoupons();
     } catch (deleteError) {
-      setError(messageFrom(deleteError));
+      // Una eliminación incompleta explica su causa: el resumen por tienda para todos y el detalle
+      // técnico en un diagnóstico que solo puede abrir un administrador.
+      const outcomes = deleteError instanceof CouponRequestError ? deleteError.outcomes : null;
+      toast.danger(`No pudimos eliminar el cupón “${target.coupon}”.`, {
+        description: outcomes ? syncSummary(outcomes) : messageFrom(deleteError),
+      });
+      if (isAdmin && outcomes) {
+        setDiagnostics({
+          coupon: target.coupon,
+          lastSyncAt: target.lastSyncAt,
+          entries: outcomeEntries(outcomes),
+        });
+      }
     } finally {
       setBusyId(null);
     }
@@ -275,14 +355,20 @@ export function CouponsPage() {
   const synchronizeCoupon = async (selected: CouponRecord) => {
     if (busyId !== null) return;
     setBusyId(selected.id);
-    setError('');
     try {
       const result = await couponsApi.synchronize(selected.id);
       const failures = failedStores(result.sync);
       if (failures.length > 0) {
-        setError(
-          `El cupón “${selected.coupon}” no se sincronizó por completo. ${syncSummary(failures)}`,
-        );
+        toast.warning(`El cupón “${selected.coupon}” no se sincronizó por completo.`, {
+          description: syncSummary(failures),
+        });
+        if (isAdmin) {
+          setDiagnostics({
+            coupon: selected.coupon,
+            lastSyncAt: result.lastSyncAt,
+            entries: outcomeEntries(result.sync),
+          });
+        }
       } else {
         toast.success(
           `El cupón “${selected.coupon}” quedó sincronizado. ${syncSummary(result.sync)}`,
@@ -290,7 +376,9 @@ export function CouponsPage() {
       }
       await loadCoupons();
     } catch (syncError) {
-      setError(messageFrom(syncError));
+      toast.danger(`No pudimos sincronizar el cupón “${selected.coupon}”.`, {
+        description: messageFrom(syncError),
+      });
     } finally {
       setBusyId(null);
     }
@@ -333,14 +421,6 @@ export function CouponsPage() {
           </SearchField.Group>
         </SearchField>
       </div>
-
-      {error && !formMode && (
-        <Alert status="danger">
-          <Alert.Content>
-            <Alert.Description>{error}</Alert.Description>
-          </Alert.Content>
-        </Alert>
-      )}
 
       <div className="coupons-table-shell">
         {isLoading ? (
@@ -461,12 +541,21 @@ export function CouponsPage() {
                                     void synchronizeCoupon(listedCoupon);
                                   }
                                   if (String(key) === 'edit' && canUpdate) openEdit(listedCoupon);
+                                  if (String(key) === 'diagnostics' && isAdmin) {
+                                    setDiagnostics({
+                                      coupon: listedCoupon.coupon,
+                                      lastSyncAt: listedCoupon.lastSyncAt,
+                                      entries: storedEntries(listedCoupon),
+                                    });
+                                  }
                                   if (String(key) === 'delete' && canDelete) {
                                     setDeleteTarget(listedCoupon);
                                   }
                                 }}
                               >
-                                {(canSync || canUpdate) && (
+                                {(canSync ||
+                                  canUpdate ||
+                                  (isAdmin && hasStoredDiagnostics(listedCoupon))) && (
                                   <Dropdown.Section>
                                     {canSync && (
                                       <Dropdown.Item id="sync" textValue="Sincronizar cupón">
@@ -484,6 +573,18 @@ export function CouponsPage() {
                                           aria-hidden="true"
                                         />
                                         <Label>Editar</Label>
+                                      </Dropdown.Item>
+                                    )}
+                                    {isAdmin && hasStoredDiagnostics(listedCoupon) && (
+                                      <Dropdown.Item
+                                        id="diagnostics"
+                                        textValue="Ver diagnóstico de la sincronización"
+                                      >
+                                        <CircleInfo
+                                          className="size-4 shrink-0 text-muted"
+                                          aria-hidden="true"
+                                        />
+                                        <Label>Ver diagnóstico</Label>
                                       </Dropdown.Item>
                                     )}
                                   </Dropdown.Section>
@@ -783,6 +884,52 @@ export function CouponsPage() {
           </Modal.Container>
         </Modal.Backdrop>
       </Modal>
+
+      {isAdmin && (
+        <Modal isOpen={diagnostics !== null} onOpenChange={(open) => !open && setDiagnostics(null)}>
+          <Modal.Backdrop>
+            <Modal.Container size="md" placement="center" scroll="inside">
+              <Modal.Dialog className="coupon-diagnostics-modal">
+                <Modal.CloseTrigger aria-label="Cerrar el diagnóstico">
+                  <Xmark />
+                </Modal.CloseTrigger>
+                <Modal.Header>
+                  <div>
+                    <Modal.Heading>Diagnóstico de la sincronización</Modal.Heading>
+                    <p>
+                      {diagnostics?.coupon} · Último intento:{' '}
+                      {dateTime(diagnostics?.lastSyncAt ?? null)}
+                    </p>
+                  </div>
+                </Modal.Header>
+                <Modal.Body className="coupon-diagnostics-body">
+                  {diagnostics?.entries.map((entry) => (
+                    <article className="coupon-diagnostics-card" key={entry.store}>
+                      <header className="coupon-diagnostics-heading">
+                        <strong>{storeLabels[entry.store]}</strong>
+                        <Chip color={entry.color}>{entry.label}</Chip>
+                      </header>
+                      <dl className="coupon-diagnostics-detail">
+                        <dt>Código</dt>
+                        <dd>{entry.errorCode || 'Sin código'}</dd>
+                        <dt>Mensaje</dt>
+                        <dd>{entry.errorMessage || 'Sin detalle registrado'}</dd>
+                        <dt>Cupón en la tienda</dt>
+                        <dd>{entry.externalId ?? 'Sin identificar'}</dd>
+                      </dl>
+                    </article>
+                  ))}
+                </Modal.Body>
+                <Modal.Footer>
+                  <Button variant="ghost" onPress={() => setDiagnostics(null)}>
+                    Cerrar
+                  </Button>
+                </Modal.Footer>
+              </Modal.Dialog>
+            </Modal.Container>
+          </Modal.Backdrop>
+        </Modal>
+      )}
 
       <AlertDialog
         isOpen={deleteTarget !== null}

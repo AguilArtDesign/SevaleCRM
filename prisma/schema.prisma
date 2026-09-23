@@ -294,22 +294,27 @@ model Product {
 }
 
 model Coupon {
-  id                Int              @id @default(autoincrement())
-  coupon            String           @unique @db.VarChar(64)
-  description       String?          @db.VarChar(255)
-  type              String           @db.VarChar(32)
-  amount            Decimal          @db.Decimal(7, 2)
-  dateExpires       DateTime?        @map("date_expires")
-  individualUse     Boolean          @default(false) @map("individual_use")
-  excludeSaleItems  Boolean          @default(false) @map("exclude_sale_items")
-  usageLimit        Int?             @map("usage_limit")
-  usageLimitPerUser Int?             @map("usage_limit_per_user")
-  seratusCouponId   Int?             @map("seratus_coupon_id")
-  paliCouponId      Int?             @map("pali_coupon_id")
-  syncStatus        CouponSyncStatus @default(PENDING) @map("sync_status")
-  createdAt         DateTime         @default(now()) @map("created_at")
-  updatedAt         DateTime         @updatedAt @map("updated_at")
-  orderOperations   OrderOperation[]
+  id                      Int              @id @default(autoincrement())
+  coupon                  String           @unique @db.VarChar(64)
+  description             String?          @db.VarChar(255)
+  type                    String           @db.VarChar(32)
+  amount                  Decimal          @db.Decimal(7, 2)
+  dateExpires             DateTime?        @map("date_expires")
+  individualUse           Boolean          @default(false) @map("individual_use")
+  excludeSaleItems        Boolean          @default(false) @map("exclude_sale_items")
+  usageLimit              Int?             @map("usage_limit")
+  usageLimitPerUser       Int?             @map("usage_limit_per_user")
+  seratusCouponId         Int?             @map("seratus_coupon_id")
+  paliCouponId            Int?             @map("pali_coupon_id")
+  syncStatus              CouponSyncStatus @default(PENDING) @map("sync_status")
+  lastSyncAt              DateTime?        @map("last_sync_at")
+  seratusLastErrorCode    String?          @map("seratus_last_error_code") @db.VarChar(100)
+  seratusLastErrorMessage String?          @map("seratus_last_error_message") @db.Text
+  paliLastErrorCode       String?          @map("pali_last_error_code") @db.VarChar(100)
+  paliLastErrorMessage    String?          @map("pali_last_error_message") @db.Text
+  createdAt               DateTime         @default(now()) @map("created_at")
+  updatedAt               DateTime         @updatedAt @map("updated_at")
+  orderOperations         OrderOperation[]
 
   @@index([type])
   @@index([createdAt])

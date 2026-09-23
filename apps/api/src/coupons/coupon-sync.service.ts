@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import type { Coupon, CouponSyncStatus, Store } from '../generated/prisma/client.js';
+import { integrationErrorCode } from '../integrations/integration-http.js';
 import {
   WooCommerceService,
   type WooCommerceCouponPayload,
@@ -8,7 +9,9 @@ import { CouponsRepository } from './coupons.repository.js';
 
 export const couponStores: readonly Store[] = ['SERATUS', 'PALI'];
 
-export type CouponSyncAction = 'CREATED' | 'UPDATED' | 'DELETED' | 'SKIPPED' | 'FAILED';
+// `MISSING` describe un cupón que la tienda ya no tiene: la eliminación está hecha aunque el
+// CRM no la haya provocado, así que no puede contar como fallo.
+export type CouponSyncAction = 'CREATED' | 'UPDATED' | 'DELETED' | 'MISSING' | 'SKIPPED' | 'FAILED';
 
 export type CouponSyncOutcome = {
   store: Store;
@@ -49,21 +52,44 @@ function externalIdOf(store: Store, coupon: Coupon): number | null {
   return store === 'SERATUS' ? coupon.seratusCouponId : coupon.paliCouponId;
 }
 
-// Extrae únicamente el código y el mensaje normalizados: nunca credenciales ni datos del cliente.
+function hasFunction(value: unknown, key: string): boolean {
+  return (
+    Boolean(value) &&
+    typeof value === 'object' &&
+    typeof (value as Record<string, unknown>)[key] === 'function'
+  );
+}
+
+// Conserva un único espacio por tramo y acota la longitud, igual que el resto de integraciones.
+function normalizedDetail(value: string): string {
+  return value.trim().split(/\s+/u).join(' ').slice(0, 450);
+}
+
+// Extrae el código y el mensaje normalizados: nunca credenciales ni datos del cliente. De un error
+// interno (Prisma, lectura de la respuesta) se conserva el mensaje, porque sin él un fallo de
+// sincronización no es diagnosticable; el panel solo lo muestra a un administrador.
 function failureDetails(error: unknown): { code: string | null; message: string } {
   const fallback = 'No fue posible completar la sincronización con la tienda.';
-  if (!error || typeof error !== 'object') return { code: null, message: fallback };
-  if (!('getResponse' in error) || typeof error.getResponse !== 'function') {
-    return { code: null, message: fallback };
+  if (hasFunction(error, 'getResponse')) {
+    const response: unknown = (error as { getResponse: () => unknown }).getResponse();
+    const failure =
+      response && typeof response === 'object'
+        ? (response as { error?: { code?: unknown; message?: unknown } }).error
+        : undefined;
+    if (failure) {
+      const message = typeof failure.message === 'string' ? normalizedDetail(failure.message) : '';
+      return {
+        code: typeof failure.code === 'string' ? failure.code : null,
+        message: message || fallback,
+      };
+    }
   }
-  const response: unknown = (error as { getResponse: () => unknown }).getResponse();
-  if (!response || typeof response !== 'object') return { code: null, message: fallback };
-  const failure = (response as { error?: { code?: unknown; message?: unknown } }).error;
-  if (!failure) return { code: null, message: fallback };
-  return {
-    code: typeof failure.code === 'string' ? failure.code : null,
-    message: typeof failure.message === 'string' ? failure.message : fallback,
-  };
+  // Una excepción HTTP ya trae un mensaje depurado; una interna se muestra tal cual.
+  if (!hasFunction(error, 'getStatus') && error instanceof Error) {
+    const message = normalizedDetail(error.message);
+    if (message) return { code: 'INTERNAL_ERROR', message };
+  }
+  return { code: null, message: fallback };
 }
 
 @Injectable()
@@ -86,7 +112,7 @@ export class CouponSyncService {
     const succeeded = outcomes.filter((outcome) => outcome.action !== 'FAILED').length;
     const status: CouponSyncStatus =
       succeeded === couponStores.length ? 'SYNCED' : succeeded === 0 ? 'ERROR' : 'PARTIAL';
-    await this.coupons.saveSyncStatus(coupon.id, status);
+    await this.coupons.saveSyncResult(coupon.id, status, outcomes);
     return outcomes;
   }
 
@@ -131,6 +157,11 @@ export class CouponSyncService {
       await this.wooCommerce.deleteCoupon(store, externalId);
       return { store, action: 'DELETED', externalId, errorCode: null, errorMessage: null };
     } catch (error) {
+      // Si la tienda responde que el cupón no existe, la eliminación ya está hecha (por ejemplo,
+      // cuando se borró a mano antes): contarlo como fallo dejaría el cupón atascado en el CRM.
+      if (integrationErrorCode(error) === 'INTEGRATION_RESOURCE_MISSING') {
+        return { store, action: 'MISSING', externalId, errorCode: null, errorMessage: null };
+      }
       return this.failed(store, coupon, 'eliminar', error);
     }
   }

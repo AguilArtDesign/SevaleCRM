@@ -4088,6 +4088,49 @@ select {
   overflow-y: auto;
 }
 
+/* El diagnóstico lo abre un administrador cuando un cupón quedó «parcial» o «error». */
+.coupon-diagnostics-modal {
+  max-width: 34rem;
+}
+
+.coupon-diagnostics-body {
+  display: grid;
+  gap: 0.8rem;
+}
+
+.coupon-diagnostics-card {
+  display: grid;
+  gap: 0.6rem;
+  padding: 0.9rem;
+  background: var(--surface-secondary);
+  border: 1px solid var(--border);
+  border-radius: 0.8rem;
+}
+
+.coupon-diagnostics-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+}
+
+.coupon-diagnostics-detail {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.35rem 0.7rem;
+  margin: 0;
+  font-size: 0.82rem;
+}
+
+.coupon-diagnostics-detail dt {
+  color: var(--muted-foreground);
+}
+
+.coupon-diagnostics-detail dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
 .coupon-active-control {
   justify-content: space-between;
   gap: 1rem;

@@ -8,6 +8,7 @@ import {
   Patch,
   Post,
   Query,
+  Req,
 } from '@nestjs/common';
 import {
   couponIdSchema,
@@ -16,6 +17,7 @@ import {
   updateCouponSchema,
 } from '@sevale/validation';
 import type { ZodType } from 'zod';
+import type { AuthenticatedRequest } from '../auth/auth.guard.js';
 import { RequirePermissions } from '../permissions/require-permissions.decorator.js';
 import { CouponsService } from './coupons.service.js';
 
@@ -31,14 +33,22 @@ function parseInput<T>(schema: ZodType<T>, input: unknown): T {
   });
 }
 
+// El detalle técnico de las integraciones se reserva al administrador, igual que en Clientes.
+function canViewIntegrationErrors(request: AuthenticatedRequest): boolean {
+  return request.auth.user.role === 'ADMIN';
+}
+
 @Controller('coupons')
 @RequirePermissions('coupons.read')
 export class CouponsController {
   constructor(private readonly coupons: CouponsService) {}
 
   @Get()
-  list(@Query() query: unknown) {
-    return this.coupons.list(parseInput(couponListQuerySchema, query));
+  list(@Query() query: unknown, @Req() request: AuthenticatedRequest) {
+    return this.coupons.list(
+      parseInput(couponListQuerySchema, query),
+      canViewIntegrationErrors(request),
+    );
   }
 
   @Post()
@@ -58,13 +68,16 @@ export class CouponsController {
 
   @Post(':id/sync')
   @RequirePermissions('coupons.sync')
-  synchronize(@Param('id') id: string) {
-    return this.coupons.synchronize(parseInput(couponIdSchema, id));
+  synchronize(@Param('id') id: string, @Req() request: AuthenticatedRequest) {
+    return this.coupons.synchronize(
+      parseInput(couponIdSchema, id),
+      canViewIntegrationErrors(request),
+    );
   }
 
   @Delete(':id')
   @RequirePermissions('coupons.delete')
-  remove(@Param('id') id: string) {
-    return this.coupons.remove(parseInput(couponIdSchema, id));
+  remove(@Param('id') id: string, @Req() request: AuthenticatedRequest) {
+    return this.coupons.remove(parseInput(couponIdSchema, id), canViewIntegrationErrors(request));
   }
 }

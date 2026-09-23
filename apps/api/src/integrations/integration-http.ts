@@ -25,6 +25,28 @@ export class IntegrationAuthenticationException extends BadGatewayException {
   }
 }
 
+// Un recurso que ya no existe es un estado final y no un fallo transitorio: quien llama puede
+// tratarlo como éxito (por ejemplo, un borrado que ya se había hecho a mano en la tienda).
+export class IntegrationResourceMissingException extends BadGatewayException {
+  constructor(integration: string) {
+    super({
+      success: false,
+      error: {
+        code: 'INTEGRATION_RESOURCE_MISSING',
+        message: `${integration} no encontró el recurso solicitado.`,
+      },
+    });
+  }
+}
+
+export function integrationErrorCode(error: unknown): string | null {
+  if (!isRecord(error) || typeof error.getResponse !== 'function') return null;
+  const response = (error as { getResponse: () => unknown }).getResponse();
+  if (!isRecord(response) || !isRecord(response.error)) return null;
+  const code = response.error.code;
+  return typeof code === 'string' ? code : null;
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -159,6 +181,12 @@ async function integrationRequest(
       if (authenticationFailure) {
         await logIntegrationFailure(url, integration, response);
         throw new IntegrationAuthenticationException(integration);
+      }
+      // Un 404 describe un estado final y no una condición transitoria: no se reintenta y se
+      // informa con un código propio para que quien llama decida si cuenta como fallo.
+      if (response.status === 404) {
+        await logIntegrationFailure(url, integration, response);
+        throw new IntegrationResourceMissingException(integration);
       }
       const transientFailure = response.status === 429 || response.status >= 500;
       if (transientFailure && attempt < retryCount) continue;
