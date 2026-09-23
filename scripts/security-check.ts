@@ -138,6 +138,10 @@ function assertProductionConfiguration(): void {
     PALI_API_URL: 'https://pali.example.com/wp-json/wc/v3',
     WOOCOMMERCE_PALI_CK: 'production-smoke-pali-key',
     WOOCOMMERCE_PALI_CS: 'production-smoke-pali-secret',
+    // Credenciales del endpoint propio de Sevale (/wp-json/sevale/v1), obligatorias en producción.
+    WOOCOMMERCE_USERNAME: 'production-smoke-crm-user',
+    SERATUS_PASSWORD: 'production-smoke-seratus-crm-password',
+    PALI_PASSWORD: 'production-smoke-pali-crm-password',
     N8N_API_KEY: 'production-smoke-n8n-key-at-least-32-characters',
   });
   let secretRejected = false;
