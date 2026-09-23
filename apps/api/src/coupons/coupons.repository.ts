@@ -17,10 +17,13 @@ function failedMessage(outcome: CouponSyncOutcome | undefined): string | null {
 export class CouponsRepository {
   constructor(private readonly prisma: PrismaService) {}
 
-  list({ search, page, pageSize, sort, order }: CouponListQuery) {
-    const where: Prisma.CouponWhereInput = search
-      ? { OR: [{ coupon: { contains: search } }, { description: { contains: search } }] }
-      : {};
+  list({ search, syncStatus, page, pageSize, sort, order }: CouponListQuery) {
+    const where: Prisma.CouponWhereInput = {
+      ...(search
+        ? { OR: [{ coupon: { contains: search } }, { description: { contains: search } }] }
+        : {}),
+      ...(syncStatus ? { syncStatus } : {}),
+    };
     const orderBy = { [sort]: order } as Prisma.CouponOrderByWithRelationInput;
 
     return this.prisma.$transaction([

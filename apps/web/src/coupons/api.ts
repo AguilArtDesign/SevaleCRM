@@ -57,6 +57,7 @@ type CouponListInput = {
   search: string;
   page: number;
   pageSize?: number;
+  syncStatus?: CouponSyncStatus | '';
 };
 
 type ApiErrorBody = {
@@ -110,7 +111,7 @@ async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const couponsApi = {
-  list: ({ search, page, pageSize = 20 }: CouponListInput) => {
+  list: ({ search, page, pageSize = 20, syncStatus = '' }: CouponListInput) => {
     const query = new URLSearchParams({
       search,
       page: String(page),
@@ -118,6 +119,8 @@ export const couponsApi = {
       sort: 'createdAt',
       order: 'desc',
     });
+    // El valor vacío significa «todos los estados», así que el parámetro no se envía.
+    if (syncStatus) query.set('syncStatus', syncStatus);
     return apiRequest<CouponListResponse>(`/api/coupons?${query}`);
   },
   create: (input: CreateCouponInput) =>

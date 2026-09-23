@@ -76,6 +76,9 @@ const syncStates: Record<
   ERROR: { label: 'Error', color: 'danger' },
 };
 
+// Orden de las opciones del filtro de sincronización de la barra de herramientas.
+const couponSyncStatuses: CouponSyncStatus[] = ['PENDING', 'SYNCED', 'PARTIAL', 'ERROR'];
+
 function messageFrom(error: unknown): string {
   return error instanceof Error ? error.message : 'No pudimos completar la solicitud.';
 }
@@ -194,6 +197,7 @@ export function CouponsPage() {
   const [coupons, setCoupons] = useState<CouponRecord[]>([]);
   const [searchDraft, setSearchDraft] = useState('');
   const [search, setSearch] = useState('');
+  const [syncStatusFilter, setSyncStatusFilter] = useState<CouponSyncStatus | ''>('');
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const [total, setTotal] = useState(0);
@@ -220,7 +224,12 @@ export function CouponsPage() {
   const loadCoupons = useCallback(async () => {
     setIsLoading(true);
     try {
-      const result = await couponsApi.list({ search, page, pageSize });
+      const result = await couponsApi.list({
+        search,
+        page,
+        pageSize,
+        syncStatus: syncStatusFilter,
+      });
       setCoupons(result.data);
       setTotal(result.pagination.total);
       setTotalPages(result.pagination.totalPages);
@@ -231,7 +240,7 @@ export function CouponsPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [page, pageSize, search]);
+  }, [page, pageSize, search, syncStatusFilter]);
 
   useEffect(() => {
     void loadCoupons();
@@ -429,6 +438,33 @@ export function CouponsPage() {
             <SearchField.ClearButton />
           </SearchField.Group>
         </SearchField>
+        <Select
+          aria-label="Estado de sincronización"
+          value={syncStatusFilter}
+          onChange={(value) => {
+            setSyncStatusFilter(String(value) as CouponSyncStatus | '');
+            setPage(1);
+          }}
+        >
+          <Select.Trigger>
+            <Select.Value />
+            <Select.Indicator />
+          </Select.Trigger>
+          <Select.Popover>
+            <ListBox>
+              <ListBox.Item id="" textValue="Todos los estados">
+                Todos los estados
+                <ListBox.ItemIndicator />
+              </ListBox.Item>
+              {couponSyncStatuses.map((status) => (
+                <ListBox.Item key={status} id={status} textValue={syncStates[status].label}>
+                  {syncStates[status].label}
+                  <ListBox.ItemIndicator />
+                </ListBox.Item>
+              ))}
+            </ListBox>
+          </Select.Popover>
+        </Select>
       </div>
 
       <div className="coupons-table-shell">

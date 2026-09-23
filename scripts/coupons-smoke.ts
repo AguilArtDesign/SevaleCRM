@@ -492,6 +492,26 @@ try {
     throw new Error('El listado expuso el diagnóstico técnico a un comercial.');
   }
 
+  // El filtro de la barra devuelve solo los cupones del estado elegido.
+  const filtered = (await (
+    await api(
+      `/api/coupons?search=${encodeURIComponent(runId)}&syncStatus=PARTIAL&page=1&pageSize=20`,
+      commercialCookie,
+    )
+  ).json()) as { data: Array<{ id: number }>; pagination: { total: number } };
+  const otherStatus = (await (
+    await api(
+      `/api/coupons?search=${encodeURIComponent(runId)}&syncStatus=ERROR&page=1&pageSize=20`,
+      commercialCookie,
+    )
+  ).json()) as { data: Array<{ id: number }>; pagination: { total: number } };
+  if (filtered.pagination.total !== 1 || filtered.data[0]?.id !== created.id) {
+    throw new Error('El filtro por estado no devolvió el cupón parcial.');
+  }
+  if (otherStatus.pagination.total !== 0) {
+    throw new Error('El filtro por estado devolvió cupones de otro estado.');
+  }
+
   // Editar invalida el intento anterior, así que su diagnóstico deja de aplicar.
   expectStatus(
     await api(`/api/coupons/${created.id}`, adminCookie, {

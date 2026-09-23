@@ -593,6 +593,8 @@ export const couponIdSchema = z.coerce
   .positive('El identificador del cupón no es válido.');
 export const couponListQuerySchema = z.object({
   search: z.string().trim().max(191, 'La búsqueda es demasiado larga.').default(''),
+  // Filtro opcional: sin valor, el listado devuelve todos los estados de sincronización.
+  syncStatus: z.enum(['PENDING', 'SYNCED', 'PARTIAL', 'ERROR']).optional(),
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(20),
   sort: z.enum(['coupon', 'amount', 'createdAt', 'updatedAt']).default('createdAt'),

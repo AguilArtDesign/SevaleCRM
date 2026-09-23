@@ -4018,7 +4018,7 @@ select {
 }
 
 .coupons-toolbar .search-field {
-  width: min(28rem, 100%);
+  width: min(20rem, 100%);
 }
 
 .coupons-toolbar .select {
