@@ -69,7 +69,7 @@ export type OrderDetailRecord = {
   createdAt: string;
   updatedAt: string;
   customer: OrderCustomerRecord;
-  createdBy: { id: string; name: string; email: string };
+  createdBy: { id: string; name: string; email: string } | null;
   paymentMethod: string | null;
   paymentMethodTitle: string | null;
   shippingMethod: string | null;

@@ -170,7 +170,9 @@ function OrderDetail({
         </div>
         <div>
           <span>Creado por</span>
-          <strong>{order.createdBy.name}</strong>
+          <strong>
+            {order.createdBy?.name ?? (order.source === 'WOOCOMMERCE' ? 'WooCommerce' : '—')}
+          </strong>
           <small>{formattedDate(order.createdAt)}</small>
         </div>
       </section>
