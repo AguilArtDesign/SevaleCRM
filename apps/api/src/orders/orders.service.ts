@@ -61,6 +61,22 @@ function roundMoney(value: Prisma.Decimal): Prisma.Decimal {
   return value.toDecimalPlaces(2);
 }
 
+// El envío pertenece a la operación y se comparte entre las tiendas que tienen productos: se divide en
+// partes iguales y la última absorbe el redondeo, igual que el descuento por línea. Si solo hay una
+// tienda, esa asume el valor completo.
+function splitShipping(total: Prisma.Decimal, stores: number): Prisma.Decimal[] {
+  if (stores <= 0 || total.lessThanOrEqualTo(0)) return [];
+  const share = roundMoney(total.dividedBy(stores));
+  const shares: Prisma.Decimal[] = [];
+  let assigned = zero();
+  for (let index = 1; index <= stores; index += 1) {
+    const value = index === stores ? total.minus(assigned) : share;
+    assigned = assigned.plus(value);
+    shares.push(value);
+  }
+  return shares;
+}
+
 function operationCode(date = new Date()): string {
   const parts = new Intl.DateTimeFormat('en-CA', {
     timeZone: 'America/Bogota',
@@ -443,36 +459,46 @@ export class OrdersService {
       itemsByStore.set(product.store, current);
     }
 
-    const storeOrders: PreparedStoreOrder[] = [...itemsByStore.entries()].map(([store, items]) => {
-      const subtotal = sum(items.map((item) => item.subtotal));
-      const couponEligibleSubtotal = sum(
-        items
-          .filter((item) => !item.unitPrice.lessThan(item.originalPrice))
-          .map((item) => item.subtotal),
-      );
-      const discountTotal = coupon
-        ? roundMoney(couponEligibleSubtotal.times(coupon.amount).dividedBy(100))
-        : zero();
-      const coupons: PreparedOrderCoupon[] = coupon ? [{ code: coupon.coupon, discountTotal }] : [];
-      return {
-        store,
-        items,
-        coupons,
-        subtotal,
-        discountTotal,
-        shippingTotal: zero(),
-        total: subtotal.minus(discountTotal),
-      };
-    });
-
-    const subtotal = sum(storeOrders.map((order) => order.subtotal));
-    const discountTotal = sum(storeOrders.map((order) => order.discountTotal));
+    // El subtotal de la operación alimenta las reglas de envío (mínimos y umbrales) igual que antes.
+    const subtotal = sum(
+      [...itemsByStore.values()].flatMap((items) => items.map((item) => item.subtotal)),
+    );
     const shippingTotal = this.shippingTotal(
       shippingMethod,
       input.currency,
       subtotal,
       input.customShippingTotal,
     );
+    const shippingShares = splitShipping(shippingTotal, itemsByStore.size);
+
+    const storeOrders: PreparedStoreOrder[] = [...itemsByStore.entries()].map(
+      ([store, items], index) => {
+        const storeSubtotal = sum(items.map((item) => item.subtotal));
+        const couponEligibleSubtotal = sum(
+          items
+            .filter((item) => !item.unitPrice.lessThan(item.originalPrice))
+            .map((item) => item.subtotal),
+        );
+        const discountTotal = coupon
+          ? roundMoney(couponEligibleSubtotal.times(coupon.amount).dividedBy(100))
+          : zero();
+        const coupons: PreparedOrderCoupon[] = coupon
+          ? [{ code: coupon.coupon, discountTotal }]
+          : [];
+        const shippingShare = shippingShares[index] ?? zero();
+        return {
+          store,
+          items,
+          coupons,
+          subtotal: storeSubtotal,
+          discountTotal,
+          shippingTotal: shippingShare,
+          total: storeSubtotal.minus(discountTotal).plus(shippingShare),
+        };
+      },
+    );
+
+    const discountTotal = sum(storeOrders.map((order) => order.discountTotal));
 
     return {
       customerId: input.customerId,

@@ -409,6 +409,16 @@ try {
   ) {
     throw new Error('El payload outbound no envió el estado completado o los importes por línea.');
   }
+  // WooCommerce identifica la operación con `operation_id`, con el mismo código que envía el CRM.
+  const operationCodeMetadata = metadata?.find(
+    ({ key }) => key === 'sevale_crm_operation_code',
+  )?.value;
+  if (
+    typeof operationCodeMetadata !== 'string' ||
+    metadata?.find(({ key }) => key === 'operation_id')?.value !== operationCodeMetadata
+  ) {
+    throw new Error('El payload outbound no envió el operation_id con el código de la operación.');
+  }
   const shipmentMetadata = seratusPayload?.meta_data as Array<Record<string, unknown>> | undefined;
   if (
     shipmentMetadata?.find(({ key }) => key === '_wot_tracking_carrier')?.value !==

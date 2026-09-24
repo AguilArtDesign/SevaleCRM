@@ -220,6 +220,8 @@ export function orderPayload(
       { key: 'sevale_crm_order_key', value: externalKey(order) },
       { key: 'sevale_crm_order_id', value: String(order.id) },
       { key: 'sevale_crm_operation_code', value: operation.operationCode },
+      // Nombre que WooCommerce ya consume para identificar la operación del CRM.
+      { key: 'operation_id', value: operation.operationCode },
       {
         key: 'billing_type_document',
         value: operation.customer.documentType,

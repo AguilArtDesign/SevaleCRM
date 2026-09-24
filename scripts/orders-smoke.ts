@@ -466,6 +466,52 @@ try {
     throw new Error('El envío personalizado COP no conservó el valor indicado.');
   }
 
+  // Una sola tienda asume el envío completo de la operación.
+  const flatDetailResponse = await api(`/api/orders/${copFlat.id}`, commercialCookie);
+  expectStatus(flatDetailResponse, 200, 'Detalle del envío con una sola tienda');
+  const flatDetail = (await flatDetailResponse.json()) as {
+    orders: Array<{ store: string; shippingTotal: string; total: string }>;
+  };
+  if (
+    flatDetail.orders.length !== 1 ||
+    flatDetail.orders[0]?.shippingTotal !== '16000.00' ||
+    flatDetail.orders[0]?.total !== '115999.00'
+  ) {
+    throw new Error('Una sola tienda debe asumir el envío completo de la operación.');
+  }
+
+  // El envío es de la operación y se comparte entre las tiendas con productos: 16.000 entre dos
+  // tiendas son 8.000 para cada una, y cada Order suma su parte a su propio total.
+  const sharedShipping = await createOrderCase('Envío compartido entre las dos tiendas', {
+    paymentMethod: 'cod',
+    shippingMethod: 'flat_rate',
+    items: [
+      { productId: seratus.id, quantity: 1, unitPrice: '30000' },
+      { productId: pali.id, quantity: 1, unitPrice: '20000' },
+    ],
+  });
+  const sharedShippingResponse = await api(`/api/orders/${sharedShipping.id}`, commercialCookie);
+  expectStatus(sharedShippingResponse, 200, 'Detalle del envío compartido');
+  const sharedShippingDetail = (await sharedShippingResponse.json()) as {
+    subtotal: string;
+    shippingTotal: string;
+    total: string;
+    orders: Array<{ store: string; subtotal: string; shippingTotal: string; total: string }>;
+  };
+  const sharedSeratus = sharedShippingDetail.orders.find(({ store }) => store === 'SERATUS');
+  const sharedPali = sharedShippingDetail.orders.find(({ store }) => store === 'PALI');
+  if (
+    sharedShipping.subtotal !== '50000.00' ||
+    sharedShipping.shippingTotal !== '16000.00' ||
+    sharedShipping.total !== '66000.00' ||
+    sharedSeratus?.shippingTotal !== '8000.00' ||
+    sharedSeratus?.total !== '38000.00' ||
+    sharedPali?.shippingTotal !== '8000.00' ||
+    sharedPali?.total !== '28000.00'
+  ) {
+    throw new Error('El envío de la operación no se repartió entre las dos tiendas.');
+  }
+
   const usdAboveThreshold = await createOrderCase('USD por encima del umbral', {
     currency: 'USD',
     paymentMethod: 'cod',
