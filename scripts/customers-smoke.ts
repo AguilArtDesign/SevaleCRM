@@ -142,26 +142,29 @@ siigoCustomers.updateCustomer = (_externalId, customer) => {
   });
 };
 wooCustomers.findCustomer = () => Promise.resolve(null);
-wooCustomers.findCustomerByDocument = (store, identification) =>
+wooCustomers.findCustomerByDocument = (store, documentType, identification) =>
   Promise.resolve(
     identification === 'missing-customer'
-      ? null
-      : wooReference(
-          store,
-          identification === incompleteDocumentNumber
-            ? store === 'SERATUS'
-              ? '31002'
-              : '41002'
-            : identification === commercialDocumentNumber
+      ? ({ status: 'NOT_FOUND' } as const)
+      : ({
+          status: 'FOUND',
+          customer: wooReference(
+            store,
+            identification === incompleteDocumentNumber
               ? store === 'SERATUS'
-                ? '31003'
-                : '41003'
-              : store === 'SERATUS'
-                ? '31001'
-                : '41001',
-          identification,
-          `marcos-${runId}@example.invalid`,
-        ),
+                ? '31002'
+                : '41002'
+              : identification === commercialDocumentNumber
+                ? store === 'SERATUS'
+                  ? '31003'
+                  : '41003'
+                : store === 'SERATUS'
+                  ? '31001'
+                  : '41001',
+            identification,
+            `marcos-${runId}@example.invalid`,
+          ),
+        } as const),
   );
 wooCustomers.createCustomer = (store, customer) => {
   wooCreateCalls += 1;
@@ -274,13 +277,16 @@ try {
   expectStatus(await api('/api/customers', logisticsCookie), 403, 'Listado logística');
   expectStatus(await api('/api/customers', commercialCookie), 200, 'Listado comercial');
   expectStatus(
-    await api(`/api/customers/resolve?identification=${documentNumber}`, commercialCookie),
+    await api(
+      `/api/customers/resolve?identification=${documentNumber}&documentType=13`,
+      commercialCookie,
+    ),
     200,
     'Consulta Siigo comercial',
   );
 
   const lookupResponse = await api(
-    `/api/customers/resolve?identification=${documentNumber}`,
+    `/api/customers/resolve?identification=${documentNumber}&documentType=13`,
     adminCookie,
   );
   expectStatus(lookupResponse, 200, 'Consulta Siigo administrativa');
@@ -313,7 +319,7 @@ try {
   }
 
   const resolvedResponse = await api(
-    `/api/customers/resolve?identification=${documentNumber}`,
+    `/api/customers/resolve?identification=${documentNumber}&documentType=13`,
     adminCookie,
   );
   expectStatus(resolvedResponse, 200, 'Resolución canónica administrativa');
@@ -335,7 +341,7 @@ try {
   }
 
   const incompleteLookupResponse = await api(
-    `/api/customers/resolve?identification=${incompleteDocumentNumber}`,
+    `/api/customers/resolve?identification=${incompleteDocumentNumber}&documentType=13`,
     adminCookie,
   );
   expectStatus(incompleteLookupResponse, 200, 'Consulta con datos incompletos en Siigo');
@@ -363,7 +369,7 @@ try {
   }
 
   const missingLookupResponse = await api(
-    '/api/customers/resolve?identification=missing-customer',
+    '/api/customers/resolve?identification=missing-customer&documentType=13',
     adminCookie,
   );
   expectStatus(missingLookupResponse, 200, 'Consulta Siigo sin resultado');
@@ -483,7 +489,7 @@ try {
   customerIds.push(created.id);
 
   const localResolveResponse = await api(
-    `/api/customers/resolve?identification=${documentNumber}`,
+    `/api/customers/resolve?identification=${documentNumber}&documentType=13`,
     adminCookie,
   );
   expectStatus(localResolveResponse, 200, 'Resolución de cliente local existente');

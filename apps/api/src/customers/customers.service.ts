@@ -40,6 +40,7 @@ import { CustomersRepository } from './customers.repository.js';
 import { CustomerIntegrationService } from './customer-integration.service.js';
 import { CustomerDraftResolverService } from './customer-draft-resolver.service.js';
 import { documentTypeToWoo } from './customer-document-type.mapping.js';
+import { integrationErrorCode } from '../integrations/integration-http.js';
 import { SiigoCustomerService } from './integrations/siigo-customer.service.js';
 import {
   WooCustomerService,
@@ -50,9 +51,11 @@ type WooLookupProvider = 'SERATUS' | 'PALI';
 type WooCustomerData = Omit<WooCustomerReference, 'id'> & { id: number };
 type CustomerSourceLookup = {
   provider: 'SIIGO' | WooLookupProvider;
-  status: 'FOUND' | 'NOT_FOUND' | 'ERROR';
+  status: 'FOUND' | 'NOT_FOUND' | 'AMBIGUOUS' | 'ERROR';
   externalId: string | null;
   externalData: WooCustomerData | null;
+  // Cuántos clientes coincidieron: 1 al encontrar y N cuando la tienda tiene duplicados.
+  candidates: number;
 };
 
 function customerBadRequest(code: string, message: string): BadRequestException {
@@ -287,8 +290,8 @@ export class CustomersService {
     return serializeCustomer(customer, includeIntegrationErrors);
   }
 
-  resolve(identification: string) {
-    return this.customerDraftResolver.resolve(identification);
+  resolve(identification: string, documentType: CreateCustomerInput['documentType']) {
+    return this.customerDraftResolver.resolve(identification, documentType);
   }
 
   async create(input: CreateCustomerInput, includeIntegrationErrors = false) {
@@ -299,8 +302,8 @@ export class CustomersService {
     }
     const [siigoMatch, seratusLookup, paliLookup] = await Promise.all([
       this.siigoCustomers.lookupCustomer(sanitized.documentNumber),
-      this.lookupWooCustomer('SERATUS', sanitized.documentNumber),
-      this.lookupWooCustomer('PALI', sanitized.documentNumber),
+      this.lookupWooCustomer('SERATUS', sanitized.documentType, sanitized.documentNumber),
+      this.lookupWooCustomer('PALI', sanitized.documentType, sanitized.documentNumber),
     ]);
     const seratusData = canonicalWooData(
       seratusLookup.externalData,
@@ -547,19 +550,36 @@ export class CustomersService {
 
   private async lookupWooCustomer(
     provider: WooLookupProvider,
+    documentType: string,
     identification: string,
   ): Promise<CustomerSourceLookup> {
     try {
-      const customer = await this.wooCustomers.findCustomerByDocument(provider, identification);
+      const result = await this.wooCustomers.findCustomerByDocument(
+        provider,
+        documentType,
+        identification,
+      );
+      if (result.status === 'FOUND') {
+        return {
+          provider,
+          status: 'FOUND',
+          externalId: result.customer.id,
+          externalData: canonicalWooData(result.customer, null, identification),
+          candidates: 1,
+        };
+      }
       return {
         provider,
-        status: customer ? 'FOUND' : 'NOT_FOUND',
-        externalId: customer?.id ?? null,
-        externalData: customer ? canonicalWooData(customer, null, identification) : null,
+        status: result.status,
+        externalId: null,
+        externalData: null,
+        candidates: result.status === 'AMBIGUOUS' ? result.candidates : 0,
       };
-    } catch {
-      this.logger.warn(`No se pudo consultar el cliente ${identification} en ${provider}.`);
-      return { provider, status: 'ERROR', externalId: null, externalData: null };
+    } catch (error) {
+      this.logger.warn(
+        `No se pudo consultar el cliente ${identification} en ${provider}: ${integrationErrorCode(error) ?? 'sin código'}.`,
+      );
+      return { provider, status: 'ERROR', externalId: null, externalData: null, candidates: 0 };
     }
   }
 }

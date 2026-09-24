@@ -87,18 +87,22 @@ const siigoService = {
   lookupCustomer: () => Promise.resolve(scenario.siigo ?? null),
 } as unknown as SiigoCustomerService;
 const wooService = {
-  findCustomerByDocument: (store: 'SERATUS' | 'PALI') =>
-    Promise.resolve(store === 'SERATUS' ? (scenario.seratus ?? null) : (scenario.pali ?? null)),
+  findCustomerByDocument: (store: 'SERATUS' | 'PALI') => {
+    const customer = store === 'SERATUS' ? (scenario.seratus ?? null) : (scenario.pali ?? null);
+    return Promise.resolve(
+      customer ? ({ status: 'FOUND', customer } as const) : ({ status: 'NOT_FOUND' } as const),
+    );
+  },
 } as unknown as WooCustomerService;
 const resolver = new CustomerDraftResolverService(repository, siigoService, wooService);
 
 scenario = { localId: 91, siigo: siigo(), seratus: woo(), pali: woo() };
-const local = await resolver.resolve('904940');
+const local = await resolver.resolve('904940', '22');
 assert(local.existsLocally, 'La búsqueda local debe detener las consultas externas.');
 equal(local.customerId, 91, 'Debe devolver el ID local existente');
 
 scenario = { siigo: siigo() };
-const onlySiigo = await resolver.resolve('904940');
+const onlySiigo = await resolver.resolve('904940', '22');
 assert(!onlySiigo.existsLocally && onlySiigo.customer, 'Siigo debe construir un draft.');
 equal(onlySiigo.customer.email, 'cliente@gmail.com', 'Debe conservar el correo único de Siigo');
 equal(onlySiigo.customer.country, null, 'Siigo no debe autocompletar el país');
@@ -107,9 +111,9 @@ equal(onlySiigo.customer.cityCode, null, 'Siigo no debe autocompletar el código
 equal(Object.keys(onlySiigo.conflicts).length, 0, 'Siigo único no debe generar conflictos');
 
 scenario = { seratus: woo() };
-const onlyWoo = await resolver.resolve('904940');
+const onlyWoo = await resolver.resolve('904940', '22');
 assert(!onlyWoo.existsLocally && onlyWoo.customer, 'WooCommerce debe construir un draft.');
-equal(onlyWoo.customer.documentType, '22', 'Debe mapear el tipo documental real de Woo');
+equal(onlyWoo.customer.documentType, '22', 'Debe usar el tipo de documento pedido en la búsqueda');
 equal(onlyWoo.customer.firstName, 'Yohander David', 'Billing debe ganar sobre top-level');
 equal(onlyWoo.customer.addressLine2, 'Robledo Miramar', 'Debe preservar el complemento Billing');
 equal(onlyWoo.customer.country, null, 'WooCommerce no debe autocompletar el país');
@@ -124,19 +128,19 @@ scenario = {
     ],
   }),
 };
-const unknownDocumentType = await resolver.resolve('904940');
+const unknownDocumentType = await resolver.resolve('904940', '22');
 assert(
   !unknownDocumentType.existsLocally && unknownDocumentType.customer,
   'WooCommerce debe construir un draft aunque el tipo no esté mapeado.',
 );
 equal(
   unknownDocumentType.customer.documentType,
-  null,
-  'Un valor Woo desconocido debe requerir selección manual',
+  '22',
+  'El tipo pedido en la búsqueda debe mandar sobre un valor Woo no mapeado',
 );
 
 scenario = { siigo: siigo(), seratus: woo(), pali: woo({ id: '2' }) };
-const equivalent = await resolver.resolve('904940');
+const equivalent = await resolver.resolve('904940', '22');
 assert(
   !equivalent.existsLocally && equivalent.customer,
   'Las fuentes equivalentes deben resolverse.',
@@ -161,7 +165,7 @@ scenario = {
   seratus: woo(),
   pali: woo({ id: '2' }),
 };
-const completeNames = await resolver.resolve('904940');
+const completeNames = await resolver.resolve('904940', '22');
 assert(!completeNames.existsLocally && completeNames.customer, 'Debe resolver los nombres.');
 equal(completeNames.customer.firstName, null, 'Un conflicto debe dejar los nombres vacíos');
 equal(completeNames.customer.lastName, null, 'Un conflicto debe dejar los apellidos vacíos');
@@ -176,7 +180,7 @@ scenario = {
   siigo: siigo({ email: null }),
   seratus: woo({ billing: { email: 'compras@gmail.com' } }),
 };
-const invalidSiigoEmail = await resolver.resolve('904940');
+const invalidSiigoEmail = await resolver.resolve('904940', '22');
 assert(
   !invalidSiigoEmail.existsLocally && invalidSiigoEmail.customer,
   'Debe resolver el email Woo.',
@@ -188,7 +192,7 @@ scenario = {
   seratus: woo({ billing: { email: 'otro@hotmail.com', phone: '+57 310 555 1234' } }),
   pali: woo({ id: '2', billing: { email: 'otro@hotmail.com', phone: '+57 310 555 1234' } }),
 };
-const scalarConflicts = await resolver.resolve('904940');
+const scalarConflicts = await resolver.resolve('904940', '22');
 assert(!scalarConflicts.existsLocally, 'Debe resolver fuentes externas.');
 equal(scalarConflicts.conflicts.email?.options.length, 2, 'Debe detectar dos correos distintos');
 equal(scalarConflicts.conflicts.phone?.options.length, 2, 'Debe detectar dos teléfonos distintos');
@@ -203,7 +207,7 @@ scenario = {
   seratus: woo(),
   pali: woo({ id: '2', billing: { address_1: 'AVENIDA 10 #1-20', address_2: '' } }),
 };
-const addressConflict = await resolver.resolve('904940');
+const addressConflict = await resolver.resolve('904940', '22');
 assert(!addressConflict.existsLocally, 'Debe resolver fuentes externas.');
 equal(
   addressConflict.conflicts.address?.options.length,

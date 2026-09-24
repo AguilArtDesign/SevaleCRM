@@ -33,7 +33,8 @@ const customerResponse = (id: number, email = 'marcos.castillo@example.com') => 
     { id: 67, key: 'wc_last_active', value: '1788290866' },
   ],
 });
-// Payload del endpoint propio /wp-json/sevale/v1/customer/crm/{identificación}.
+// Payload anterior del endpoint propio (objeto plano). Se conserva a propósito: el CRM debe
+// seguir entendiéndolo mientras una tienda no tenga desplegado el contrato nuevo.
 const crmCustomerResponse = (customerId: number) => ({
   found: true,
   customer_id: customerId,
@@ -60,6 +61,22 @@ const crmCustomerResponse = (customerId: number) => ({
     { key: 'billing_type_document', value: '13' },
   ],
 });
+// Cada elemento de `customers[]` es el mismo cliente sin el `found` de la raíz: así lo devuelve
+// la tienda, y por eso el CRM no debe exigir ese indicador dentro del arreglo.
+const crmCustomerEntry = (customerId: number) => {
+  const entry = crmCustomerResponse(customerId);
+  return {
+    customer_id: entry.customer_id,
+    username: entry.username,
+    email: entry.email,
+    first_name: entry.first_name,
+    last_name: entry.last_name,
+    registered: '2026-08-05 18:55:24',
+    billing: entry.billing,
+    meta_data: entry.meta_data,
+  };
+};
+
 const responses: Response[] = [
   Response.json(crmCustomerResponse(8)),
   Response.json([customerResponse(21)]),
@@ -146,12 +163,13 @@ const customer: CreateCustomerInput = {
   fiscalResponsibilities: ['R-99-PN'],
 };
 
-const existingByDocument = await service.findCustomerByDocument('SERATUS', '13832081');
+const existingByDocument = await service.findCustomerByDocument('SERATUS', '13', '13832081');
 if (
-  existingByDocument?.id !== '8' ||
-  existingByDocument.billing.city !== 'Medellín' ||
-  existingByDocument.meta_data.length !== 2 ||
-  'shipping' in existingByDocument
+  existingByDocument.status !== 'FOUND' ||
+  existingByDocument.customer.id !== '8' ||
+  existingByDocument.customer.billing.city !== 'Medellín' ||
+  existingByDocument.customer.meta_data.length !== 2 ||
+  'shipping' in existingByDocument.customer
 ) {
   throw new Error('La búsqueda por documento no vinculó el username exacto de Seratus.');
 }
@@ -217,12 +235,16 @@ const [
   seratusPost,
   paliPost,
 ] = requests;
-const seratusDocumentAuthorization = new Headers(seratusDocument?.init?.headers).get(
+if (!seratusDocument) {
+  throw new Error('La consulta por documento no llegó a Seratus.');
+}
+const seratusDocumentAuthorization = new Headers(seratusDocument.init?.headers).get(
   'authorization',
 );
 if (
-  !seratusDocument?.url.includes('/wp-json/sevale/v1/customer/crm/13832081') ||
-  new URL(seratusDocument.url).search !== '' ||
+  new URL(seratusDocument.url).pathname !== '/wp-json/sevale/v1/customer/crm' ||
+  new URL(seratusDocument.url).searchParams.get('billing_type_document') !== '13' ||
+  new URL(seratusDocument.url).searchParams.get('billing_identification') !== '13832081' ||
   seratusDocument.init?.method !== 'GET' ||
   seratusDocumentAuthorization !==
     `Basic ${Buffer.from('sevale-crm:seratus-crm-password').toString('base64')}` ||
@@ -292,8 +314,8 @@ if (
 }
 
 globalThis.fetch = () => Promise.resolve(Response.json({ found: false, customer_id: null }));
-if ((await service.findCustomerByDocument('PALI', '999999')) !== null) {
-  throw new Error('Una identificación inexistente debe resolverse como null y no como error.');
+if ((await service.findCustomerByDocument('PALI', '13', '999999')).status !== 'NOT_FOUND') {
+  throw new Error('Una identificación inexistente debe resolverse como NOT_FOUND y no como error.');
 }
 
 // Una respuesta sin el indicador found no puede interpretarse como "no existe":
@@ -301,7 +323,7 @@ if ((await service.findCustomerByDocument('PALI', '999999')) !== null) {
 globalThis.fetch = () => Promise.resolve(Response.json({ customer_id: 2, username: '904940' }));
 let missingFlagRejected = false;
 try {
-  await service.findCustomerByDocument('PALI', '904940');
+  await service.findCustomerByDocument('PALI', '13', '904940');
 } catch {
   missingFlagRejected = true;
 }
@@ -318,7 +340,7 @@ globalThis.fetch = () =>
   );
 let mismatchedIdentificationRejected = false;
 try {
-  await service.findCustomerByDocument('PALI', '904940');
+  await service.findCustomerByDocument('PALI', '13', '904940');
 } catch {
   mismatchedIdentificationRejected = true;
 }
@@ -326,6 +348,52 @@ if (!mismatchedIdentificationRejected) {
   throw new Error('Una identificación declarada distinta debe rechazarse.');
 }
 
+// Contrato nuevo de la tienda: `customers[]` con una sola coincidencia se resuelve igual.
+globalThis.fetch = () =>
+  Promise.resolve(
+    Response.json({
+      found: true,
+      count: 1,
+      ambiguous: false,
+      customers: [crmCustomerEntry(8)],
+    }),
+  );
+const listContract = await service.findCustomerByDocument('SERATUS', '13', '13832081');
+if (listContract.status !== 'FOUND' || listContract.customer.id !== '8') {
+  throw new Error('El contrato nuevo (customers[]) debe resolverse como FOUND con el cliente.');
+}
+
+// Documento duplicado en la tienda: no se vincula ninguno y se informa cuántos hay.
+globalThis.fetch = () =>
+  Promise.resolve(
+    Response.json({
+      found: true,
+      count: 2,
+      ambiguous: true,
+      customers: [crmCustomerEntry(8), crmCustomerEntry(9)],
+    }),
+  );
+const ambiguous = await service.findCustomerByDocument('SERATUS', '13', '13832081');
+if (ambiguous.status !== 'AMBIGUOUS' || ambiguous.candidates !== 2) {
+  throw new Error('Un documento duplicado en la tienda debe resolverse como AMBIGUOUS.');
+}
+
+// Una identificación guardada con separadores no debe rechazarse por formato.
+globalThis.fetch = () =>
+  Promise.resolve(
+    Response.json({
+      ...crmCustomerResponse(8),
+      meta_data: [
+        { key: 'billing_identification', value: '13.832.081' },
+        { key: 'billing_type_document', value: '13' },
+      ],
+    }),
+  );
+const formatted = await service.findCustomerByDocument('SERATUS', '13', '13832081');
+if (formatted.status !== 'FOUND' || formatted.customer.id !== '8') {
+  throw new Error('Una identificación con separadores debe aceptarse tras normalizarla.');
+}
+
 process.stdout.write(
-  'Woo customer smoke: Sevale document lookup, Seratus/Pali preflight, conflicts, create, email update, credentials, IDs and payload checks passed.\n',
+  'Woo customer smoke: Sevale document pair lookup (type + number), legacy and list contracts, ambiguity, Seratus/Pali preflight, conflicts, create, email update, credentials, IDs and payload checks passed.\n',
 );

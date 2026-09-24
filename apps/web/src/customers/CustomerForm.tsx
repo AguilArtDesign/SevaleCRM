@@ -111,6 +111,16 @@ function formatAddress(address: CustomerDraftAddress): string {
   return [lines, location].filter(Boolean).join(' — ');
 }
 
+const sourceLabels: Record<CustomerIntegration['provider'], string> = {
+  SIIGO: 'Siigo',
+  SERATUS: 'Seratus',
+  PALI: 'Pali',
+};
+
+const documentTypeLabels = new Map<string, string>(
+  customerDocumentTypes.map(({ value, label }) => [value, label] as const),
+);
+
 function CustomerSourceChips({ sources }: { sources: CustomerIntegration['provider'][] }) {
   const sourceSet = new Set(sources);
   const chips: Array<{ id: string; label: string; className: string }> = [];
@@ -182,6 +192,13 @@ export function CustomerForm({
   const isEdit = Boolean(customer);
   const hasUnresolvedConflict =
     !lookupResult?.existsLocally && Boolean(Object.keys(lookupResult?.conflicts ?? {}).length);
+  const siigoDocumentTypeLabel =
+    lookupResult && !lookupResult.existsLocally && lookupResult.documentTypeFromSiigo
+      ? lookupResult.documentTypeFromSiigo === value.documentType
+        ? null
+        : (documentTypeLabels.get(lookupResult.documentTypeFromSiigo) ??
+          lookupResult.documentTypeFromSiigo)
+      : null;
 
   const clearConflict = (conflict: keyof CustomerDraftConflicts) =>
     setLookupResult((current) => {
@@ -228,7 +245,7 @@ export function CustomerForm({
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     if (!isEdit && lookupResult?.identification !== value.documentNumber.trim()) {
-      setError('Busca el cliente por número de documento antes de guardarlo.');
+      setError('Busca el cliente por tipo y número de documento antes de guardarlo.');
       return;
     }
     if (!isEdit && lookupResult?.existsLocally) {
@@ -288,6 +305,11 @@ export function CustomerForm({
 
   const lookupDocument = async () => {
     const identification = value.documentNumber.trim();
+    const documentType = value.documentType;
+    if (!documentType) {
+      setLookupError('Selecciona el tipo de documento antes de buscar.');
+      return;
+    }
     if (!identification) {
       setLookupError('Ingresa el número de documento que deseas buscar.');
       return;
@@ -296,7 +318,7 @@ export function CustomerForm({
     setError('');
     setIsLookingUp(true);
     try {
-      const result = await customersApi.resolve(identification);
+      const result = await customersApi.resolve(identification, documentType);
       setLookupResult(result);
       if (!result.existsLocally && result.customer) {
         setValue((current) => ({
@@ -473,6 +495,9 @@ export function CustomerForm({
                       isRequired
                       onChange={(documentType) => {
                         if (!documentType) return;
+                        // El tipo es parte de la llave de búsqueda: un resultado anterior deja de ser válido.
+                        setLookupResult(null);
+                        setLookupError('');
                         setDocumentErrors((current) => ({
                           ...current,
                           documentType: undefined,
@@ -548,6 +573,28 @@ export function CustomerForm({
                         </Alert.Description>
                       </Alert.Content>
                     </Alert>
+                  )}
+                  {!isEdit && lookupResult && !lookupResult.existsLocally && (
+                    <div className="customer-lookup-sources">
+                      {lookupResult.integrations.map((source) => (
+                        <p key={source.provider}>
+                          <strong>{sourceLabels[source.provider]}</strong>{' '}
+                          {source.status === 'FOUND'
+                            ? 'tiene este cliente.'
+                            : source.status === 'NOT_FOUND'
+                              ? 'no tiene este documento.'
+                              : source.status === 'AMBIGUOUS'
+                                ? `tiene ${source.candidates} clientes con este documento: corrige los duplicados en la tienda para poder vincularlo.`
+                                : 'no se pudo consultar.'}
+                        </p>
+                      ))}
+                      {siigoDocumentTypeLabel && (
+                        <p>
+                          En Siigo el documento figura como{' '}
+                          <strong>{siigoDocumentTypeLabel}</strong>.
+                        </p>
+                      )}
+                    </div>
                   )}
                 </section>
 

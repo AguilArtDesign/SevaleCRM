@@ -119,7 +119,7 @@ export const customerFiscalResponsibilities = [
   { value: 'O-47', label: 'Régimen simple de tributación' },
 ] as const;
 
-const customerDocumentTypeSchema = z.enum(
+export const customerDocumentTypeSchema = z.enum(
   customerDocumentTypes.map(({ value }) => value) as [
     (typeof customerDocumentTypes)[number]['value'],
     ...(typeof customerDocumentTypes)[number]['value'][],
@@ -258,6 +258,13 @@ export const customerSiigoLookupSchema = z.object({
     .min(1, 'Ingresa el número de documento.')
     .max(20, 'El número de documento es demasiado largo.')
     .regex(/^[A-Za-z0-9-]+$/, 'El número de documento contiene caracteres no válidos.'),
+});
+
+// La búsqueda del cliente se define por la pareja (tipo, número), que es la identidad real del
+// cliente en el CRM, en Siigo y en cada tienda; por eso el tipo es obligatorio al resolver.
+export const customerResolveQuerySchema = z.object({
+  identification: customerSiigoLookupSchema.shape.identification,
+  documentType: customerDocumentTypeSchema,
 });
 
 export const customerIntegrationProviderSchema = z.enum(['SIIGO', 'SERATUS', 'PALI']);
@@ -802,6 +809,7 @@ export type CreateCustomerInput = z.infer<typeof createCustomerSchema>;
 export type UpdateCustomerInput = z.infer<typeof updateCustomerSchema>;
 export type CustomerListQuery = z.infer<typeof customerListQuerySchema>;
 export type CustomerSiigoLookupQuery = z.infer<typeof customerSiigoLookupSchema>;
+export type CustomerResolveQuery = z.infer<typeof customerResolveQuerySchema>;
 export type CustomerSyncInput = z.infer<typeof customerSyncSchema>;
 export type CustomerSiigoLocationInput = z.infer<typeof customerSiigoLocationSchema>;
 export type CreateCouponInput = z.infer<typeof createCouponSchema>;

@@ -7,7 +7,7 @@ import {
   sanitizePostalCode,
   sanitizeSiigoAddress,
 } from './customer-data-sanitizer.js';
-import { documentTypeFromWoo } from './customer-document-type.mapping.js';
+import { integrationErrorCode } from '../integrations/integration-http.js';
 import { CustomersRepository } from './customers.repository.js';
 import {
   SiigoCustomerService,
@@ -21,8 +21,10 @@ import {
 export type CustomerDraftSource = 'SIIGO' | 'SERATUS' | 'PALI';
 export type CustomerSourceSummary = {
   provider: CustomerDraftSource;
-  status: 'FOUND' | 'NOT_FOUND' | 'ERROR';
+  status: 'FOUND' | 'NOT_FOUND' | 'AMBIGUOUS' | 'ERROR';
   externalId: string | null;
+  // Cuántos clientes coincidieron: 1 al encontrar y N cuando la tienda tiene duplicados.
+  candidates: number;
 };
 export type CustomerDraftAddress = Pick<
   CreateCustomerInput,
@@ -46,6 +48,7 @@ type ExternalLookup = {
   status: CustomerSourceSummary['status'];
   externalId: string | null;
   customer: WooCustomerReference | null;
+  candidates: number;
 };
 type Candidate<T> = CustomerDraftConflictOption<T>;
 
@@ -71,13 +74,6 @@ function mostCompleteText(...values: Array<string | null | undefined>): string |
       second.words - first.words || second.length - first.length || first.index - second.index,
   );
   return candidates[0]?.value ?? null;
-}
-
-function metadata(
-  customer: WooCustomerReference,
-  key: WooCustomerReference['meta_data'][number]['key'],
-) {
-  return customer.meta_data.find((entry) => entry.key === key)?.value ?? null;
 }
 
 function mergeScalarCandidates(candidates: Array<Candidate<string>>): Array<Candidate<string>> {
@@ -215,7 +211,7 @@ export class CustomerDraftResolverService {
     private readonly wooCustomers: WooCustomerService,
   ) {}
 
-  async resolve(identification: string) {
+  async resolve(identification: string, documentType: CreateCustomerInput['documentType']) {
     const documentNumber = identification.trim();
     const local = await this.customers.findByDocumentNumber(documentNumber);
     if (local) {
@@ -224,8 +220,8 @@ export class CustomerDraftResolverService {
 
     const [siigo, seratus, pali] = await Promise.all([
       this.lookupSiigo(documentNumber),
-      this.lookupWoo('SERATUS', documentNumber),
-      this.lookupWoo('PALI', documentNumber),
+      this.lookupWoo('SERATUS', documentType, documentNumber),
+      this.lookupWoo('PALI', documentType, documentNumber),
     ]);
     const woo = [seratus, pali];
     const integrations: CustomerSourceSummary[] = [
@@ -233,8 +229,14 @@ export class CustomerDraftResolverService {
         provider: 'SIIGO',
         status: siigo.status,
         externalId: siigo.customer?.reference.id ?? null,
+        candidates: siigo.customer ? 1 : 0,
       },
-      ...woo.map(({ provider, status, externalId }) => ({ provider, status, externalId })),
+      ...woo.map(({ provider, status, externalId, candidates }) => ({
+        provider,
+        status,
+        externalId,
+        candidates,
+      })),
     ];
     const profiles = woo.filter(
       (lookup): lookup is ExternalLookup & { customer: WooCustomerReference } =>
@@ -249,6 +251,7 @@ export class CustomerDraftResolverService {
         customer: null,
         integrations,
         conflicts: {} as CustomerDraftConflicts,
+        documentTypeFromSiigo: siigo.customer?.prefill.documentType ?? null,
       };
     }
 
@@ -263,13 +266,6 @@ export class CustomerDraftResolverService {
       ...profiles.map(({ customer }) => customer.billing.last_name),
       ...profiles.map(({ customer }) => customer.last_name),
     );
-    const documentTypes = [
-      ...new Set(
-        profiles
-          .map(({ customer }) => documentTypeFromWoo(metadata(customer, 'billing_type_document')))
-          .filter((type): type is NonNullable<typeof type> => type !== null),
-      ),
-    ];
     const nameOptions = mergeNameCandidates([
       ...(siigoPrefill?.firstName || siigoPrefill?.lastName
         ? [
@@ -350,8 +346,7 @@ export class CustomerDraftResolverService {
       company:
         siigoPrefill?.company ??
         firstText(...profiles.map(({ customer }) => customer.billing.company)),
-      documentType:
-        siigoPrefill?.documentType ?? (documentTypes.length === 1 ? documentTypes[0]! : null),
+      documentType,
       documentNumber,
       checkDigit: siigoPrefill?.checkDigit ?? null,
       email: emailOptions.length === 1 ? emailOptions[0]!.value : null,
@@ -376,6 +371,7 @@ export class CustomerDraftResolverService {
       customer: draft,
       integrations,
       conflicts,
+      documentTypeFromSiigo: siigoPrefill?.documentType ?? null,
     };
   }
 
@@ -391,19 +387,36 @@ export class CustomerDraftResolverService {
 
   private async lookupWoo(
     provider: Extract<CustomerDraftSource, 'SERATUS' | 'PALI'>,
+    documentType: string,
     identification: string,
   ): Promise<ExternalLookup> {
     try {
-      const customer = await this.wooCustomers.findCustomerByDocument(provider, identification);
+      const result = await this.wooCustomers.findCustomerByDocument(
+        provider,
+        documentType,
+        identification,
+      );
+      if (result.status === 'FOUND') {
+        return {
+          provider,
+          status: 'FOUND',
+          externalId: result.customer.id,
+          customer: result.customer,
+          candidates: 1,
+        };
+      }
       return {
         provider,
-        status: customer ? 'FOUND' : 'NOT_FOUND',
-        externalId: customer?.id ?? null,
-        customer,
+        status: result.status,
+        externalId: null,
+        customer: null,
+        candidates: result.status === 'AMBIGUOUS' ? result.candidates : 0,
       };
-    } catch {
-      this.logger.warn(`No se pudo consultar el cliente ${identification} en ${provider}.`);
-      return { provider, status: 'ERROR', externalId: null, customer: null };
+    } catch (error) {
+      this.logger.warn(
+        `No se pudo consultar el cliente ${identification} en ${provider}: ${integrationErrorCode(error) ?? 'sin código'}.`,
+      );
+      return { provider, status: 'ERROR', externalId: null, customer: null, candidates: 0 };
     }
   }
 }

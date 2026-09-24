@@ -69,8 +69,10 @@ export type SiigoCustomerDraft = Omit<CreateCustomerInput, 'documentType'> & {
 
 export type CustomerSourceLookup = {
   provider: CustomerIntegration['provider'];
-  status: 'FOUND' | 'NOT_FOUND' | 'ERROR';
+  status: 'FOUND' | 'NOT_FOUND' | 'AMBIGUOUS' | 'ERROR';
   externalId: string | null;
+  // Cuántos clientes coincidieron: 1 al encontrar y N cuando la tienda tiene duplicados.
+  candidates: number;
 };
 
 export type CustomerDraftAddress = Pick<
@@ -100,6 +102,8 @@ export type CustomerResolveResponse =
       customer: SiigoCustomerDraft | null;
       integrations: CustomerSourceLookup[];
       conflicts: CustomerDraftConflicts;
+      // Tipo que reporta Siigo, para avisar cuando difiere del elegido en el panel.
+      documentTypeFromSiigo: string | null;
     };
 
 type CustomerListInput = {
@@ -142,9 +146,9 @@ export const customersApi = {
     return apiRequest<CustomerListResponse>(`/api/customers?${query}`);
   },
   detail: (id: number) => apiRequest<CustomerRecord>(`/api/customers/${id}`),
-  resolve: (identification: string) =>
+  resolve: (identification: string, documentType: string) =>
     apiRequest<CustomerResolveResponse>(
-      `/api/customers/resolve?${new URLSearchParams({ identification })}`,
+      `/api/customers/resolve?${new URLSearchParams({ identification, documentType })}`,
     ),
   create: (input: CreateCustomerInput) =>
     apiRequest<CustomerRecord>('/api/customers', {

@@ -53,6 +53,11 @@ export type WooCustomerReference = {
   }>;
 };
 
+export type WooCustomerLookup =
+  | { status: 'FOUND'; customer: WooCustomerReference }
+  | { status: 'NOT_FOUND' }
+  | { status: 'AMBIGUOUS'; candidates: number };
+
 function isRecord(value: unknown): value is UnknownRecord {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -111,8 +116,7 @@ function normalizeCustomer(value: unknown): WooCustomerReference | null {
 
 // Payload del endpoint propio /wp-json/sevale/v1/customer/crm/{identificación}.
 // Se normaliza al mismo contrato que la REST API para que los consumidores no distingan el origen.
-function normalizeCrmCustomer(value: unknown): WooCustomerReference | null {
-  if (!isRecord(value) || value.found !== true) return null;
+function crmCustomerReference(value: UnknownRecord): WooCustomerReference | null {
   const id = identifier(value.customer_id);
   const username = text(value.username);
   if (!id || !username) return null;
@@ -148,8 +152,42 @@ function normalizeCrmCustomer(value: unknown): WooCustomerReference | null {
   };
 }
 
+// Contrato anterior: objeto plano con `found` en la raíz de la respuesta.
+function normalizeCrmCustomer(value: unknown): WooCustomerReference | null {
+  if (!isRecord(value) || value.found !== true) return null;
+  return crmCustomerReference(value);
+}
+
+// Contrato nuevo: cada elemento de `customers[]` trae los datos del cliente y no `found`.
+function normalizeCrmCustomerEntry(value: unknown): WooCustomerReference | null {
+  return isRecord(value) ? crmCustomerReference(value) : null;
+}
+
 function declaredIdentification(customer: WooCustomerReference): string | null {
   return customer.meta_data.find((entry) => entry.key === 'billing_identification')?.value ?? null;
+}
+
+// La tienda devuelve la identificación tal como la guardó (con puntos, guiones o espacios), así que
+// la verificación compara normalizado para no rechazar un acierto legítimo por formato.
+function normalizedKey(value: string): string {
+  return value
+    .trim()
+    .toLocaleUpperCase('es')
+    .replace(/[^A-Z0-9]/gu, '');
+}
+
+// Salvaguarda: la respuesta debe declarar la misma identificación que se buscó; una distinta
+// indica una respuesta inconsistente y no un acierto válido.
+function requireDeclaredIdentification(
+  customer: WooCustomerReference,
+  documentNumber: string,
+  label: string,
+): WooCustomerReference {
+  const declared = declaredIdentification(customer);
+  if (declared && normalizedKey(declared) !== normalizedKey(documentNumber)) {
+    throw invalidIntegrationResponse(label);
+  }
+  return customer;
 }
 
 function requireEmail(value: string | null): string {
@@ -167,30 +205,58 @@ function requireEmail(value: string | null): string {
 export class WooCustomerService {
   constructor(private readonly mapper: WooCustomerMapper) {}
 
+  /**
+   * Busca el cliente en la tienda por la pareja (tipo, número), que es la identidad real del
+   * cliente en el CRM y en Siigo. Acepta el contrato nuevo (`customers[]`) y el anterior (objeto
+   * plano) para que el orden de despliegue entre el CRM y las tiendas no importe.
+   */
   async findCustomerByDocument(
     store: Store,
+    documentType: string,
     documentNumber: string,
-  ): Promise<WooCustomerReference | null> {
+  ): Promise<WooCustomerLookup> {
     const config = wooCommerceCrmConfiguration(store);
     const identification = documentNumber.trim();
-    if (!identification) return null;
+    if (!identification) return { status: 'NOT_FOUND' };
+    const url = integrationUrl(config.apiUrl, 'customer/crm');
+    url.searchParams.set('billing_type_document', documentType.trim());
+    url.searchParams.set('billing_identification', identification);
     const response = await integrationGet(
-      integrationUrl(config.apiUrl, `customer/crm/${encodeURIComponent(identification)}`),
+      url,
       wooCommerceCrmAuthorizationHeaders(config),
       config.label,
       { timeoutMs: 15_000, retryCount: 1 },
     );
     if (!isRecord(response)) throw invalidIntegrationResponse(config.label);
-    if (response.found === false) return null;
-    const customer = normalizeCrmCustomer(response);
-    if (!customer) throw invalidIntegrationResponse(config.label);
-    // Salvaguarda: el endpoint resuelve por identificación, así que una identificación
-    // declarada distinta indica una respuesta inconsistente y no un acierto válido.
-    const declared = declaredIdentification(customer);
-    if (declared && declared !== identification) {
+    if (response.found === false) return { status: 'NOT_FOUND' };
+    const entries = Array.isArray(response.customers) ? response.customers : null;
+    if (!entries) {
+      const customer = normalizeCrmCustomer(response);
+      if (!customer) throw invalidIntegrationResponse(config.label);
+      return {
+        status: 'FOUND',
+        customer: requireDeclaredIdentification(customer, identification, config.label),
+      };
+    }
+    const customers = entries.map((entry) => normalizeCrmCustomerEntry(entry));
+    if (customers.some((customer) => customer === null)) {
       throw invalidIntegrationResponse(config.label);
     }
-    return customer;
+    const found = customers.filter(
+      (customer): customer is WooCustomerReference => customer !== null,
+    );
+    if (found.length === 0) return { status: 'NOT_FOUND' };
+    if (found.length > 1 || response.ambiguous === true) {
+      const declared =
+        typeof response.count === 'number' && Number.isSafeInteger(response.count)
+          ? response.count
+          : found.length;
+      return { status: 'AMBIGUOUS', candidates: Math.max(found.length, declared) };
+    }
+    return {
+      status: 'FOUND',
+      customer: requireDeclaredIdentification(found[0]!, identification, config.label),
+    };
   }
 
   async findCustomer(

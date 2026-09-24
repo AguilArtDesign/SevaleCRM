@@ -2191,6 +2191,18 @@ select {
   border-radius: var(--field-radius);
 }
 
+.customer-lookup-sources {
+  display: grid;
+  gap: 0.25rem;
+  padding: 0 0.25rem;
+  color: var(--muted);
+  font-size: 0.8125rem;
+}
+
+.customer-lookup-sources p {
+  margin: 0;
+}
+
 .customer-field .iti {
   width: 100%;
   color: var(--foreground);

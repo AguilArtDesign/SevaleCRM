@@ -14,7 +14,7 @@ import {
   createCustomerSchema,
   customerIdSchema,
   customerListQuerySchema,
-  customerSiigoLookupSchema,
+  customerResolveQuerySchema,
   customerSyncSchema,
   updateCustomerSchema,
 } from '@sevale/validation';
@@ -55,15 +55,15 @@ export class CustomersController {
   @Get('siigo-lookup')
   @RequirePermissions('customers.create')
   lookupSiigo(@Query() query: unknown) {
-    const input = parseInput(customerSiigoLookupSchema, query);
-    return this.customers.resolve(input.identification);
+    const input = parseInput(customerResolveQuerySchema, query);
+    return this.customers.resolve(input.identification, input.documentType);
   }
 
   @Get('resolve')
   @RequirePermissions('customers.create')
   resolve(@Query() query: unknown) {
-    const input = parseInput(customerSiigoLookupSchema, query);
-    return this.customers.resolve(input.identification);
+    const input = parseInput(customerResolveQuerySchema, query);
+    return this.customers.resolve(input.identification, input.documentType);
   }
 
   @Get(':id')
