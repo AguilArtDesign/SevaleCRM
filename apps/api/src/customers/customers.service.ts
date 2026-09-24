@@ -492,7 +492,7 @@ export class CustomersService {
     const { integrations, ...customerInput } = input;
     const match = await this.customers.findByDocumentNumber(input.documentNumber);
     const existing = match ? await this.customers.findById(match.id) : null;
-    const created = existing ? null : await this.create(customerInput, true);
+    const created = existing ? null : await this.createForIntegration(customerInput);
     const customerId = existing?.id ?? created?.id;
     if (!customerId) throw new ConflictException('No pudimos registrar el cliente.');
 
@@ -515,6 +515,26 @@ export class CustomersService {
         : await this.customers.findById(customerId);
     if (!linked) throw new ConflictException('No pudimos registrar el cliente.');
     return { success: true, created: !existing, customer: serializeCustomer(linked, true) };
+  }
+
+  /**
+   * Alta local del cliente para la integración: se sanea igual que en el panel, pero **sin** consultar
+   * Siigo ni las tiendas, y con las tres integraciones pendientes de sincronizar.
+   */
+  private createForIntegration(input: CreateCustomerInput) {
+    const sanitized = sanitizeCustomerInput(input);
+    return this.customers.create({
+      ...sanitized,
+      active: true,
+      fiscalResponsibilities: sanitized.fiscalResponsibilities,
+      integrations: {
+        create: [
+          { provider: 'SIIGO', externalId: null },
+          { provider: 'SERATUS', externalId: null },
+          { provider: 'PALI', externalId: null },
+        ],
+      },
+    });
   }
 
   private async publishNotification(operation: Promise<unknown>, context: string) {
