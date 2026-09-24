@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import type { CustomerListQuery } from '@sevale/validation';
+import type { CustomerListQuery, N8nCustomerIntegrationInput } from '@sevale/validation';
 import type { CustomerCityMatch } from '@sevale/shared';
 import { PrismaService } from '../database/prisma.service.js';
 import type { Prisma } from '../generated/prisma/client.js';
@@ -73,6 +73,45 @@ export class CustomersRepository {
     return this.prisma.customer.findFirst({
       where: { documentNumber, deletedAt: null },
       select: { id: true },
+    });
+  }
+
+  findIntegrationOwner(provider: N8nCustomerIntegrationInput['provider'], externalId: string) {
+    return this.prisma.customerIntegration.findFirst({
+      where: { provider, externalId },
+      select: { customerId: true },
+    });
+  }
+
+  /** Vincula los identificadores de cada tienda y los marca como sincronizados en esa tienda. */
+  linkIntegrations(customerId: number, integrations: N8nCustomerIntegrationInput[]) {
+    const now = new Date();
+    return this.prisma.$transaction(async (transaction) => {
+      for (const { provider, externalId } of integrations) {
+        await transaction.customerIntegration.upsert({
+          where: { customerId_provider: { customerId, provider } },
+          create: {
+            customerId,
+            provider,
+            externalId,
+            status: 'SYNCED',
+            lastAttemptAt: now,
+            lastSyncedAt: now,
+          },
+          update: {
+            externalId,
+            status: 'SYNCED',
+            lastAttemptAt: now,
+            lastSyncedAt: now,
+            lastErrorCode: null,
+            lastErrorMessage: null,
+          },
+        });
+      }
+      return transaction.customer.findUniqueOrThrow({
+        where: { id: customerId },
+        include: customerInclude,
+      });
     });
   }
 

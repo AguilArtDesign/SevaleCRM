@@ -21,6 +21,7 @@ export type OrderListRecord = {
   currency: 'COP' | 'USD';
   store: ProductStore;
   wooOrderId: string | null;
+  wooStatus: string | null;
   syncStatus: OrderSyncStatus;
   lastSyncAt: string | null;
   lastSyncErrorCode: string | null;
@@ -140,6 +141,7 @@ export type OrderDetailRecord = {
     id: number;
     store: ProductStore;
     wooOrderId: string | null;
+    wooStatus: string | null;
     syncStatus: OrderSyncStatus;
     lastSyncAt: string | null;
     lastSyncErrorCode: string | null;

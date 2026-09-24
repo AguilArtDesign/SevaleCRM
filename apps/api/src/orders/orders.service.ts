@@ -159,6 +159,7 @@ export class OrdersService {
         updatedAt: operation.updatedAt,
         customer: operation.customer,
         wooOrderId: order.wooOrderId?.toString() ?? null,
+        wooStatus: order.wooStatus,
         subtotal: money(order.subtotal),
         discountTotal: money(order.discountTotal),
         shippingTotal: money(order.shippingTotal),

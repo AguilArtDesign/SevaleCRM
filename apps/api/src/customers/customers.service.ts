@@ -13,6 +13,8 @@ import {
   type CreateCustomerInput,
   type CustomerListQuery,
   type CustomerSyncInput,
+  type N8nCustomerLookupInput,
+  type N8nCustomerUpsertInput,
   type UpdateCustomerInput,
 } from '@sevale/validation';
 import {
@@ -472,6 +474,47 @@ export class CustomersService {
       }
       throw error;
     }
+  }
+
+  /** Consulta para n8n: responde si el cliente existe y devuelve sus vínculos por tienda. */
+  async lookupForIntegration(input: N8nCustomerLookupInput) {
+    const match = await this.customers.findByDocumentNumber(input.documentNumber);
+    const customer = match ? await this.customers.findById(match.id) : null;
+    if (!customer) return { success: true, found: false, customer: null };
+    return { success: true, found: true, customer: serializeCustomer(customer, true) };
+  }
+
+  /**
+   * Alta o vinculación de un cliente desde n8n. Si el documento ya existe no se sobrescriben sus datos:
+   * solo se vinculan los identificadores de cada tienda (las demás quedan pendientes de sincronizar).
+   */
+  async upsertForIntegration(input: N8nCustomerUpsertInput) {
+    const { integrations, ...customerInput } = input;
+    const match = await this.customers.findByDocumentNumber(input.documentNumber);
+    const existing = match ? await this.customers.findById(match.id) : null;
+    const created = existing ? null : await this.create(customerInput, true);
+    const customerId = existing?.id ?? created?.id;
+    if (!customerId) throw new ConflictException('No pudimos registrar el cliente.');
+
+    for (const { provider, externalId } of integrations) {
+      const owner = await this.customers.findIntegrationOwner(provider, externalId);
+      if (owner && owner.customerId !== customerId) {
+        throw new ConflictException({
+          success: false,
+          error: {
+            code: 'CUSTOMER_INTEGRATION_LINK_CONFLICT',
+            message: `El identificador ${externalId} de ${provider} ya está vinculado con otro cliente.`,
+          },
+        });
+      }
+    }
+
+    const linked =
+      integrations.length > 0
+        ? await this.customers.linkIntegrations(customerId, integrations)
+        : await this.customers.findById(customerId);
+    if (!linked) throw new ConflictException('No pudimos registrar el cliente.');
+    return { success: true, created: !existing, customer: serializeCustomer(linked, true) };
   }
 
   private async publishNotification(operation: Promise<unknown>, context: string) {

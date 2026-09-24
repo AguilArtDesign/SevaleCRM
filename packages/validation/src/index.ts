@@ -725,6 +725,26 @@ export type UpdateShipmentInput = z.infer<typeof updateShipmentSchema>;
 export type CreateSiigoQuotationInput = z.infer<typeof createSiigoQuotationSchema>;
 export type WooOrderInboundInput = z.infer<typeof wooOrderInboundSchema>;
 
+export const n8nCustomerIntegrationSchema = z.object({
+  provider: z.enum(['SIIGO', 'SERATUS', 'PALI']),
+  externalId: z.string().trim().min(1).max(191),
+});
+
+/** Alta o actualización de un cliente desde n8n: mismos campos del CRM más sus vínculos por tienda. */
+export const n8nCustomerUpsertSchema = createCustomerSchema.extend({
+  integrations: z.array(n8nCustomerIntegrationSchema).max(3).default([]),
+});
+
+export const n8nCustomerLookupSchema = z
+  .object({
+    documentNumber: z.string().trim().min(1).max(50),
+  })
+  .strict();
+
+export type N8nCustomerIntegrationInput = z.infer<typeof n8nCustomerIntegrationSchema>;
+export type N8nCustomerUpsertInput = z.infer<typeof n8nCustomerUpsertSchema>;
+export type N8nCustomerLookupInput = z.infer<typeof n8nCustomerLookupSchema>;
+
 export const siigoProductLookupQuerySchema = z.object({
   siigo_id: z.string().trim().min(1).max(191),
 });

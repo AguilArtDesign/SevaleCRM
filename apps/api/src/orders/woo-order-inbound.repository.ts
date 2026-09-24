@@ -213,18 +213,22 @@ export class WooOrderInboundRepository {
           : {}),
       };
       const itemData = input.items.map((item, index) => {
-        const product = products[index]!;
-        const originalPrice = input.currency === 'USD' ? product.wooPriceUsd : product.wooPriceCop;
+        const product = products[index] ?? null;
+        const originalPrice = product
+          ? input.currency === 'USD'
+            ? product.wooPriceUsd
+            : product.wooPriceCop
+          : null;
         const unitPrice = decimal(item.unitPrice);
         return {
-          productId: product.id,
-          skuSnapshot: item.sku || product.sku,
-          nameSnapshot: item.name || product.productName,
+          productId: product?.id ?? null,
+          skuSnapshot: item.sku || product?.sku || '',
+          nameSnapshot: item.name || product?.productName || '',
           storeSnapshot: input.store,
           quantity: item.quantity,
           originalPrice,
           unitPrice,
-          priceModified: !unitPrice.equals(originalPrice),
+          priceModified: product && originalPrice ? !unitPrice.equals(originalPrice) : false,
           subtotal: decimal(item.subtotal),
           discountTotal: decimal(item.discountTotal),
           total: decimal(item.total),
@@ -377,7 +381,7 @@ export class WooOrderInboundRepository {
     transaction: Transaction,
     store: Store,
     item: NormalizedWooOrderInbound['items'][number],
-  ): Promise<Product> {
+  ): Promise<Product | null> {
     const externalId = BigInt(item.wooVariationId ?? item.wooProductId);
     const byId = await transaction.product.findFirst({
       where: { store, wooVariationId: externalId },
@@ -392,9 +396,8 @@ export class WooOrderInboundRepository {
       });
       if (bySku) return bySku;
     }
-    throw new WooInboundError(
-      'WOO_PRODUCT_NOT_LINKED',
-      `No encontramos el producto local para “${item.sku || item.name}” en ${store}.`,
-    );
+    // Un producto que ya no existe en el inventario no invalida el pedido: se conserva el snapshot que
+    // envió la tienda y el ítem queda sin vínculo local.
+    return null;
   }
 }

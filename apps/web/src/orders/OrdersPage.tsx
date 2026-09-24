@@ -211,6 +211,11 @@ function OrderDetail({
                 <strong>{formattedMoney(storeOrder.total, order.currency)}</strong>
               </header>
               {storeOrder.wooOrderId && <p>WooCommerce #{storeOrder.wooOrderId}</p>}
+              {storeOrder.wooStatus && (
+                <p>
+                  Estado en WooCommerce: <strong>{storeOrder.wooStatus}</strong>
+                </p>
+              )}
               {storeOrder.lastSyncErrorMessage && (
                 <p className="order-sync-error">{storeOrder.lastSyncErrorMessage}</p>
               )}
@@ -822,6 +827,11 @@ export function OrdersPage() {
                     </Table.Cell>
                     <Table.Cell onClick={stopRowSelection} onPointerDown={stopRowSelection}>
                       <OrderStatusChip status={order.status} />
+                      {order.wooStatus && (
+                        <div>
+                          <small className="text-muted">WooCommerce: {order.wooStatus}</small>
+                        </div>
+                      )}
                     </Table.Cell>
                     <Table.Cell onClick={stopRowSelection} onPointerDown={stopRowSelection}>
                       <Chip color={syncStatusMeta[order.syncStatus].color}>
