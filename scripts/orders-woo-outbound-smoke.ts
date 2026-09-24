@@ -419,6 +419,9 @@ try {
   ) {
     throw new Error('El payload outbound no envió el operation_id con el código de la operación.');
   }
+  if (metadata?.find(({ key }) => key === 'origen')?.value !== 'CRM') {
+    throw new Error('El payload outbound no envió el origen del pedido como CRM.');
+  }
   const shipmentMetadata = seratusPayload?.meta_data as Array<Record<string, unknown>> | undefined;
   if (
     shipmentMetadata?.find(({ key }) => key === '_wot_tracking_carrier')?.value !==

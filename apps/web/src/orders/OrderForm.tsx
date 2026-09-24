@@ -33,6 +33,8 @@ import {
   resolveShippingMethod,
   resolveState,
   shippingMethods,
+  splitShippingCents,
+  toShippingCents,
 } from '@sevale/shared';
 import type { CreateOrderOperationInput } from '@sevale/validation';
 import { Input } from '../components/Input';
@@ -768,6 +770,16 @@ export function OrderForm({
     shippingMethod,
   ]);
 
+  // El envío de la operación se reparte entre las tiendas con el mismo criterio que guarda el CRM, así
+  // el resumen de cada tienda muestra el valor que realmente va a asumir.
+  const storeShippingShares = useMemo(
+    () =>
+      splitShippingCents(toShippingCents(summary.shippingTotal), activeStores.length).map(
+        (cents) => cents / 100,
+      ),
+    [activeStores.length, summary.shippingTotal],
+  );
+
   const chooseCustomer = (next: CustomerRecord) => {
     const nextBilling = addressFromCustomer(next);
     setCustomer(next);
@@ -1310,7 +1322,8 @@ export function OrderForm({
                   <h3>Resumen del pedido</h3>
                   {activeStores.length > 1 && (
                     <div className="order-store-summaries">
-                      {activeStores.map((store) => {
+                      {activeStores.map((store, index) => {
+                        const shipping = storeShippingShares[index] ?? 0;
                         const storeItems = items.filter(({ product }) => product.store === store);
                         const subtotal = storeItems.reduce(
                           (total, item) => total + money(item.unitPrice) * money(item.quantity),
@@ -1343,11 +1356,13 @@ export function OrderForm({
                               </div>
                               <div>
                                 <dt>Envío</dt>
-                                <dd>{formattedProductPrice(0, currency)}</dd>
+                                <dd>{formattedProductPrice(shipping, currency)}</dd>
                               </div>
                               <div>
                                 <dt>Total</dt>
-                                <dd>{formattedProductPrice(subtotal - discount, currency)}</dd>
+                                <dd>
+                                  {formattedProductPrice(subtotal - discount + shipping, currency)}
+                                </dd>
                               </div>
                             </dl>
                           </article>

@@ -222,6 +222,8 @@ export function orderPayload(
       { key: 'sevale_crm_operation_code', value: operation.operationCode },
       // Nombre que WooCommerce ya consume para identificar la operación del CRM.
       { key: 'operation_id', value: operation.operationCode },
+      // Origen del pedido (CRM | WOOCOMMERCE): los webhooks lo usan para no reprocesar lo propio.
+      { key: 'origen', value: operation.source },
       {
         key: 'billing_type_document',
         value: operation.customer.documentType,

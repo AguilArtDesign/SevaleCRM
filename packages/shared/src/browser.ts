@@ -16,6 +16,8 @@ export type {
   ShippingMethodCode,
 } from './order-commercial-catalogs.js';
 
+export { splitShippingCents, toShippingCents } from './order-shipping.js';
+
 export {
   countryFlagPath,
   findCitiesByName,

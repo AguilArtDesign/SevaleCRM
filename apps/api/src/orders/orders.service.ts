@@ -12,7 +12,13 @@ import type {
   UpdateShipmentInput,
   UpdateOrderOperationInput,
 } from '@sevale/validation';
-import { resolveCouponType, resolvePaymentMethod, resolveShippingMethod } from '@sevale/shared';
+import {
+  resolveCouponType,
+  resolvePaymentMethod,
+  resolveShippingMethod,
+  splitShippingCents,
+  toShippingCents,
+} from '@sevale/shared';
 import { Prisma, type Product, type Store } from '../generated/prisma/client.js';
 import { OrdersRepository, type OrderOperationDetail } from './orders.repository.js';
 import type {
@@ -59,22 +65,6 @@ function sum(values: Prisma.Decimal[]): Prisma.Decimal {
 
 function roundMoney(value: Prisma.Decimal): Prisma.Decimal {
   return value.toDecimalPlaces(2);
-}
-
-// El envío pertenece a la operación y se comparte entre las tiendas que tienen productos: se divide en
-// partes iguales y la última absorbe el redondeo, igual que el descuento por línea. Si solo hay una
-// tienda, esa asume el valor completo.
-function splitShipping(total: Prisma.Decimal, stores: number): Prisma.Decimal[] {
-  if (stores <= 0 || total.lessThanOrEqualTo(0)) return [];
-  const share = roundMoney(total.dividedBy(stores));
-  const shares: Prisma.Decimal[] = [];
-  let assigned = zero();
-  for (let index = 1; index <= stores; index += 1) {
-    const value = index === stores ? total.minus(assigned) : share;
-    assigned = assigned.plus(value);
-    shares.push(value);
-  }
-  return shares;
 }
 
 function operationCode(date = new Date()): string {
@@ -469,7 +459,10 @@ export class OrdersService {
       subtotal,
       input.customShippingTotal,
     );
-    const shippingShares = splitShipping(shippingTotal, itemsByStore.size);
+    const shippingShares = splitShippingCents(
+      toShippingCents(shippingTotal.toNumber()),
+      itemsByStore.size,
+    );
 
     const storeOrders: PreparedStoreOrder[] = [...itemsByStore.entries()].map(
       ([store, items], index) => {
@@ -485,7 +478,7 @@ export class OrdersService {
         const coupons: PreparedOrderCoupon[] = coupon
           ? [{ code: coupon.coupon, discountTotal }]
           : [];
-        const shippingShare = shippingShares[index] ?? zero();
+        const shippingShare = decimal(shippingShares[index] ?? 0).dividedBy(100);
         return {
           store,
           items,
