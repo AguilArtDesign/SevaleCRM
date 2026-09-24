@@ -15,6 +15,7 @@ import {
   wooCommerceCrmConfiguration,
   type WooCommerceConfiguration,
 } from '../../integrations/woocommerce/woocommerce-configuration.js';
+import { documentTypeFromWoo } from '../customer-document-type.mapping.js';
 import type { CustomerMappingSource } from '../mapping/customer-mapping.types.js';
 import { WooCustomerMapper, type WooCustomerPayload } from '../mapping/woo-customer.mapper.js';
 
@@ -190,6 +191,14 @@ function requireDeclaredIdentification(
   return customer;
 }
 
+// Tipo declarado por la tienda, traducido al código del CRM cuando es una etiqueta heredada.
+function declaredDocumentType(customer: WooCustomerReference): string | null {
+  const raw =
+    customer.meta_data.find((entry) => entry.key === 'billing_type_document')?.value ?? null;
+  if (!raw) return null;
+  return documentTypeFromWoo(raw) ?? raw;
+}
+
 function requireEmail(value: string | null): string {
   if (value) return value.trim().toLowerCase();
   throw new BadRequestException({
@@ -261,26 +270,30 @@ export class WooCustomerService {
 
   async findCustomer(
     store: Store,
-    customer: Pick<CustomerMappingSource, 'documentNumber' | 'email'>,
+    customer: Pick<CustomerMappingSource, 'documentType' | 'documentNumber' | 'email'>,
   ): Promise<WooCustomerReference | null> {
     const config = wooCommerceConfiguration(store);
-    const username = customer.documentNumber.trim();
     const email = requireEmail(customer.email);
-    const [emailResults, usernameResults] = await Promise.all([
-      this.search(config, 'email', email),
-      this.search(config, 'search', username),
-    ]);
-    const emailMatches = emailResults.filter((result) => result.email === email);
-    const usernameMatches = usernameResults.filter((result) => result.username === username);
-    const candidates = new Map(
-      [...emailMatches, ...usernameMatches].map((result) => [result.id, result]),
-    );
-    const exact = [...candidates.values()].filter(
-      (result) => result.email === email && result.username === username,
-    );
-    if (candidates.size === 0) return null;
-    if (candidates.size === 1 && exact.length === 1) return exact[0] ?? null;
-    throw this.conflict(config.label);
+    // El correo es único en WordPress, así que se busca por ahí; el username no identifica al
+    // cliente y por eso se confirma el documento declarado antes de aceptar la coincidencia.
+    const matches = (await this.search(config, email)).filter((result) => result.email === email);
+    if (matches.length === 0) return null;
+    if (matches.length > 1) throw this.conflict(config.label);
+
+    const match = matches[0]!;
+    const declaredNumber = declaredIdentification(match);
+    if (
+      !declaredNumber ||
+      normalizedKey(declaredNumber) !== normalizedKey(customer.documentNumber)
+    ) {
+      throw this.conflict(config.label);
+    }
+    const declaredType = declaredDocumentType(match);
+    if (declaredType && normalizedKey(declaredType) !== normalizedKey(customer.documentType)) {
+      throw this.conflict(config.label);
+    }
+
+    return match;
   }
 
   async createCustomer(
@@ -299,7 +312,7 @@ export class WooCustomerService {
       config.label,
       { timeoutMs: 20_000 },
     );
-    return this.confirmResponse(response, body, config.label);
+    return this.confirmResponse(response, body.email, config.label);
   }
 
   async updateCustomer(
@@ -310,8 +323,8 @@ export class WooCustomerService {
     const config = wooCommerceConfiguration(store);
     const id = identifier(externalId.trim());
     if (!id) throw invalidIntegrationResponse(config.label);
-    const body = this.mapper.map(customer);
-    await this.ensureUpdateIdentityAvailable(config, id, body.email, body.username);
+    const body = this.mapper.mapForUpdate(customer);
+    await this.ensureUpdateIdentityAvailable(config, id, body.email);
     const response = await integrationPut(
       integrationUrl(config.apiUrl, `customers/${id}`),
       wooCommerceAuthorizationHeaders(config),
@@ -319,7 +332,7 @@ export class WooCustomerService {
       config.label,
       { timeoutMs: 20_000, retryCount: 1 },
     );
-    const result = this.confirmResponse(response, body, config.label);
+    const result = this.confirmResponse(response, body.email, config.label);
     if (result.id !== id) throw invalidIntegrationResponse(config.label);
     return result;
   }
@@ -328,26 +341,20 @@ export class WooCustomerService {
     config: WooCommerceConfiguration,
     externalId: string,
     email: string,
-    username: string,
   ): Promise<void> {
-    const [emailResults, usernameResults] = await Promise.all([
-      this.search(config, 'email', email.toLowerCase()),
-      this.search(config, 'search', username),
-    ]);
-    const belongsToAnotherCustomer = [...emailResults, ...usernameResults].some(
-      (candidate) => candidate.id !== externalId,
-    );
+    const results = await this.search(config, email.toLowerCase());
+    const belongsToAnotherCustomer = results.some((candidate) => candidate.id !== externalId);
     if (belongsToAnotherCustomer) throw this.conflict(config.label);
   }
 
+  // El correo es único a nivel de WordPress, no solo para el rol customer: sirve para saber si el
+  // cliente ya existe en la tienda sin usar el username como llave.
   private async search(
     config: WooCommerceConfiguration,
-    field: 'email' | 'search',
-    value: string,
+    email: string,
   ): Promise<WooCustomerReference[]> {
     const url = integrationUrl(config.apiUrl, 'customers');
-    url.searchParams.set(field, value);
-    // El correo y el username son únicos a nivel de WordPress, no solo para el rol customer.
+    url.searchParams.set('email', email);
     url.searchParams.set('role', 'all');
     url.searchParams.set('per_page', '100');
     const response = await integrationGet(
@@ -366,15 +373,12 @@ export class WooCustomerService {
 
   private confirmResponse(
     response: unknown,
-    expected: WooCustomerPayload,
+    expectedEmail: string,
     label: string,
   ): WooCustomerReference {
     const customer = normalizeCustomer(response);
-    if (
-      !customer ||
-      customer.email !== expected.email.toLowerCase() ||
-      customer.username !== expected.username
-    ) {
+    // El username no se compara: solo se define al crear y no identifica al cliente.
+    if (!customer || customer.email !== expectedEmail.toLowerCase()) {
       throw invalidIntegrationResponse(label);
     }
     return customer;

@@ -17,6 +17,8 @@ export type {
 } from './order-commercial-catalogs.js';
 
 export { splitShippingCents, toShippingCents } from './order-shipping.js';
+export { wooCustomerUsername } from './customer-username.js';
+export type { WooUsernameSource } from './customer-username.js';
 
 export {
   countryFlagPath,

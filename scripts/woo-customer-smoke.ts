@@ -77,23 +77,28 @@ const crmCustomerEntry = (customerId: number) => {
   };
 };
 
+// Una respuesta por petición, en orden: la búsqueda en la tienda pasó de dos consultas
+// (correo + username) a una sola por correo.
 const responses: Response[] = [
+  // 1. Búsqueda por documento en el endpoint de Sevale (contrato anterior, objeto plano).
   Response.json(crmCustomerResponse(8)),
+  // 2. Preflight de Seratus por correo: coincide y declara el mismo documento.
   Response.json([customerResponse(21)]),
-  Response.json([customerResponse(21)]),
+  // 3. Preflight de Pali por correo: sin coincidencias.
   Response.json([]),
-  Response.json([]),
+  // 4 y 5. Alta en cada tienda.
   Response.json(customerResponse(31), { status: 201 }),
   Response.json(customerResponse(41), { status: 201 }),
-  Response.json([customerResponse(31)]),
+  // 6 y 7. Actualización en Seratus: preflight por correo y respuesta del PUT.
   Response.json([customerResponse(31)]),
   Response.json(customerResponse(31)),
-  Response.json([customerResponse(41)]),
+  // 8 y 9. Actualización en Pali.
   Response.json([customerResponse(41)]),
   Response.json(customerResponse(41)),
+  // 10 y 11. Cambio de correo del mismo cliente externo en Seratus.
   Response.json([]),
-  Response.json([customerResponse(31)]),
   Response.json(customerResponse(31, 'marcos.nuevo@example.com')),
+  // 12. El correo nuevo pertenece a otro cliente externo: debe rechazarse.
   Response.json([
     {
       id: 50,
@@ -101,7 +106,7 @@ const responses: Response[] = [
       username: 'otro-documento',
     },
   ]),
-  Response.json([customerResponse(41)]),
+  // 13. El correo del CRM pertenece a un cliente externo con otro documento: conflicto.
   Response.json([
     {
       id: 50,
@@ -109,7 +114,6 @@ const responses: Response[] = [
       username: 'otro-documento',
     },
   ]),
-  Response.json([]),
 ];
 
 function requestUrl(input: string | URL | Request): string {
@@ -223,18 +227,10 @@ if (!conflictRejected) {
   throw new Error('El preflight permitió que el mismo correo perteneciera a otro usuario.');
 }
 
-if (responses.length !== 0 || requests.length !== 20) {
+if (responses.length !== 0 || requests.length !== 13) {
   throw new Error('La cantidad de peticiones WooCommerce no coincide con el flujo esperado.');
 }
-const [
-  seratusDocument,
-  seratusEmail,
-  seratusUsername,
-  paliEmail,
-  paliUsername,
-  seratusPost,
-  paliPost,
-] = requests;
+const [seratusDocument, seratusEmail, paliEmail, seratusPost, paliPost] = requests;
 if (!seratusDocument) {
   throw new Error('La consulta por documento no llegó a Seratus.');
 }
@@ -250,12 +246,11 @@ if (
     `Basic ${Buffer.from('sevale-crm:seratus-crm-password').toString('base64')}` ||
   !seratusEmail?.url.includes('/customers?email=marcos.castillo%40example.com') ||
   !seratusEmail.url.includes('role=all') ||
-  !seratusUsername?.url.includes('/customers?search=13832081') ||
   !paliEmail?.url.startsWith('https://pali.test/') ||
-  !paliUsername?.url.startsWith('https://pali.test/')
+  requests.some((entry) => entry.url.includes('search='))
 ) {
   throw new Error(
-    'La consulta por documento no usó el endpoint de Sevale con sus propias credenciales, o el preflight no consultó email y username en la tienda correcta.',
+    'La consulta por documento no usó el endpoint de Sevale con sus propias credenciales, o el preflight no consultó el correo y el documento en las tiendas.',
   );
 }
 const seratusAuthorization = new Headers(seratusPost?.init?.headers).get('authorization');
@@ -274,7 +269,8 @@ const metadata = payload.meta_data as Array<Record<string, unknown>>;
 const password = payload.password;
 const paliPassword = paliPayload.password;
 if (
-  payload.username !== customer.documentNumber ||
+  // El username deja de ser el número: se arma con iniciales, tipo y número para no chocar.
+  payload.username !== 'MC13-13832081' ||
   payload.email !== customer.email ||
   billing.city !== 'Medellín' ||
   billing.state !== 'CO-ANT' ||
@@ -287,6 +283,21 @@ if (
 ) {
   throw new Error('WooCustomerMapper envió un payload distinto al contrato aprobado.');
 }
+// Empresa: las iniciales salen de la razón social y el número no queda solo en el username.
+const companyUsername = mapper.map({
+  ...customer,
+  personType: 'COMPANY',
+  firstName: null,
+  lastName: null,
+  company: 'Aguilart Design',
+  displayName: 'Aguilart Design',
+  documentType: '31',
+  documentNumber: '900123456',
+}).username;
+if (companyUsername !== 'AD31-900123456') {
+  throw new Error('El username compuesto no se armó con las iniciales de la empresa.');
+}
+
 if (
   typeof password !== 'string' ||
   password.length < 32 ||
@@ -300,8 +311,12 @@ if (
   throw new Error('La creación no generó una contraseña segura y diferente para cada tienda.');
 }
 for (const request of requests.filter((entry) => entry.init?.method === 'PUT')) {
-  if ('password' in requestBody(request.init?.body)) {
+  const body = requestBody(request.init?.body);
+  if ('password' in body) {
     throw new Error('La actualización no debe cambiar la contraseña de WooCommerce.');
+  }
+  if ('username' in body) {
+    throw new Error('La actualización no debe cambiar el username de WooCommerce.');
   }
 }
 if (

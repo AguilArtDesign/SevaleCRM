@@ -6,6 +6,7 @@ import {
   resolveCustomerColombiaState,
   resolveCustomerCountry,
   resolveCustomerWooState,
+  wooCustomerUsername,
 } from '@sevale/shared';
 import { capitalizeCustomerName } from '../customer-data-sanitizer.js';
 import type { CustomerMappingSource } from './customer-mapping.types.js';
@@ -121,6 +122,30 @@ function resolveWooLocation(customer: CustomerMappingSource): WooLocation | null
 @Injectable()
 export class WooCustomerMapper {
   map(customer: CustomerMappingSource): WooCustomerPayload {
+    return {
+      ...this.build(customer),
+      // El username es único en WordPress y no identifica al cliente: se arma con las iniciales,
+      // el tipo y el número para que dos clientes distintos no choquen al crearse.
+      username: wooCustomerUsername({
+        personType: customer.personType,
+        firstName: customer.firstName,
+        lastName: customer.lastName,
+        company: customer.company,
+        documentType: customer.documentType,
+        documentNumber: customer.documentNumber,
+      }),
+    };
+  }
+
+  /**
+   * Payload sin username para las actualizaciones: el username solo se define al crear, porque
+   * cambiaría con cualquier corrección del nombre y no identifica al cliente.
+   */
+  mapForUpdate(customer: CustomerMappingSource): Omit<WooCustomerPayload, 'username'> {
+    return this.build(customer);
+  }
+
+  private build(customer: CustomerMappingSource): Omit<WooCustomerPayload, 'username'> {
     if (!customer.email) {
       throw new BadRequestException({
         success: false,
@@ -147,7 +172,6 @@ export class WooCustomerMapper {
     const lastName = capitalizeCustomerName(customer.lastName);
 
     return {
-      username: customer.documentNumber,
       email: customer.email,
       ...(firstName ? { first_name: firstName } : {}),
       ...(lastName ? { last_name: lastName } : {}),
