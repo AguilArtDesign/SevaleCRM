@@ -266,8 +266,8 @@ try {
     firstName: 'Cliente',
     lastName: 'Outbound',
     company: null,
-    address1: 'CRA 1 # 2-3',
-    address2: null,
+    address1: 'Cra 1 # 2-3',
+    address2: 'Torre 2 Apto 301',
     city: 'Medellín',
     state: 'ANT',
     postcode: '050001',
@@ -421,6 +421,17 @@ try {
   }
   if (metadata?.find(({ key }) => key === 'origen')?.value !== 'CRM') {
     throw new Error('El payload outbound no envió el origen del pedido como CRM.');
+  }
+  // Las dos líneas de la dirección viajan en mayúsculas sostenidas, en facturación y en envío.
+  const seratusBilling = seratusPayload?.billing as Record<string, string> | undefined;
+  const seratusShipping = seratusPayload?.shipping as Record<string, string> | undefined;
+  if (
+    seratusBilling?.address_1 !== 'CRA 1 # 2-3' ||
+    seratusBilling?.address_2 !== 'TORRE 2 APTO 301' ||
+    seratusShipping?.address_1 !== 'CRA 1 # 2-3' ||
+    seratusShipping?.address_2 !== 'TORRE 2 APTO 301'
+  ) {
+    throw new Error('El payload outbound no envió las direcciones en mayúsculas.');
   }
   const shipmentMetadata = seratusPayload?.meta_data as Array<Record<string, unknown>> | undefined;
   if (

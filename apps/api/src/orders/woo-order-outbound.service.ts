@@ -28,14 +28,10 @@ function displayPhone(value: string | null, country: string | null): string | nu
   return formatPhoneInternational(value, country ?? '') ?? value;
 }
 
-// La segunda línea de la dirección se envía como texto normal, no en mayúsculas sostenidas.
-function displayAddressLine(value: string | null): string | null {
-  if (!value) return null;
-  return value
-    .toLocaleLowerCase('es-CO')
-    .split(' ')
-    .map((word) => (word ? word.charAt(0).toLocaleUpperCase('es-CO') + word.slice(1) : word))
-    .join(' ');
+// Las dos líneas de la dirección viajan en mayúsculas sostenidas, como las espera la tienda (y como las
+// envía Siigo).
+function upperAddress(value: string | null): string | null {
+  return value ? value.toLocaleUpperCase('es-CO') : null;
 }
 
 // El descuento del cupón se reparte entre las líneas elegibles (las que no llevan el precio
@@ -183,8 +179,8 @@ export function orderPayload(
       first_name: operation.billingFirstName,
       last_name: operation.billingLastName,
       company: operation.billingCompany,
-      address_1: operation.billingAddress1,
-      address_2: displayAddressLine(operation.billingAddress2),
+      address_1: upperAddress(operation.billingAddress1),
+      address_2: upperAddress(operation.billingAddress2),
       city: operation.billingCity,
       state: operation.billingState,
       postcode: operation.billingPostcode,
@@ -196,8 +192,8 @@ export function orderPayload(
       first_name: operation.shippingFirstName,
       last_name: operation.shippingLastName,
       company: operation.shippingCompany,
-      address_1: operation.shippingAddress1,
-      address_2: displayAddressLine(operation.shippingAddress2),
+      address_1: upperAddress(operation.shippingAddress1),
+      address_2: upperAddress(operation.shippingAddress2),
       city: operation.shippingCity,
       state: operation.shippingState,
       postcode: operation.shippingPostcode,
