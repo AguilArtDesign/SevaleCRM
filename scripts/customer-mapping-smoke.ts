@@ -400,7 +400,8 @@ if (
 
 const woo = wooMapper.map(customer);
 if (
-  woo.username !== customer.documentNumber ||
+  // El username ya no es el documento: se arma con iniciales, tipo y número para no chocar.
+  woo.username !== 'MC13-013832081' ||
   woo.email !== customer.email ||
   woo.billing.city !== 'Medellín' ||
   woo.billing.state !== 'CO-ANT' ||
