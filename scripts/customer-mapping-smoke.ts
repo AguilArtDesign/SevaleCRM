@@ -283,8 +283,9 @@ const siigoUnitedStates = siigoMapper.map(
   { stateCode: '05', cityCode: '01' },
 );
 if (
+  // La dirección viaja en mayúsculas también para clientes internacionales.
   siigoUnitedStates.address.address !==
-    '1230 N. BEACHWOOD DR, APT 1/8, Los Ángeles, California, 90038, Estados Unidos (EEUU)' ||
+    '1230 N. BEACHWOOD DR, APT 1/8, LOS ÁNGELES, CALIFORNIA, 90038, ESTADOS UNIDOS (EEUU)' ||
   siigoUnitedStates.address.city.country_code !== 'Us' ||
   siigoUnitedStates.address.city.state_code !== '05' ||
   siigoUnitedStates.address.city.city_code !== '01'
@@ -392,10 +393,19 @@ const company = siigoMapper.map({
 if (
   company.person_type !== 'Company' ||
   company.name[0] !== 'SEVALE S.A.S.' ||
-  company.commercial_name !== 'Sevale' ||
+  // El nombre público viaja en mayúsculas, igual que el nombre y la dirección.
+  company.commercial_name !== 'SEVALE' ||
   company.contacts !== undefined
 ) {
   throw new Error('SiigoCustomerMapper no distinguió correctamente una empresa.');
+}
+
+const personWithPublicName = siigoMapper.map({
+  ...customer,
+  displayName: 'Marcos Castillo Ríos',
+});
+if (personWithPublicName.commercial_name !== 'MARCOS CASTILLO RÍOS') {
+  throw new Error('SiigoCustomerMapper no envió el nombre público en mayúsculas.');
 }
 
 const woo = wooMapper.map(customer);

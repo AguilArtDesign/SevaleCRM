@@ -123,12 +123,15 @@ export class SiigoCustomerMapper {
       identification: customer.documentNumber,
       name,
       ...(customer.checkDigit ? { check_digit: customer.checkDigit } : {}),
-      ...(customer.displayName !== canonicalName ? { commercial_name: customer.displayName } : {}),
+      ...(customer.displayName !== canonicalName
+        ? { commercial_name: uppercase(customer.displayName) }
+        : {}),
       ...(customer.active === undefined ? {} : { active: customer.active }),
       vat_responsible: customer.vatResponsible,
       fiscal_responsibilities: customer.fiscalResponsibilities.map((code) => ({ code })),
       address: {
-        ...(address ? { address: customer.country === 'CO' ? uppercase(address) : address } : {}),
+        // Siigo muestra la dirección tal cual se envía, igual que el nombre: se normaliza a mayúsculas.
+        ...(address ? { address: uppercase(address) } : {}),
         city: {
           country_code: location.countryCode,
           state_code: location.stateCode,
