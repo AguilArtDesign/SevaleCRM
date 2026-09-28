@@ -13,7 +13,7 @@ import {
   Switch,
   TextField,
 } from '@heroui/react';
-import { PersonPlus } from '@gravity-ui/icons';
+import { CircleCheck, CircleXmark, PersonPlus } from '@gravity-ui/icons';
 import {
   createCustomerSchema,
   customerDocumentTypes,
@@ -199,6 +199,16 @@ export function CustomerForm({
         : (documentTypeLabels.get(lookupResult.documentTypeFromSiigo) ??
           lookupResult.documentTypeFromSiigo)
       : null;
+  // Con el cliente encontrado se muestran todos los canales; si no hay nada, solo los que fallaron
+  // o quedaron con documento duplicado, para no llenar el aviso de cruces rojas.
+  const lookupChannels =
+    lookupResult && !lookupResult.existsLocally
+      ? lookupResult.found
+        ? lookupResult.integrations
+        : lookupResult.integrations.filter(
+            (source) => source.status === 'AMBIGUOUS' || source.status === 'ERROR',
+          )
+      : [];
 
   const clearConflict = (conflict: keyof CustomerDraftConflicts) =>
     setLookupResult((current) => {
@@ -558,40 +568,48 @@ export function CustomerForm({
                     </Alert>
                   )}
                   {!isEdit && lookupResult && !lookupResult.existsLocally && (
-                    <Alert
-                      className="customer-lookup-alert"
-                      status={lookupResult.found ? 'success' : 'warning'}
-                    >
-                      <Alert.Content>
-                        <Alert.Title>
-                          {lookupResult.found ? 'Cliente encontrado' : 'Cliente no encontrado'}
-                        </Alert.Title>
-                        <Alert.Description>
-                          {lookupResult.found
-                            ? 'Encontramos información del cliente. Revisa y elige los datos correctos antes de guardarlo.'
-                            : 'No encontramos información previa. Completa los datos para registrar el cliente.'}
-                        </Alert.Description>
-                      </Alert.Content>
-                    </Alert>
-                  )}
-                  {!isEdit && lookupResult && !lookupResult.existsLocally && (
-                    <div className="customer-lookup-sources">
-                      {lookupResult.integrations.map((source) => (
-                        <p key={source.provider}>
-                          <strong>{sourceLabels[source.provider]}</strong>{' '}
-                          {source.status === 'FOUND'
-                            ? 'tiene este cliente.'
-                            : source.status === 'NOT_FOUND'
-                              ? 'no tiene este documento.'
-                              : source.status === 'AMBIGUOUS'
-                                ? `tiene ${source.candidates} clientes con este documento: corrige los duplicados en la tienda para poder vincularlo.`
-                                : 'no se pudo consultar.'}
-                        </p>
-                      ))}
+                    <div className="customer-lookup-result">
+                      <p
+                        className={
+                          lookupResult.found ? 'customer-lookup-title' : 'customer-lookup-empty'
+                        }
+                      >
+                        {lookupResult.found ? 'Cliente encontrado' : 'Cliente no encontrado'}
+                      </p>
+                      {lookupChannels.length > 0 && (
+                        <ul className="customer-lookup-channels">
+                          {lookupChannels.map((source) => {
+                            const detail =
+                              source.status === 'AMBIGUOUS'
+                                ? `${source.candidates} clientes con este documento: corrige los duplicados en la tienda.`
+                                : source.status === 'ERROR'
+                                  ? 'No pudimos consultar este canal.'
+                                  : null;
+                            return (
+                              <li
+                                key={source.provider}
+                                className={`customer-lookup-channel customer-lookup-channel--${source.status.toLowerCase()}`}
+                              >
+                                <span className="customer-lookup-channel-label">
+                                  {sourceLabels[source.provider]}
+                                </span>
+                                {source.status === 'FOUND' ? (
+                                  <CircleCheck width={16} height={16} aria-hidden="true" />
+                                ) : (
+                                  <CircleXmark width={16} height={16} aria-hidden="true" />
+                                )}
+                                {detail && (
+                                  <span className="customer-lookup-channel-detail">{detail}</span>
+                                )}
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      )}
                       {siigoDocumentTypeLabel && (
-                        <p>
-                          En Siigo el documento figura como{' '}
-                          <strong>{siigoDocumentTypeLabel}</strong>.
+                        <p className="customer-lookup-note">
+                          En <strong className="customer-lookup-note-source">Siigo</strong> el
+                          documento figura como <strong>{siigoDocumentTypeLabel}</strong>.
                         </p>
                       )}
                     </div>

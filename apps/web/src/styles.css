@@ -2191,16 +2191,90 @@ select {
   border-radius: var(--field-radius);
 }
 
-.customer-lookup-sources {
+.customer-lookup-result {
   display: grid;
-  gap: 0.25rem;
-  padding: 0 0.25rem;
-  color: var(--muted);
+  gap: 0.5rem;
+}
+
+.customer-lookup-title {
+  margin: 0;
+  color: var(--foreground);
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.customer-lookup-empty {
+  margin: 0;
+  padding: 0.5rem 0.875rem;
+  border-radius: 0.625rem;
+  color: var(--warning-soft-foreground);
+  background: var(--warning-soft);
   font-size: 0.8125rem;
 }
 
-.customer-lookup-sources p {
+.customer-lookup-channels {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.5rem;
   margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.customer-lookup-channel {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem 0.5rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.5rem;
+  font-size: 0.8125rem;
+  font-weight: 500;
+}
+
+.customer-lookup-channel--found {
+  color: var(--success-soft-foreground);
+  background: var(--success-soft);
+}
+
+.customer-lookup-channel--not_found,
+.customer-lookup-channel--error {
+  color: var(--danger-soft-foreground);
+  background: var(--danger-soft);
+}
+
+.customer-lookup-channel--ambiguous {
+  color: var(--warning-soft-foreground);
+  background: var(--warning-soft);
+}
+
+/* La etiqueta ocupa el ancho disponible y empuja el icono al extremo derecho del chip. */
+.customer-lookup-channel-label {
+  flex: 1 1 auto;
+  font-weight: 600;
+}
+
+.customer-lookup-channel svg {
+  flex-shrink: 0;
+}
+
+.customer-lookup-channel-detail {
+  flex: 1 0 100%;
+  color: inherit;
+  font-size: 0.75rem;
+  line-height: 1.3;
+  opacity: 0.85;
+}
+
+.customer-lookup-note {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.customer-lookup-note-source {
+  color: var(--success-soft-foreground);
+  font-weight: 600;
 }
 
 .customer-field .iti {
@@ -2731,6 +2805,7 @@ select {
   .customer-form-grid,
   .customer-person-type-options,
   .customer-fiscal-options,
+  .customer-lookup-channels,
   .customer-detail-section dl {
     grid-template-columns: 1fr;
   }
