@@ -255,6 +255,7 @@ export class CustomerDraftResolverService {
         integrations,
         conflicts: {} as CustomerDraftConflicts,
         documentTypeFromSiigo: siigo.customer?.prefill.documentType ?? null,
+        resolvedAddress: null,
       };
     }
 
@@ -375,6 +376,9 @@ export class CustomerDraftResolverService {
       integrations,
       conflicts,
       documentTypeFromSiigo: siigoPrefill?.documentType ?? null,
+      // Dirección resuelta con su ubicación: se muestra al lado de los campos para saber de dónde
+      // viene lo que se autocompletó, sin llenar país, región ni ciudad.
+      resolvedAddress,
     };
   }
 

@@ -2109,6 +2109,17 @@ select {
   min-width: 0;
 }
 
+.customer-address-origin {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.8125rem;
+}
+
+.customer-address-origin strong {
+  color: var(--foreground);
+  font-weight: 600;
+}
+
 .customer-conflict {
   display: grid;
   gap: 0.75rem;

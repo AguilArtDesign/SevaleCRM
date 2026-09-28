@@ -104,6 +104,8 @@ export type CustomerResolveResponse =
       conflicts: CustomerDraftConflicts;
       // Tipo que reporta Siigo, para avisar cuando difiere del elegido en el panel.
       documentTypeFromSiigo: string | null;
+      // Dirección resuelta con su ubicación, para mostrar de dónde viene lo autocompletado.
+      resolvedAddress: CustomerDraftAddress | null;
     };
 
 type CustomerListInput = {

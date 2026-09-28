@@ -97,16 +97,22 @@ function initialValue(customer?: CustomerRecord | null): CustomerFormValue {
   };
 }
 
-function formatAddress(address: CustomerDraftAddress): string {
-  const lines = [address.addressLine1, address.addressLine2].filter(Boolean).join(', ');
-  // Si el catálogo no reconoce el código, se muestra tal como llega: saber de dónde es cada
-  // dirección importa más que el nombre del catálogo.
+// Ubicación legible de una dirección: el nombre del catálogo y, si no lo reconoce, el valor que
+// llega del origen. Devuelve null cuando no hay ningún dato de ubicación.
+function formatLocation(address: CustomerDraftAddress | null): string | null {
+  if (!address) return null;
   const city =
     resolveCustomerCityName(address.country, address.region, address.cityCode, address.cityName) ??
     address.cityName;
   const region = resolveCustomerRegionName(address.country, address.region) ?? address.region;
   const country = resolveCustomerCountryName(address.country) ?? address.country;
   const location = [city, region, country].filter(Boolean).join(', ');
+  return location || null;
+}
+
+function formatAddress(address: CustomerDraftAddress): string {
+  const lines = [address.addressLine1, address.addressLine2].filter(Boolean).join(', ');
+  const location = formatLocation(address);
   return [lines, location].filter(Boolean).join(' — ');
 }
 
@@ -208,6 +214,12 @@ export function CustomerForm({
             (source) => source.status === 'AMBIGUOUS' || source.status === 'ERROR',
           )
       : [];
+  // Ubicación que reporta el origen para la dirección resuelta: se muestra como referencia, porque
+  // país, región y ciudad no se autocompletan a propósito.
+  const originLocation =
+    lookupResult && !lookupResult.existsLocally
+      ? formatLocation(lookupResult.resolvedAddress)
+      : null;
 
   const clearConflict = (conflict: keyof CustomerDraftConflicts) =>
     setLookupResult((current) => {
@@ -821,6 +833,11 @@ export function CustomerForm({
                         onChange={text('addressLine2', true, 'address')}
                       />
                     </TextField>
+                    {!isEdit && originLocation && (
+                      <p className="customer-address-origin customer-field-full">
+                        Ubicación del origen: <strong>{originLocation}</strong>
+                      </p>
+                    )}
                     {!isEdit &&
                       lookupResult &&
                       !lookupResult.existsLocally &&
