@@ -2121,32 +2121,31 @@ select {
   font-weight: 500;
 }
 
-.customer-conflict .radio-group {
+.customer-conflict-options {
   display: grid;
   gap: 0.5rem;
 }
 
+/* Toda la fila es el control: al pulsarla se rellena el campo y el aviso desaparece. */
 .customer-conflict-option {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.75rem;
   width: 100%;
   min-width: 0;
+  height: auto;
   margin: 0;
   padding: 0.75rem;
   background: var(--surface-secondary);
   border: 0;
   border-radius: var(--field-radius);
+  text-align: start;
+  cursor: pointer;
 }
 
-.customer-conflict-option:first-child {
-  margin-top: 0;
-}
-
-.customer-conflict-option .radio__content {
-  display: grid;
-  width: 100%;
-  min-width: 0;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 0.75rem;
+.customer-conflict-option:hover {
+  background: color-mix(in oklch, var(--foreground) 6%, var(--surface-secondary));
 }
 
 .customer-conflict-value {

@@ -178,10 +178,12 @@ function wooAddress(customer: WooCustomerReference): CustomerDraftAddress | null
   const addressLine1 = sanitizeSiigoAddress(customer.billing.address_1);
   if (!addressLine1) return null;
   return {
-    country: null,
-    region: null,
+    // La ubicación no se autocompleta en el formulario, pero se muestra en el conflicto para saber
+    // de qué país, región y ciudad es cada dirección.
+    country: customer.billing.country || null,
+    region: customer.billing.state || null,
     cityCode: null,
-    cityName: null,
+    cityName: customer.billing.city || null,
     postalCode: sanitizePostalCode(customer.billing.postcode),
     addressLine1,
     addressLine2: sanitizeSiigoAddress(customer.billing.address_2),
@@ -191,9 +193,10 @@ function wooAddress(customer: WooCustomerReference): CustomerDraftAddress | null
 function siigoAddress(customer: SiigoCustomerLookup): CustomerDraftAddress | null {
   if (!customer.prefill.addressLine1) return null;
   return {
-    country: null,
-    region: null,
-    cityCode: null,
+    // Igual que en WooCommerce: la ubicación se muestra en el conflicto, no se autocompleta.
+    country: customer.prefill.country ?? null,
+    region: customer.prefill.region ?? null,
+    cityCode: customer.prefill.cityCode ?? null,
     cityName: null,
     postalCode: customer.prefill.postalCode,
     addressLine1: customer.prefill.addressLine1,

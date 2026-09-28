@@ -99,14 +99,13 @@ function initialValue(customer?: CustomerRecord | null): CustomerFormValue {
 
 function formatAddress(address: CustomerDraftAddress): string {
   const lines = [address.addressLine1, address.addressLine2].filter(Boolean).join(', ');
-  const city = resolveCustomerCityName(
-    address.country,
-    address.region,
-    address.cityCode,
-    address.cityName,
-  );
-  const region = resolveCustomerRegionName(address.country, address.region);
-  const country = resolveCustomerCountryName(address.country);
+  // Si el catálogo no reconoce el código, se muestra tal como llega: saber de dónde es cada
+  // dirección importa más que el nombre del catálogo.
+  const city =
+    resolveCustomerCityName(address.country, address.region, address.cityCode, address.cityName) ??
+    address.cityName;
+  const region = resolveCustomerRegionName(address.country, address.region) ?? address.region;
+  const country = resolveCustomerCountryName(address.country) ?? address.country;
   const location = [city, region, country].filter(Boolean).join(', ');
   return [lines, location].filter(Boolean).join(' — ');
 }
@@ -449,41 +448,36 @@ export function CustomerForm({
                       lookupResult.conflicts.name && (
                         <div className="customer-conflict customer-field-full">
                           <strong>Encontramos nombres diferentes</strong>
-                          <RadioGroup
+                          <div
+                            className="customer-conflict-options"
+                            role="group"
                             aria-label="Seleccionar nombre del cliente"
-                            onChange={(selected) => {
-                              const option = lookupResult.conflicts.name?.options[Number(selected)];
-                              if (!option) return;
-                              setValue((current) => ({
-                                ...current,
-                                ...option.value,
-                                company:
-                                  current.personType === 'COMPANY' &&
-                                  (!current.company || current.company === current.displayName)
-                                    ? option.value.displayName || null
-                                    : current.company,
-                              }));
-                              clearConflict('name');
-                            }}
                           >
                             {lookupResult.conflicts.name.options.map((option, index) => (
-                              <Radio
+                              <Button
                                 className="customer-conflict-option"
                                 key={`${option.sources.join('-')}-${index}`}
-                                value={String(index)}
+                                variant="ghost"
+                                onPress={() => {
+                                  setValue((current) => ({
+                                    ...current,
+                                    ...option.value,
+                                    company:
+                                      current.personType === 'COMPANY' &&
+                                      (!current.company || current.company === current.displayName)
+                                        ? option.value.displayName || null
+                                        : current.company,
+                                  }));
+                                  clearConflict('name');
+                                }}
                               >
-                                <Radio.Content>
-                                  <Radio.Control>
-                                    <Radio.Indicator />
-                                  </Radio.Control>
-                                  <span className="customer-conflict-value">
-                                    {option.value.displayName}
-                                  </span>
-                                  <CustomerSourceChips sources={option.sources} />
-                                </Radio.Content>
-                              </Radio>
+                                <span className="customer-conflict-value">
+                                  {option.value.displayName}
+                                </span>
+                                <CustomerSourceChips sources={option.sources} />
+                              </Button>
                             ))}
-                          </RadioGroup>
+                          </div>
                         </div>
                       )}
                   </div>
@@ -628,37 +622,6 @@ export function CustomerForm({
                         onChange={text('email', true, 'email')}
                       />
                     </TextField>
-                    {!isEdit &&
-                      lookupResult &&
-                      !lookupResult.existsLocally &&
-                      lookupResult.conflicts.email && (
-                        <div className="customer-conflict customer-field-full">
-                          <strong>Encontramos correos diferentes</strong>
-                          <RadioGroup
-                            aria-label="Seleccionar correo electrónico"
-                            onChange={(selected) => {
-                              setValue((current) => ({ ...current, email: String(selected) }));
-                              clearConflict('email');
-                            }}
-                          >
-                            {lookupResult.conflicts.email.options.map((option) => (
-                              <Radio
-                                className="customer-conflict-option"
-                                key={option.value}
-                                value={option.value}
-                              >
-                                <Radio.Content>
-                                  <Radio.Control>
-                                    <Radio.Indicator />
-                                  </Radio.Control>
-                                  <span className="customer-conflict-value">{option.value}</span>
-                                  <CustomerSourceChips sources={option.sources} />
-                                </Radio.Content>
-                              </Radio>
-                            ))}
-                          </RadioGroup>
-                        </div>
-                      )}
                     <div className="customer-field">
                       <Label>Teléfono</Label>
                       <PhoneInput
@@ -670,35 +633,62 @@ export function CustomerForm({
                         }}
                       />
                     </div>
+                    {/* Correo y teléfono van juntos: los conflictos ocupan todo el ancho y salen
+                        debajo de ambos, sin empujar un campo solo en su fila. */}
+                    {!isEdit &&
+                      lookupResult &&
+                      !lookupResult.existsLocally &&
+                      lookupResult.conflicts.email && (
+                        <div className="customer-conflict customer-field-full">
+                          <strong>Encontramos correos diferentes</strong>
+                          <div
+                            className="customer-conflict-options"
+                            role="group"
+                            aria-label="Seleccionar correo electrónico"
+                          >
+                            {lookupResult.conflicts.email.options.map((option) => (
+                              <Button
+                                className="customer-conflict-option"
+                                key={option.value}
+                                variant="ghost"
+                                onPress={() => {
+                                  setValue((current) => ({ ...current, email: option.value }));
+                                  clearConflict('email');
+                                }}
+                              >
+                                <span className="customer-conflict-value">{option.value}</span>
+                                <CustomerSourceChips sources={option.sources} />
+                              </Button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                     {!isEdit &&
                       lookupResult &&
                       !lookupResult.existsLocally &&
                       lookupResult.conflicts.phone && (
                         <div className="customer-conflict customer-field-full">
                           <strong>Encontramos teléfonos diferentes</strong>
-                          <RadioGroup
+                          <div
+                            className="customer-conflict-options"
+                            role="group"
                             aria-label="Seleccionar teléfono"
-                            onChange={(selected) => {
-                              setValue((current) => ({ ...current, phone: String(selected) }));
-                              clearConflict('phone');
-                            }}
                           >
                             {lookupResult.conflicts.phone.options.map((option) => (
-                              <Radio
+                              <Button
                                 className="customer-conflict-option"
                                 key={option.value}
-                                value={option.value}
+                                variant="ghost"
+                                onPress={() => {
+                                  setValue((current) => ({ ...current, phone: option.value }));
+                                  clearConflict('phone');
+                                }}
                               >
-                                <Radio.Content>
-                                  <Radio.Control>
-                                    <Radio.Indicator />
-                                  </Radio.Control>
-                                  <span className="customer-conflict-value">{option.value}</span>
-                                  <CustomerSourceChips sources={option.sources} />
-                                </Radio.Content>
-                              </Radio>
+                                <span className="customer-conflict-value">{option.value}</span>
+                                <CustomerSourceChips sources={option.sources} />
+                              </Button>
                             ))}
-                          </RadioGroup>
+                          </div>
                         </div>
                       )}
                     <CustomerAutocomplete
@@ -837,39 +827,33 @@ export function CustomerForm({
                       lookupResult.conflicts.address && (
                         <div className="customer-conflict customer-field-full">
                           <strong>Encontramos direcciones diferentes</strong>
-                          <RadioGroup
+                          <div
+                            className="customer-conflict-options"
+                            role="group"
                             aria-label="Seleccionar dirección"
-                            onChange={(selected) => {
-                              const option =
-                                lookupResult.conflicts.address?.options[Number(selected)];
-                              if (!option) return;
-                              setValue((current) => ({
-                                ...current,
-                                postalCode: option.value.postalCode,
-                                addressLine1: option.value.addressLine1,
-                                addressLine2: option.value.addressLine2,
-                              }));
-                              clearConflict('address');
-                            }}
                           >
                             {lookupResult.conflicts.address.options.map((option, index) => (
-                              <Radio
+                              <Button
                                 className="customer-conflict-option"
                                 key={`${option.sources.join('-')}-${index}`}
-                                value={String(index)}
+                                variant="ghost"
+                                onPress={() => {
+                                  setValue((current) => ({
+                                    ...current,
+                                    postalCode: option.value.postalCode,
+                                    addressLine1: option.value.addressLine1,
+                                    addressLine2: option.value.addressLine2,
+                                  }));
+                                  clearConflict('address');
+                                }}
                               >
-                                <Radio.Content>
-                                  <Radio.Control>
-                                    <Radio.Indicator />
-                                  </Radio.Control>
-                                  <span className="customer-conflict-value">
-                                    {formatAddress(option.value)}
-                                  </span>
-                                  <CustomerSourceChips sources={option.sources} />
-                                </Radio.Content>
-                              </Radio>
+                                <span className="customer-conflict-value">
+                                  {formatAddress(option.value)}
+                                </span>
+                                <CustomerSourceChips sources={option.sources} />
+                              </Button>
                             ))}
-                          </RadioGroup>
+                          </div>
                         </div>
                       )}
                   </div>
