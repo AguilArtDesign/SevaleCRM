@@ -64,6 +64,20 @@ const statusMeta: Record<OrderStatus, { label: string; color: 'warning' | 'succe
     CANCELLED: { label: 'Cancelada', color: 'danger' },
   };
 
+// Estados nativos de WooCommerce con la traducción y el color que usa la tienda.
+const wooStatusMeta: Record<
+  string,
+  { label: string; color: 'accent' | 'danger' | 'default' | 'success' | 'warning' }
+> = {
+  pending: { label: 'Pendiente', color: 'warning' },
+  processing: { label: 'Procesando', color: 'accent' },
+  'on-hold': { label: 'En espera', color: 'warning' },
+  completed: { label: 'Completado', color: 'success' },
+  cancelled: { label: 'Cancelado', color: 'default' },
+  refunded: { label: 'Reembolsado', color: 'default' },
+  failed: { label: 'Fallido', color: 'danger' },
+};
+
 function messageFrom(error: unknown): string {
   return error instanceof Error ? error.message : 'No pudimos completar la solicitud.';
 }
@@ -98,7 +112,31 @@ function stopRowSelection(event: { stopPropagation: () => void }) {
   event.stopPropagation();
 }
 
-function OrderStatusChip({ status }: { status: OrderStatus }) {
+// WooCommerce devuelve el estado en minúsculas y admite estados propios de plugins: los
+// desconocidos se muestran tal cual, sin inventar una traducción.
+function resolveWooStatus(wooStatus: string) {
+  return (
+    wooStatusMeta[wooStatus.trim().toLocaleLowerCase('en')] ?? {
+      label: wooStatus,
+      color: 'default' as const,
+    }
+  );
+}
+
+// El chip refleja el estado real de la tienda cuando el pedido ya existe en WooCommerce; mientras no
+// se haya creado, solo hay estado local del CRM.
+function OrderStatusChip({
+  status,
+  wooStatus,
+}: {
+  status: OrderStatus;
+  wooStatus?: string | null;
+}) {
+  if (wooStatus) {
+    const woo = resolveWooStatus(wooStatus);
+    return <Chip color={woo.color}>{woo.label}</Chip>;
+  }
+
   const meta = statusMeta[status];
   return <Chip color={meta.color}>{meta.label}</Chip>;
 }
@@ -215,7 +253,8 @@ function OrderDetail({
               {storeOrder.wooOrderId && <p>WooCommerce #{storeOrder.wooOrderId}</p>}
               {storeOrder.wooStatus && (
                 <p>
-                  Estado en WooCommerce: <strong>{storeOrder.wooStatus}</strong>
+                  Estado en WooCommerce:{' '}
+                  <strong>{resolveWooStatus(storeOrder.wooStatus).label}</strong>
                 </p>
               )}
               {storeOrder.lastSyncErrorMessage && (
@@ -828,12 +867,7 @@ export function OrdersPage() {
                       {order.source === 'CRM' ? 'CRM' : 'WooCommerce'}
                     </Table.Cell>
                     <Table.Cell onClick={stopRowSelection} onPointerDown={stopRowSelection}>
-                      <OrderStatusChip status={order.status} />
-                      {order.wooStatus && (
-                        <div>
-                          <small className="text-muted">WooCommerce: {order.wooStatus}</small>
-                        </div>
-                      )}
+                      <OrderStatusChip status={order.status} wooStatus={order.wooStatus} />
                     </Table.Cell>
                     <Table.Cell onClick={stopRowSelection} onPointerDown={stopRowSelection}>
                       <Chip color={syncStatusMeta[order.syncStatus].color}>
