@@ -2,24 +2,41 @@ import { useEffect, useState, type FormEvent } from 'react';
 import {
   Alert,
   AlertDialog,
+  Avatar,
   Button,
-  Card,
+  Dropdown,
   Label,
+  ListBox,
+  Modal,
   Radio,
   RadioGroup,
+  SearchField,
+  Separator,
   Spinner,
   Switch,
   Table,
   TextField,
   Typography,
+  toast,
 } from '@heroui/react';
-import { Magnifier, Pencil, PersonPlus, Persons, TrashBin, Xmark } from '@gravity-ui/icons';
+import { EllipsisVertical, Pencil, PersonPlus, Persons, TrashBin, Xmark } from '@gravity-ui/icons';
 import { createUserSchema, updateUserSchema } from '@sevale/validation';
 import { Chip } from '../components/Chip';
 import { Input } from '../components/Input';
 import { getPaginationItems, Pagination } from '../components/Pagination';
+import { Select } from '../components/Select';
 import { usersApi, type UserRecord, type UserRole } from './api';
+import { userAvatarGradient, userAvatarSeed, userInitials } from './presentation';
 import { useCurrentUser } from './useCurrentUser';
+
+const pageSizeOptions = [10, 20, 50, 100];
+
+const roleFilterOptions: { value: UserRole | ''; label: string }[] = [
+  { value: '', label: 'Todos los roles' },
+  { value: 'ADMIN', label: 'Administrador' },
+  { value: 'COMMERCIAL', label: 'Comercial' },
+  { value: 'LOGISTICS', label: 'Logística' },
+];
 
 const roleOptions: { value: UserRole; label: string; description: string }[] = [
   {
@@ -64,13 +81,14 @@ export function UsersPage() {
   const [users, setUsers] = useState<UserRecord[]>([]);
   const [searchDraft, setSearchDraft] = useState('');
   const [search, setSearch] = useState('');
+  const [roleFilter, setRoleFilter] = useState<UserRole | ''>('');
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
   const [total, setTotal] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [error, setError] = useState('');
-  const [notice, setNotice] = useState('');
+  const [formError, setFormError] = useState('');
   const [formMode, setFormMode] = useState<FormMode>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [name, setName] = useState('');
@@ -82,15 +100,19 @@ export function UsersPage() {
 
   const loadUsers = async () => {
     setIsLoading(true);
-    setError('');
     try {
-      const result = await usersApi.list(search, page);
+      const result = await usersApi.list({
+        search,
+        role: roleFilter,
+        page,
+        pageSize,
+      });
       setUsers(result.data);
       setTotal(result.pagination.total);
       setTotalPages(result.pagination.totalPages);
       if (page > result.pagination.totalPages) setPage(result.pagination.totalPages);
     } catch (loadError) {
-      setError(messageFrom(loadError));
+      toast.danger('No pudimos cargar los usuarios.', { description: messageFrom(loadError) });
     } finally {
       setIsLoading(false);
     }
@@ -98,11 +120,12 @@ export function UsersPage() {
 
   useEffect(() => {
     void loadUsers();
-  }, [search, page]);
+  }, [search, roleFilter, page, pageSize]);
 
   const closeForm = () => {
     setFormMode(null);
     setEditingId(null);
+    setFormError('');
     setName('');
     setEmail('');
     setRole('COMMERCIAL');
@@ -110,15 +133,11 @@ export function UsersPage() {
   };
 
   const openCreate = () => {
-    setError('');
-    setNotice('');
     closeForm();
     setFormMode('create');
   };
 
   const openEdit = (selected: UserRecord) => {
-    setError('');
-    setNotice('');
     setFormMode('edit');
     setEditingId(selected.id);
     setName(selected.name);
@@ -127,16 +146,23 @@ export function UsersPage() {
     setActive(selected.active);
   };
 
-  const handleSearch = (event: FormEvent) => {
-    event.preventDefault();
+  const applySearch = (value: string) => {
+    setSearch(value.trim());
     setPage(1);
-    setSearch(searchDraft.trim());
   };
+
+  const clearFilters = () => {
+    setSearchDraft('');
+    setSearch('');
+    setRoleFilter('');
+    setPage(1);
+  };
+
+  const hasFilters = Boolean(search || roleFilter);
 
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
-    setError('');
-    setNotice('');
+    setFormError('');
 
     const payload = { name, email, role, active };
     const validation =
@@ -144,7 +170,7 @@ export function UsersPage() {
         ? createUserSchema.safeParse(payload)
         : updateUserSchema.safeParse({ name, role, active });
     if (!validation.success) {
-      setError(validation.error.issues[0]?.message || 'Revisa los datos ingresados.');
+      setFormError(validation.error.issues[0]?.message || 'Revisa los datos ingresados.');
       return;
     }
 
@@ -152,18 +178,18 @@ export function UsersPage() {
     try {
       if (formMode === 'create') {
         await usersApi.create(payload);
-        setNotice('Usuario creado. Ya puede iniciar sesión con un código enviado por correo.');
+        toast.success('Usuario creado. Ya puede iniciar sesión con un código enviado por correo.');
       } else if (editingId) {
         await usersApi.update(
           editingId,
           editingId === currentUser?.id ? { name } : { name, role, active },
         );
-        setNotice('Los cambios del usuario se guardaron correctamente.');
+        toast.success('Los cambios del usuario se guardaron correctamente.');
       }
       closeForm();
       await loadUsers();
     } catch (submitError) {
-      setError(messageFrom(submitError));
+      setFormError(messageFrom(submitError));
     } finally {
       setIsSubmitting(false);
     }
@@ -173,286 +199,383 @@ export function UsersPage() {
     if (!deleteTarget || isDeleting) return;
     const target = deleteTarget;
     setIsDeleting(true);
-    setError('');
-    setNotice('');
     try {
       await usersApi.remove(target.id);
       setDeleteTarget(null);
-      setNotice(`El usuario “${target.name}” fue eliminado definitivamente.`);
+      toast.success(`El usuario “${target.name}” fue eliminado definitivamente.`);
       await loadUsers();
     } catch (deleteError) {
-      setError(messageFrom(deleteError));
+      toast.danger(`No pudimos eliminar el usuario “${target.name}”.`, {
+        description: messageFrom(deleteError),
+      });
     } finally {
       setIsDeleting(false);
     }
   };
 
   return (
-    <section className={`users-layout${formMode ? ' users-layout-with-form' : ''}`}>
-      <Card className="users-card">
-        <Card.Content className="users-card-content">
-          <div className="users-toolbar">
-            <form className="users-search" onSubmit={handleSearch} role="search">
-              <TextField fullWidth name="search">
-                <Label>Buscar usuarios</Label>
-                <Input
-                  variant="secondary"
-                  value={searchDraft}
-                  onChange={(event) => setSearchDraft(event.target.value)}
-                  placeholder="Nombre o correo"
-                />
-              </TextField>
-              <Button type="submit" variant="secondary" aria-label="Buscar">
-                <Magnifier width={18} height={18} />
-                Buscar
-              </Button>
-            </form>
-            <Button variant="primary" onPress={openCreate}>
-              <PersonPlus width={18} height={18} />
-              Nuevo usuario
-            </Button>
-          </div>
+    <section className="users-layout">
+      <header className="users-heading">
+        <div>
+          <h2>Usuarios</h2>
+          <Chip>{total}</Chip>
+        </div>
+        <Button variant="primary" onPress={openCreate}>
+          <PersonPlus width={18} height={18} />
+          Nuevo usuario
+        </Button>
+      </header>
 
-          {error && !formMode && (
-            <Alert status="danger">
-              <Alert.Content>
-                <Alert.Description>{error}</Alert.Description>
-              </Alert.Content>
-            </Alert>
-          )}
-          {notice && (
-            <Alert status="success">
-              <Alert.Content>
-                <Alert.Description>{notice}</Alert.Description>
-              </Alert.Content>
-            </Alert>
-          )}
-
-          {isLoading ? (
-            <div className="users-state" aria-live="polite">
-              <Spinner />
-              <span>Cargando usuarios…</span>
-            </div>
-          ) : users.length === 0 ? (
-            <div className="users-state">
-              <Persons width={30} height={30} />
-              <strong>No encontramos usuarios</strong>
-              <span>Prueba con otro nombre o correo.</span>
-            </div>
-          ) : (
-            <Table variant="secondary">
-              <Table.ScrollContainer>
-                <Table.Content aria-label="Usuarios del CRM">
-                  <Table.Header>
-                    <Table.Column isRowHeader>Usuario</Table.Column>
-                    <Table.Column>Rol</Table.Column>
-                    <Table.Column>Estado</Table.Column>
-                    <Table.Column>Último acceso</Table.Column>
-                    <Table.Column>Acciones</Table.Column>
-                  </Table.Header>
-                  <Table.Body>
-                    {users.map((listedUser) => (
-                      <Table.Row key={listedUser.id} id={listedUser.id}>
-                        <Table.Cell>
-                          <div className="user-identity">
-                            <strong>{listedUser.name}</strong>
-                            <span>{listedUser.email}</span>
-                          </div>
-                        </Table.Cell>
-                        <Table.Cell>{roleLabels[listedUser.role]}</Table.Cell>
-                        <Table.Cell>
-                          <Chip color={listedUser.active ? 'success' : 'default'}>
-                            {listedUser.active ? 'Activo' : 'Inactivo'}
-                          </Chip>
-                        </Table.Cell>
-                        <Table.Cell>{formatDate(listedUser.lastLoginAt)}</Table.Cell>
-                        <Table.Cell>
-                          <div className="user-row-actions">
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onPress={() => openEdit(listedUser)}
-                              aria-label={`Editar a ${listedUser.name}`}
-                            >
-                              <Pencil width={16} height={16} />
-                              Editar
-                            </Button>
-                            {listedUser.id !== currentUser?.id && (
-                              <Button
-                                size="sm"
-                                variant="danger-soft"
-                                onPress={() => setDeleteTarget(listedUser)}
-                                aria-label={`Eliminar a ${listedUser.name}`}
-                              >
-                                <TrashBin width={16} height={16} />
-                                Eliminar
-                              </Button>
-                            )}
-                          </div>
-                        </Table.Cell>
-                      </Table.Row>
-                    ))}
-                  </Table.Body>
-                </Table.Content>
-              </Table.ScrollContainer>
-            </Table>
-          )}
-
-          <Pagination aria-label="Paginación de usuarios">
-            <Pagination.Summary>
-              {total} {total === 1 ? 'usuario' : 'usuarios'}
-            </Pagination.Summary>
-            <Pagination.Content>
-              <Pagination.Item>
-                <Pagination.Previous
-                  isDisabled={page <= 1 || isLoading}
-                  onPress={() => setPage((value) => Math.max(1, value - 1))}
-                >
-                  <Pagination.PreviousIcon />
-                  Anterior
-                </Pagination.Previous>
-              </Pagination.Item>
-              {getPaginationItems(page, totalPages).map((item, index) =>
-                item === 'ellipsis' ? (
-                  <Pagination.Item key={`ellipsis-${index}`}>
-                    <Pagination.Ellipsis />
-                  </Pagination.Item>
-                ) : (
-                  <Pagination.Item key={item}>
-                    <Pagination.Link
-                      isActive={item === page}
-                      isDisabled={isLoading}
-                      onPress={() => setPage(item)}
-                    >
-                      {item}
-                    </Pagination.Link>
-                  </Pagination.Item>
-                ),
-              )}
-              <Pagination.Item>
-                <Pagination.Next
-                  isDisabled={page >= totalPages || isLoading}
-                  onPress={() => setPage((value) => Math.min(totalPages, value + 1))}
-                >
-                  Siguiente
-                  <Pagination.NextIcon />
-                </Pagination.Next>
-              </Pagination.Item>
-            </Pagination.Content>
-          </Pagination>
-        </Card.Content>
-      </Card>
-
-      {formMode && (
-        <Card className="user-form-card">
-          <Card.Content className="user-form-content">
-            <div className="user-form-heading">
-              <div>
-                <Typography.Heading level={2}>
-                  {formMode === 'create' ? 'Crear usuario' : 'Editar usuario'}
-                </Typography.Heading>
-                <Typography.Paragraph color="muted" size="sm">
-                  {formMode === 'create'
-                    ? 'Define el acceso inicial de la nueva cuenta.'
-                    : 'Actualiza el rol o el estado de la cuenta.'}
-                </Typography.Paragraph>
-              </div>
-              <Button variant="ghost" isIconOnly onPress={closeForm} aria-label="Cerrar formulario">
-                <Xmark width={18} height={18} />
-              </Button>
-            </div>
-
-            {error && (
-              <Alert status="danger">
-                <Alert.Content>
-                  <Alert.Description>{error}</Alert.Description>
-                </Alert.Content>
-              </Alert>
-            )}
-
-            <form className="user-form" onSubmit={(event) => void handleSubmit(event)} noValidate>
-              <TextField fullWidth name="name" isRequired>
-                <Label>Nombre completo</Label>
-                <Input
-                  variant="secondary"
-                  value={name}
-                  onChange={(event) => setName(event.target.value)}
-                />
-              </TextField>
-              <TextField
-                fullWidth
-                name="email"
-                type="email"
-                isRequired
-                isDisabled={formMode === 'edit'}
-              >
-                <Label>Correo electrónico</Label>
-                <Input
-                  variant="secondary"
-                  value={email}
-                  onChange={(event) => setEmail(event.target.value)}
-                />
-              </TextField>
-
-              <RadioGroup
-                value={role}
-                onChange={(value) => setRole(value as UserRole)}
-                className="role-group"
-                isDisabled={editingId === currentUser?.id}
-              >
-                <Label>Rol y permisos</Label>
-                {roleOptions.map((option) => (
-                  <Radio key={option.value} value={option.value}>
-                    <Radio.Content>
-                      <Radio.Control>
-                        <Radio.Indicator />
-                      </Radio.Control>
-                      <span className="role-copy">
-                        <strong>{option.label}</strong>
-                        <small>{option.description}</small>
-                      </span>
-                    </Radio.Content>
-                  </Radio>
+      <div className="users-toolbar">
+        <div className="users-filters">
+          <Select
+            aria-label="Filtrar por rol"
+            value={roleFilter}
+            variant="secondary"
+            onChange={(selected) => {
+              setRoleFilter(String(selected) as UserRole | '');
+              setPage(1);
+            }}
+          >
+            <Select.Trigger>
+              <Select.Value />
+              <Select.Indicator />
+            </Select.Trigger>
+            <Select.Popover>
+              <ListBox>
+                {roleFilterOptions.map((option) => (
+                  <ListBox.Item key={option.value || 'ALL'} id={option.value}>
+                    {option.label}
+                  </ListBox.Item>
                 ))}
-              </RadioGroup>
+              </ListBox>
+            </Select.Popover>
+          </Select>
+          {hasFilters && (
+            <Button size="sm" variant="danger-soft" onPress={clearFilters}>
+              <Xmark width={15} height={15} />
+              Limpiar
+            </Button>
+          )}
+        </div>
+        <div className="users-search">
+          <SearchField
+            aria-label="Buscar usuarios"
+            value={searchDraft}
+            onChange={setSearchDraft}
+            onSubmit={applySearch}
+            onClear={() => {
+              setSearchDraft('');
+              applySearch('');
+            }}
+          >
+            <SearchField.Group>
+              <SearchField.SearchIcon />
+              <SearchField.Input placeholder="Buscar nombre o correo…" />
+              <SearchField.ClearButton />
+            </SearchField.Group>
+          </SearchField>
+        </div>
+      </div>
 
-              <div className="user-status-control">
-                <div>
-                  <strong>Usuario activo</strong>
-                  <span>Las cuentas inactivas no pueden iniciar sesión.</span>
-                </div>
-                <Switch
-                  aria-label="Usuario activo"
-                  isSelected={active}
-                  onChange={setActive}
-                  isDisabled={editingId === currentUser?.id}
-                >
-                  <Switch.Content>
-                    <Switch.Control>
-                      <Switch.Thumb />
-                    </Switch.Control>
-                  </Switch.Content>
-                </Switch>
-              </div>
-
-              {editingId === currentUser?.id && (
-                <Typography.Paragraph color="muted" size="sm">
-                  Por seguridad no puedes cambiar tu propio rol ni desactivar tu cuenta.
-                </Typography.Paragraph>
-              )}
-
-              <div className="user-form-actions">
-                <Button variant="ghost" onPress={closeForm} isDisabled={isSubmitting}>
-                  Cancelar
-                </Button>
-                <Button type="submit" variant="primary" isPending={isSubmitting}>
-                  {formMode === 'create' ? 'Crear usuario' : 'Guardar cambios'}
-                </Button>
-              </div>
-            </form>
-          </Card.Content>
-        </Card>
+      {isLoading ? (
+        <div className="users-state" aria-live="polite">
+          <Spinner />
+          <span>Cargando usuarios…</span>
+        </div>
+      ) : users.length === 0 ? (
+        <div className="users-state">
+          <Persons width={30} height={30} />
+          <strong>No encontramos usuarios</strong>
+          <span>Prueba con otro nombre o correo.</span>
+        </div>
+      ) : (
+        <Table className="inventory-products-table users-table">
+          <Table.ScrollContainer>
+            <Table.Content aria-label="Usuarios del CRM">
+              <Table.Header>
+                <Table.Column isRowHeader>Usuario</Table.Column>
+                <Table.Column>Rol</Table.Column>
+                <Table.Column>Estado</Table.Column>
+                <Table.Column>Último acceso</Table.Column>
+                <Table.Column className="inventory-actions-column">Acciones</Table.Column>
+              </Table.Header>
+              <Table.Body>
+                {users.map((listedUser) => (
+                  <Table.Row key={listedUser.id} id={listedUser.id}>
+                    <Table.Cell>
+                      <div className="user-identity">
+                        <Avatar size="sm" aria-hidden="true">
+                          <Avatar.Fallback
+                            className="user-avatar-fallback"
+                            style={userAvatarGradient(userAvatarSeed(listedUser))}
+                          >
+                            {userInitials(listedUser.name)}
+                          </Avatar.Fallback>
+                        </Avatar>
+                        <div>
+                          <strong>{listedUser.name}</strong>
+                          <span>{listedUser.email}</span>
+                        </div>
+                      </div>
+                    </Table.Cell>
+                    <Table.Cell>{roleLabels[listedUser.role]}</Table.Cell>
+                    <Table.Cell>
+                      <Chip color={listedUser.active ? 'success' : 'default'}>
+                        {listedUser.active ? 'Activo' : 'Inactivo'}
+                      </Chip>
+                    </Table.Cell>
+                    <Table.Cell>{formatDate(listedUser.lastLoginAt)}</Table.Cell>
+                    <Table.Cell>
+                      <div className="inventory-row-actions">
+                        <Dropdown>
+                          <Button
+                            className="inventory-actions-trigger"
+                            isIconOnly
+                            size="sm"
+                            variant="ghost"
+                            aria-label={`Acciones para ${listedUser.name}`}
+                          >
+                            <EllipsisVertical className="text-muted" width={17} height={17} />
+                          </Button>
+                          <Dropdown.Popover
+                            className="inventory-actions-popover"
+                            placement="bottom end"
+                          >
+                            <Dropdown.Menu
+                              aria-label={`Acciones para ${listedUser.name}`}
+                              onAction={(key) => {
+                                if (String(key) === 'edit') openEdit(listedUser);
+                                if (String(key) === 'delete') setDeleteTarget(listedUser);
+                              }}
+                            >
+                              <Dropdown.Section>
+                                <Dropdown.Item id="edit" textValue="Editar usuario">
+                                  <Pencil
+                                    className="size-4 shrink-0 text-muted"
+                                    aria-hidden="true"
+                                  />
+                                  <Label>Editar</Label>
+                                </Dropdown.Item>
+                              </Dropdown.Section>
+                              {listedUser.id !== currentUser?.id && (
+                                <>
+                                  <Separator />
+                                  <Dropdown.Section>
+                                    <Dropdown.Item
+                                      id="delete"
+                                      textValue="Eliminar usuario"
+                                      variant="danger"
+                                    >
+                                      <TrashBin
+                                        className="size-4 shrink-0 text-danger"
+                                        aria-hidden="true"
+                                      />
+                                      <Label>Eliminar</Label>
+                                    </Dropdown.Item>
+                                  </Dropdown.Section>
+                                </>
+                              )}
+                            </Dropdown.Menu>
+                          </Dropdown.Popover>
+                        </Dropdown>
+                      </div>
+                    </Table.Cell>
+                  </Table.Row>
+                ))}
+              </Table.Body>
+            </Table.Content>
+          </Table.ScrollContainer>
+          <Table.Footer>
+            <Pagination aria-label="Paginación de usuarios">
+              <Pagination.Summary>
+                <span className="users-page-size-control">
+                  Filas por página
+                  <Select
+                    className="users-page-size"
+                    value={String(pageSize)}
+                    aria-label="Filas por página"
+                    onChange={(selected) => {
+                      setPageSize(Number(selected));
+                      setPage(1);
+                    }}
+                  >
+                    <Select.Trigger>
+                      <Select.Value />
+                      <Select.Indicator />
+                    </Select.Trigger>
+                    <Select.Popover>
+                      <ListBox>
+                        {pageSizeOptions.map((size) => (
+                          <ListBox.Item key={size} id={String(size)}>
+                            {size}
+                            <ListBox.ItemIndicator />
+                          </ListBox.Item>
+                        ))}
+                      </ListBox>
+                    </Select.Popover>
+                  </Select>
+                </span>
+              </Pagination.Summary>
+              <Pagination.Content>
+                <Pagination.Item>
+                  <Pagination.Previous
+                    isDisabled={page <= 1 || isLoading}
+                    onPress={() => setPage((value) => Math.max(1, value - 1))}
+                  >
+                    <Pagination.PreviousIcon />
+                    Anterior
+                  </Pagination.Previous>
+                </Pagination.Item>
+                {getPaginationItems(page, totalPages).map((item, index) =>
+                  item === 'ellipsis' ? (
+                    <Pagination.Item key={`ellipsis-${index}`}>
+                      <Pagination.Ellipsis />
+                    </Pagination.Item>
+                  ) : (
+                    <Pagination.Item key={item}>
+                      <Pagination.Link
+                        isActive={item === page}
+                        isDisabled={isLoading}
+                        onPress={() => setPage(item)}
+                      >
+                        {item}
+                      </Pagination.Link>
+                    </Pagination.Item>
+                  ),
+                )}
+                <Pagination.Item>
+                  <Pagination.Next
+                    isDisabled={page >= totalPages || isLoading}
+                    onPress={() => setPage((value) => Math.min(totalPages, value + 1))}
+                  >
+                    Siguiente
+                    <Pagination.NextIcon />
+                  </Pagination.Next>
+                </Pagination.Item>
+              </Pagination.Content>
+            </Pagination>
+          </Table.Footer>
+        </Table>
       )}
+
+      <Modal
+        isOpen={formMode !== null}
+        onOpenChange={(open) => {
+          if (!open && !isSubmitting) closeForm();
+        }}
+      >
+        <Modal.Backdrop>
+          <Modal.Container size="sm" placement="center" scroll="inside">
+            <Modal.Dialog className="user-form-modal">
+              <Modal.CloseTrigger aria-label="Cerrar formulario">
+                <Xmark />
+              </Modal.CloseTrigger>
+              <Modal.Header>
+                <div>
+                  <Modal.Heading>
+                    {formMode === 'create' ? 'Crear usuario' : 'Editar usuario'}
+                  </Modal.Heading>
+                  <p>
+                    {formMode === 'create'
+                      ? 'Define el acceso inicial de la nueva cuenta.'
+                      : 'Actualiza el rol o el estado de la cuenta.'}
+                  </p>
+                </div>
+              </Modal.Header>
+              <form onSubmit={(event) => void handleSubmit(event)} noValidate>
+                <Modal.Body className="user-form-body">
+                  {formError && (
+                    <Alert status="danger">
+                      <Alert.Content>
+                        <Alert.Description>{formError}</Alert.Description>
+                      </Alert.Content>
+                    </Alert>
+                  )}
+
+                  <TextField fullWidth name="name" isRequired>
+                    <Label>Nombre completo</Label>
+                    <Input
+                      variant="secondary"
+                      value={name}
+                      onChange={(event) => setName(event.target.value)}
+                    />
+                  </TextField>
+                  <TextField
+                    fullWidth
+                    name="email"
+                    type="email"
+                    isRequired
+                    isDisabled={formMode === 'edit'}
+                  >
+                    <Label>Correo electrónico</Label>
+                    <Input
+                      variant="secondary"
+                      value={email}
+                      onChange={(event) => setEmail(event.target.value)}
+                    />
+                  </TextField>
+
+                  <RadioGroup
+                    value={role}
+                    onChange={(value) => setRole(value as UserRole)}
+                    className="role-group"
+                    isDisabled={editingId === currentUser?.id}
+                  >
+                    <Label>Rol y permisos</Label>
+                    {roleOptions.map((option) => (
+                      <Radio key={option.value} value={option.value}>
+                        <Radio.Content>
+                          <Radio.Control>
+                            <Radio.Indicator />
+                          </Radio.Control>
+                          <span className="role-copy">
+                            <strong>{option.label}</strong>
+                            <small>{option.description}</small>
+                          </span>
+                        </Radio.Content>
+                      </Radio>
+                    ))}
+                  </RadioGroup>
+
+                  <div className="user-status-control">
+                    <div>
+                      <strong>Usuario activo</strong>
+                      <span>Las cuentas inactivas no pueden iniciar sesión.</span>
+                    </div>
+                    <Switch
+                      aria-label="Usuario activo"
+                      isSelected={active}
+                      onChange={setActive}
+                      isDisabled={editingId === currentUser?.id}
+                    >
+                      <Switch.Content>
+                        <Switch.Control>
+                          <Switch.Thumb />
+                        </Switch.Control>
+                      </Switch.Content>
+                    </Switch>
+                  </div>
+
+                  {editingId === currentUser?.id && (
+                    <Typography.Paragraph color="muted" size="sm">
+                      Por seguridad no puedes cambiar tu propio rol ni desactivar tu cuenta.
+                    </Typography.Paragraph>
+                  )}
+                </Modal.Body>
+                <Modal.Footer>
+                  <Button variant="ghost" onPress={closeForm} isDisabled={isSubmitting}>
+                    Cancelar
+                  </Button>
+                  <Button type="submit" variant="primary" isPending={isSubmitting}>
+                    {formMode === 'create' ? 'Crear usuario' : 'Guardar cambios'}
+                  </Button>
+                </Modal.Footer>
+              </form>
+            </Modal.Dialog>
+          </Modal.Container>
+        </Modal.Backdrop>
+      </Modal>
 
       <AlertDialog
         isOpen={deleteTarget !== null}

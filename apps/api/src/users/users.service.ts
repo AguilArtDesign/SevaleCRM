@@ -4,10 +4,8 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import type { CreateUserInput, UpdateUserInput } from '@sevale/validation';
+import type { CreateUserInput, UpdateUserInput, UserListQuery } from '@sevale/validation';
 import { PrismaService } from '../database/prisma.service.js';
-
-type ListUsersInput = { search: string; page: number; pageSize: number };
 
 const userSelect = {
   id: true,
@@ -32,10 +30,11 @@ function isUniqueConstraintError(error: unknown): boolean {
 export class UsersService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async list({ search, page, pageSize }: ListUsersInput) {
-    const where = search
-      ? { OR: [{ name: { contains: search } }, { email: { contains: search } }] }
-      : {};
+  async list({ search, role, page, pageSize }: UserListQuery) {
+    const where = {
+      ...(role ? { role } : {}),
+      ...(search ? { OR: [{ name: { contains: search } }, { email: { contains: search } }] } : {}),
+    };
     const [users, total] = await this.prisma.$transaction([
       this.prisma.user.findMany({
         where,

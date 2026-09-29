@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type CSSProperties } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Avatar, Button, Spinner, Typography } from '@heroui/react';
 import {
   ArrowRightFromSquare,
@@ -16,6 +16,7 @@ import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { authClient } from '../auth/auth-client';
 import { ThemeToggle } from '../theme/ThemeToggle';
 import { useCurrentUser } from '../users/useCurrentUser';
+import { userAvatarGradient, userAvatarSeed, userInitials } from '../users/presentation';
 import { useRealtimeUpdates } from '../realtime/useRealtimeUpdates';
 import { NotificationCenter } from '../notifications/NotificationCenter';
 import {
@@ -32,41 +33,12 @@ const roleLabels = {
 
 const SIDEBAR_COLLAPSED_STORAGE_KEY = 'sevale-crm.sidebar-collapsed';
 
-type AvatarGradientStyle = CSSProperties & {
-  '--avatar-from': string;
-  '--avatar-to': string;
-};
-
 function getStoredSidebarState(): boolean {
   try {
     return window.localStorage.getItem(SIDEBAR_COLLAPSED_STORAGE_KEY) === 'true';
   } catch {
     return false;
   }
-}
-
-function avatarGradient(seed?: string): AvatarGradientStyle {
-  let hash = 2_166_136_261;
-  for (const character of seed || 'SevaleCRM') {
-    hash ^= character.charCodeAt(0);
-    hash = Math.imul(hash, 16_777_619);
-  }
-  const unsignedHash = hash >>> 0;
-  const startHue = unsignedHash % 360;
-  const endHue = (startHue + 50 + ((unsignedHash >>> 8) % 71)) % 360;
-  return {
-    '--avatar-from': `hsl(${startHue} 72% 42%)`,
-    '--avatar-to': `hsl(${endHue} 78% 50%)`,
-  };
-}
-
-function initials(name?: string): string {
-  if (!name) return 'SC';
-  return name
-    .split(/\s+/)
-    .slice(0, 2)
-    .map((part) => part[0]?.toUpperCase())
-    .join('');
 }
 
 function firstName(name?: string): string {
@@ -169,9 +141,9 @@ export function AppShell() {
           <Avatar size="md" aria-hidden="true">
             <Avatar.Fallback
               className="sidebar-user-avatar-fallback"
-              style={avatarGradient(user?.id || user?.email || user?.name)}
+              style={userAvatarGradient(userAvatarSeed(user))}
             >
-              {initials(user?.name)}
+              {userInitials(user?.name)}
             </Avatar.Fallback>
           </Avatar>
           <div>

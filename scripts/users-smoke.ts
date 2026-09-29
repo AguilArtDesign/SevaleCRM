@@ -119,6 +119,29 @@ try {
   const adminList = await api('/api/users?search=users-smoke&page=1&pageSize=20', adminCookie);
   expectStatus(adminList, 200, 'Listado como administrador');
 
+  const singlePage = await api('/api/users?page=1&pageSize=1', adminCookie);
+  expectStatus(singlePage, 200, 'Tamaño de página del listado');
+  const singlePageBody = (await singlePage.json()) as {
+    data: unknown[];
+    pagination: { pageSize: number };
+  };
+  if (singlePageBody.data.length !== 1 || singlePageBody.pagination.pageSize !== 1) {
+    throw new Error('El listado no respetó el tamaño de página solicitado.');
+  }
+
+  const roleFiltered = await api('/api/users?role=ADMIN&page=1&pageSize=100', adminCookie);
+  expectStatus(roleFiltered, 200, 'Filtro por rol');
+  const roleFilteredBody = (await roleFiltered.json()) as { data: { role: string }[] };
+  if (
+    roleFilteredBody.data.length === 0 ||
+    roleFilteredBody.data.some((user) => user.role !== 'ADMIN')
+  ) {
+    throw new Error('El filtro por rol devolvió usuarios con un rol distinto.');
+  }
+
+  const invalidRoleFilter = await api('/api/users?role=SUPERADMIN', adminCookie);
+  expectStatus(invalidRoleFilter, 400, 'Rol inválido en el filtro');
+
   const createResponse = await api('/api/users', adminCookie, {
     method: 'POST',
     body: JSON.stringify({
@@ -193,7 +216,7 @@ try {
   expectStatus(revokedProfile, 401, 'Sesión revocada tras desactivación');
 
   process.stdout.write(
-    'Users smoke: authentication, ADMIN access, RBAC denial, create, duplicate, update, self-protection, physical deletion, disable and session revocation checks passed.\n',
+    'Users smoke: authentication, ADMIN access, RBAC denial, pagination, role filtering, create, duplicate, update, self-protection, physical deletion, disable and session revocation checks passed.\n',
   );
 } finally {
   await prisma.user.deleteMany({

@@ -19,6 +19,13 @@ export type UserListResponse = {
   pagination: { page: number; pageSize: number; total: number; totalPages: number };
 };
 
+export type UserListInput = {
+  search: string;
+  role: UserRole | '';
+  page: number;
+  pageSize: number;
+};
+
 type ApiErrorBody = { message?: string; error?: { message?: string } };
 
 async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
@@ -39,10 +46,15 @@ async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const usersApi = {
   current: () => apiRequest<CurrentUser>('/api/me'),
-  list: (search: string, page: number) =>
-    apiRequest<UserListResponse>(
-      `/api/users?search=${encodeURIComponent(search)}&page=${page}&pageSize=20`,
-    ),
+  list: (input: UserListInput) => {
+    const query = new URLSearchParams({
+      search: input.search,
+      page: String(input.page),
+      pageSize: String(input.pageSize),
+    });
+    if (input.role) query.set('role', input.role);
+    return apiRequest<UserListResponse>(`/api/users?${query}`);
+  },
   create: (input: { name: string; email: string; role: UserRole; active: boolean }) =>
     apiRequest<UserRecord>('/api/users', { method: 'POST', body: JSON.stringify(input) }),
   update: (id: string, input: { name?: string; role?: UserRole; active?: boolean }) =>
