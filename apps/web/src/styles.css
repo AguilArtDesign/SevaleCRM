@@ -1215,6 +1215,12 @@ select {
   min-width: 11rem;
 }
 
+/* HeroUI fija `text-sm` (0.875rem) en las celdas; aquí todas las tablas del CRM
+   comparten el mismo tamaño de texto de 0.8125rem. */
+.table__cell {
+  font-size: 0.8125rem;
+}
+
 .inventory-products-table {
   min-width: 0;
   box-shadow: none;
@@ -1764,7 +1770,6 @@ select {
 
 .user-identity > div {
   display: grid;
-  gap: 0.2rem;
 }
 
 .user-status-control span,
@@ -1970,7 +1975,7 @@ select {
 .customer-copy strong,
 .user-identity strong {
   color: var(--foreground);
-  font-size: 0.84rem;
+  font-size: 0.8125rem;
   font-weight: 500;
   line-height: 1.25;
 }
