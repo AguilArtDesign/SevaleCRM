@@ -66,7 +66,7 @@ Para Gmail se utiliza `smtp.gmail.com`, puerto `587` y `SMTP_SECURE=false`; Node
 
 ## Usuarios, roles y permisos
 
-La ruta `/users` está disponible únicamente para administradores. Desde allí se pueden buscar, crear, editar, activar y desactivar cuentas, y asignar los roles `ADMIN`, `COMMERCIAL` o `LOGISTICS`. Los usuarios nuevos acceden mediante el código OTP enviado a su correo; crear una cuenta no genera una contraseña.
+La ruta `/users` está disponible únicamente para administradores. Desde allí se pueden buscar, crear, editar, activar y desactivar cuentas, y asignar los roles `ADMIN`, `COMMERCIAL` o `LOGISTICS`. Cada cuenta guarda un `seller_id` de Siigo obligatorio y único por usuario, que identifica a la persona como vendedor en las integraciones; la columna existe en la base de datos como opcional para no bloquear altas previas, pero la API exige el valor al crear y al editar. Los usuarios nuevos acceden mediante el código OTP enviado a su correo; crear una cuenta no genera una contraseña.
 
 El control de acceso no depende solo de la interfaz: la API aplica un mapa RBAC centralizado. También impide que un administrador cambie su propio rol o se desactive, conserva al menos un administrador activo y revoca las sesiones de una cuenta cuando cambia su rol o estado.
 

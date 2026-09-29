@@ -26,9 +26,22 @@ export const otpLoginSchema = z.object({
 
 export const roleSchema = z.enum(['ADMIN', 'COMMERCIAL', 'LOGISTICS']);
 
+const sellerIdValueSchema = z.coerce
+  .number({ error: 'Ingresa el seller id de Siigo.' })
+  .int('El seller id de Siigo debe ser un número entero.')
+  .min(1, 'El seller id de Siigo debe ser un número mayor que cero.')
+  .max(2_147_483_647, 'El seller id de Siigo no puede superar 2147483647.');
+
+export const sellerIdSchema = z.preprocess(
+  (value) =>
+    value === null || (typeof value === 'string' && value.trim() === '') ? undefined : value,
+  sellerIdValueSchema,
+);
+
 export const createUserSchema = z.object({
   name: z.string().trim().min(2, 'El nombre debe tener al menos 2 caracteres.').max(191),
   email: emailSchema,
+  sellerId: sellerIdSchema,
   role: roleSchema,
   active: z.boolean().default(true),
 });
@@ -38,6 +51,7 @@ export const updateUserSchema = z
     name: z.string().trim().min(2).max(191).optional(),
     role: roleSchema.optional(),
     active: z.boolean().optional(),
+    sellerId: sellerIdSchema.optional(),
   })
   .refine((data) => Object.keys(data).length > 0, 'Debes enviar al menos un cambio.');
 

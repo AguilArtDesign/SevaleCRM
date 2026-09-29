@@ -4,6 +4,7 @@ import {
   AlertDialog,
   Avatar,
   Button,
+  Description,
   Dropdown,
   Label,
   ListBox,
@@ -30,6 +31,8 @@ import { userAvatarGradient, userAvatarSeed, userInitials } from './presentation
 import { useCurrentUser } from './useCurrentUser';
 
 const pageSizeOptions = [10, 20, 50, 100];
+
+const emptyValue = '--';
 
 const roleFilterOptions: { value: UserRole | ''; label: string }[] = [
   { value: '', label: 'Todos los roles' },
@@ -93,6 +96,7 @@ export function UsersPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
+  const [sellerId, setSellerId] = useState('');
   const [role, setRole] = useState<UserRole>('COMMERCIAL');
   const [active, setActive] = useState(true);
   const [deleteTarget, setDeleteTarget] = useState<UserRecord | null>(null);
@@ -128,6 +132,7 @@ export function UsersPage() {
     setFormError('');
     setName('');
     setEmail('');
+    setSellerId('');
     setRole('COMMERCIAL');
     setActive(true);
   };
@@ -142,6 +147,7 @@ export function UsersPage() {
     setEditingId(selected.id);
     setName(selected.name);
     setEmail(selected.email);
+    setSellerId(selected.sellerId === null ? '' : String(selected.sellerId));
     setRole(selected.role);
     setActive(selected.active);
   };
@@ -164,25 +170,32 @@ export function UsersPage() {
     event.preventDefault();
     setFormError('');
 
-    const payload = { name, email, role, active };
-    const validation =
-      formMode === 'create'
-        ? createUserSchema.safeParse(payload)
-        : updateUserSchema.safeParse({ name, role, active });
-    if (!validation.success) {
-      setFormError(validation.error.issues[0]?.message || 'Revisa los datos ingresados.');
+    const values = { name, email, sellerId, role, active };
+    const createResult = formMode === 'create' ? createUserSchema.safeParse(values) : null;
+    const updateResult = formMode === 'edit' ? updateUserSchema.safeParse(values) : null;
+    const validationError = createResult?.error ?? updateResult?.error;
+    if (validationError) {
+      setFormError(validationError.issues[0]?.message || 'Revisa los datos ingresados.');
       return;
     }
 
     setIsSubmitting(true);
     try {
-      if (formMode === 'create') {
-        await usersApi.create(payload);
+      if (createResult?.success) {
+        await usersApi.create(createResult.data);
         toast.success('Usuario creado. Ya puede iniciar sesión con un código enviado por correo.');
-      } else if (editingId) {
+      } else if (updateResult?.success && editingId) {
+        const {
+          name: nextName,
+          sellerId: nextSellerId,
+          role: nextRole,
+          active: nextActive,
+        } = updateResult.data;
         await usersApi.update(
           editingId,
-          editingId === currentUser?.id ? { name } : { name, role, active },
+          editingId === currentUser?.id
+            ? { name: nextName, sellerId: nextSellerId }
+            : { name: nextName, sellerId: nextSellerId, role: nextRole, active: nextActive },
         );
         toast.success('Los cambios del usuario se guardaron correctamente.');
       }
@@ -295,6 +308,7 @@ export function UsersPage() {
             <Table.Content aria-label="Usuarios del CRM">
               <Table.Header>
                 <Table.Column isRowHeader>Usuario</Table.Column>
+                <Table.Column>Seller ID</Table.Column>
                 <Table.Column>Rol</Table.Column>
                 <Table.Column>Estado</Table.Column>
                 <Table.Column>Último acceso</Table.Column>
@@ -319,6 +333,7 @@ export function UsersPage() {
                         </div>
                       </div>
                     </Table.Cell>
+                    <Table.Cell>{listedUser.sellerId ?? emptyValue}</Table.Cell>
                     <Table.Cell>{roleLabels[listedUser.role]}</Table.Cell>
                     <Table.Cell>
                       <Chip color={listedUser.active ? 'success' : 'default'}>
@@ -479,7 +494,7 @@ export function UsersPage() {
                   <p>
                     {formMode === 'create'
                       ? 'Define el acceso inicial de la nueva cuenta.'
-                      : 'Actualiza el rol o el estado de la cuenta.'}
+                      : 'Actualiza el seller id, el rol o el estado de la cuenta.'}
                   </p>
                 </div>
               </Modal.Header>
@@ -514,6 +529,19 @@ export function UsersPage() {
                       value={email}
                       onChange={(event) => setEmail(event.target.value)}
                     />
+                  </TextField>
+
+                  <TextField fullWidth name="sellerId" inputMode="numeric" isRequired>
+                    <Label>Seller ID de Siigo</Label>
+                    <Input
+                      variant="secondary"
+                      placeholder="Ej. 1538"
+                      value={sellerId}
+                      onChange={(event) => setSellerId(event.target.value.replace(/[^0-9]/g, ''))}
+                    />
+                    <Description>
+                      Identificador del vendedor en Siigo. No puede repetirse entre usuarios.
+                    </Description>
                   </TextField>
 
                   <RadioGroup

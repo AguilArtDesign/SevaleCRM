@@ -6,6 +6,7 @@ export type UserRecord = {
   id: string;
   name: string;
   email: string;
+  sellerId: number | null;
   role: UserRole;
   active: boolean;
   createdAt: string;
@@ -55,9 +56,17 @@ export const usersApi = {
     if (input.role) query.set('role', input.role);
     return apiRequest<UserListResponse>(`/api/users?${query}`);
   },
-  create: (input: { name: string; email: string; role: UserRole; active: boolean }) =>
-    apiRequest<UserRecord>('/api/users', { method: 'POST', body: JSON.stringify(input) }),
-  update: (id: string, input: { name?: string; role?: UserRole; active?: boolean }) =>
+  create: (input: {
+    name: string;
+    email: string;
+    sellerId: number;
+    role: UserRole;
+    active: boolean;
+  }) => apiRequest<UserRecord>('/api/users', { method: 'POST', body: JSON.stringify(input) }),
+  update: (
+    id: string,
+    input: { name?: string; sellerId?: number; role?: UserRole; active?: boolean },
+  ) =>
     apiRequest<UserRecord>(`/api/users/${id}`, {
       method: 'PATCH',
       body: JSON.stringify(input),

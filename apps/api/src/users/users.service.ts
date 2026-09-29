@@ -11,6 +11,7 @@ const userSelect = {
   id: true,
   name: true,
   email: true,
+  sellerId: true,
   role: true,
   active: true,
   createdAt: true,
@@ -24,6 +25,47 @@ function isUniqueConstraintError(error: unknown): boolean {
     'code' in error &&
     (error as { code?: unknown }).code === 'P2002'
   );
+}
+
+function uniqueConflictMessage(error: unknown): { code: string; message: string } {
+  const details = error as {
+    message?: unknown;
+    meta?: {
+      target?: unknown;
+      driverAdapterError?: { cause?: { constraint?: { index?: unknown } } };
+    };
+  };
+  const target = details.meta?.target;
+  const constraint = details.meta?.driverAdapterError?.cause?.constraint?.index;
+  // El adaptador de MariaDB no expone `meta.target`: el índice violado llega en
+  // `driverAdapterError` y en el mensaje, así que se inspeccionan los tres.
+  const hint = [
+    Array.isArray(target) ? target.join(',') : typeof target === 'string' ? target : '',
+    typeof constraint === 'string' ? constraint : '',
+    typeof details.message === 'string' ? details.message : '',
+  ]
+    .join(' ')
+    .toLowerCase();
+  if (hint.includes('seller')) {
+    return {
+      code: 'SELLER_ID_TAKEN',
+      message: 'Ese seller id de Siigo ya está asignado a otro usuario.',
+    };
+  }
+  if (hint.includes('email')) {
+    return {
+      code: 'EMAIL_TAKEN',
+      message: 'Ya existe un usuario con ese correo electrónico.',
+    };
+  }
+  return {
+    code: 'USER_CONFLICT',
+    message: 'Ya existe un usuario con ese correo electrónico o seller id de Siigo.',
+  };
+}
+
+function userConflict(error: unknown): ConflictException {
+  return new ConflictException({ success: false, error: uniqueConflictMessage(error) });
 }
 
 @Injectable()
@@ -58,6 +100,7 @@ export class UsersService {
         data: {
           name: input.name,
           email: input.email,
+          sellerId: input.sellerId,
           role: input.role,
           active: input.active,
           // Los usuarios del CRM son provisionados por un administrador y el
@@ -68,7 +111,7 @@ export class UsersService {
       });
     } catch (error) {
       if (isUniqueConstraintError(error)) {
-        throw new ConflictException('Ya existe un usuario con ese correo electrónico.');
+        throw userConflict(error);
       }
       throw error;
     }
@@ -101,11 +144,16 @@ export class UsersService {
       (input.role !== undefined && input.role !== current.role) ||
       (input.active !== undefined && input.active !== current.active);
 
-    const updated = await this.prisma.user.update({
-      where: { id },
-      data: input,
-      select: userSelect,
-    });
+    const updated = await this.prisma.user
+      .update({
+        where: { id },
+        data: input,
+        select: userSelect,
+      })
+      .catch((error: unknown) => {
+        if (isUniqueConstraintError(error)) throw userConflict(error);
+        throw error;
+      });
     if (accessChanged) await this.prisma.session.deleteMany({ where: { userId: id } });
     return updated;
   }
