@@ -163,18 +163,25 @@ export function LoginPage() {
     }
 
     setIsSubmitting(true);
-    const result = await authClient.signIn.email({
-      email: parsedEmail.data,
-      password: parsedPassword.data,
-      fetchOptions: { headers: { 'x-captcha-response': captchaToken } },
-    });
-    setIsSubmitting(false);
-    if (result.error) {
-      setError({ text: 'El correo o la contraseña no son correctos.', tone: 'warning' });
+    try {
+      const result = await authClient.signIn.email({
+        email: parsedEmail.data,
+        password: parsedPassword.data,
+        fetchOptions: { headers: { 'x-captcha-response': captchaToken } },
+      });
+      if (result.error) {
+        setError({ text: 'El correo o la contraseña no son correctos.', tone: 'warning' });
+        resetCaptcha();
+        return;
+      }
+      void navigate('/app', { replace: true });
+    } catch (passwordError) {
+      setError(noticeFrom(passwordError));
       resetCaptcha();
-      return;
+    } finally {
+      // Sin esto, un fallo de red dejaría el indicador de carga bloqueado.
+      setIsSubmitting(false);
     }
-    void navigate('/app', { replace: true });
   };
 
   /**
@@ -281,6 +288,7 @@ export function LoginPage() {
               <TurnstileField resetKey={captchaResetKey} onTokenChange={setCaptchaToken} />
               <Button fullWidth type="submit" variant="primary" isPending={isSubmitting}>
                 Continuar
+                {isSubmitting && <Spinner color="current" size="sm" />}
               </Button>
             </form>
           )}
@@ -312,6 +320,7 @@ export function LoginPage() {
               <TurnstileField resetKey={captchaResetKey} onTokenChange={setCaptchaToken} />
               <Button fullWidth type="submit" variant="primary" isPending={isSubmitting}>
                 Iniciar sesión
+                {isSubmitting && <Spinner color="current" size="sm" />}
               </Button>
             </form>
           )}
