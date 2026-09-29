@@ -208,6 +208,33 @@ select {
   color: var(--foreground);
 }
 
+/*
+ * Mensajes del login, con el mismo tratamiento que los avisos del panel: fondo suave y texto del
+ * mismo tono. `warning` cuando el usuario puede corregir el error —código inválido o expirado,
+ * credenciales, validación, captcha— y `danger` cuando el fallo es del sistema.
+ */
+.auth-notice {
+  margin: 0;
+  padding: 0.5rem 0.875rem;
+  border-radius: 0.625rem;
+  font-size: 0.8125rem;
+}
+
+.auth-notice--warning {
+  color: var(--warning-soft-foreground);
+  background: var(--warning-soft);
+}
+
+.auth-notice--danger {
+  color: var(--danger-soft-foreground);
+  background: var(--danger-soft);
+}
+
+.auth-notice--success {
+  color: var(--success-soft-foreground);
+  background: var(--success-soft);
+}
+
 .turnstile-field {
   position: absolute;
   width: 0;

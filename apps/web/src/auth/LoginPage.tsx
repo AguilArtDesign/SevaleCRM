@@ -1,20 +1,11 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import {
-  Alert,
-  Button,
-  Card,
-  InputOTP,
-  Label,
-  Spinner,
-  TextField,
-  Typography,
-} from '@heroui/react';
+import { Button, Card, InputOTP, Label, Spinner, TextField, Typography } from '@heroui/react';
 import { Envelope, PaperPlane, ShieldKeyhole } from '@gravity-ui/icons';
 import { emailSchema, otpSchema, passwordSchema } from '@sevale/validation';
 import { Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { authClient } from './auth-client';
 import { BrandMark } from './BrandMark';
-import { ThemeButton } from './ThemeButton';
+import { ThemeToggle } from '../theme/ThemeToggle';
 import { TurnstileField } from './TurnstileField';
 import { Input } from '../components/Input';
 
@@ -26,10 +17,32 @@ function maskEmail(email: string): string {
   return `${local.slice(0, 1)}${'*'.repeat(Math.max(3, local.length - 1))}@${domain}`;
 }
 
-function getErrorMessage(error: unknown): string {
-  return error instanceof Error && error.message
-    ? error.message
-    : 'No pudimos completar la solicitud. Inténtalo nuevamente.';
+type NoticeTone = 'warning' | 'danger';
+type LoginNotice = { text: string; tone: NoticeTone };
+
+/**
+ * Error que lleva el tono con el que debe mostrarse: los fallos que el usuario puede corregir se
+ * marcan como `warning` y los del sistema como `danger`.
+ */
+class LoginNoticeError extends Error {
+  constructor(
+    message: string,
+    readonly tone: NoticeTone = 'warning',
+  ) {
+    super(message);
+  }
+}
+
+/** Cualquier error no clasificado viene de la API o de la red, así que se muestra como `danger`. */
+function noticeFrom(error: unknown): LoginNotice {
+  if (error instanceof LoginNoticeError) return { text: error.message, tone: error.tone };
+  return {
+    text:
+      error instanceof Error && error.message
+        ? error.message
+        : 'No pudimos completar la solicitud. Inténtalo nuevamente.',
+    tone: 'danger',
+  };
 }
 
 function isServerAuthError(error: unknown): boolean {
@@ -51,7 +64,7 @@ export function LoginPage() {
   const [captchaResetKey, setCaptchaResetKey] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const otpVerificationRef = useRef(false);
-  const [error, setError] = useState('');
+  const [error, setError] = useState<LoginNotice | null>(null);
   const [notice, setNotice] = useState(
     () => (location.state as { notice?: string } | null)?.notice || '',
   );
@@ -73,7 +86,7 @@ export function LoginPage() {
   }
 
   const resetFeedback = () => {
-    setError('');
+    setError(null);
     setNotice('');
   };
   const resetCaptcha = () => {
@@ -88,9 +101,13 @@ export function LoginPage() {
 
   const requestCode = async () => {
     const parsedEmail = emailSchema.safeParse(email);
-    if (!parsedEmail.success) throw new Error(parsedEmail.error.issues[0]?.message);
+    if (!parsedEmail.success) {
+      throw new LoginNoticeError(
+        parsedEmail.error.issues[0]?.message ?? 'Ingresa un correo válido.',
+      );
+    }
     if (CAPTCHA_REQUIRED && !captchaToken) {
-      throw new Error('Completa la verificación de seguridad.');
+      throw new LoginNoticeError('Completa la verificación de seguridad.');
     }
 
     const result = await authClient.emailOtp.sendVerificationOtp({
@@ -98,7 +115,12 @@ export function LoginPage() {
       type: 'sign-in',
       fetchOptions: { headers: { 'x-captcha-response': captchaToken } },
     });
-    if (result.error) throw new Error(result.error.message || 'No fue posible enviar el código.');
+    if (result.error) {
+      throw new LoginNoticeError(
+        result.error.message || 'No fue posible enviar el código.',
+        isServerAuthError(result.error) ? 'danger' : 'warning',
+      );
+    }
 
     setEmail(parsedEmail.data);
     setMode('otp');
@@ -113,7 +135,7 @@ export function LoginPage() {
     try {
       await requestCode();
     } catch (requestError) {
-      setError(getErrorMessage(requestError));
+      setError(noticeFrom(requestError));
       resetCaptcha();
     } finally {
       setIsSubmitting(false);
@@ -126,15 +148,17 @@ export function LoginPage() {
     const parsedEmail = emailSchema.safeParse(email);
     const parsedPassword = passwordSchema.safeParse(password);
     if (!parsedEmail.success || !parsedPassword.success) {
-      setError(
-        parsedEmail.error?.issues[0]?.message ||
+      setError({
+        text:
+          parsedEmail.error?.issues[0]?.message ||
           parsedPassword.error?.issues[0]?.message ||
           'Revisa los datos.',
-      );
+        tone: 'warning',
+      });
       return;
     }
     if (CAPTCHA_REQUIRED && !captchaToken) {
-      setError('Completa la verificación de seguridad.');
+      setError({ text: 'Completa la verificación de seguridad.', tone: 'warning' });
       return;
     }
 
@@ -146,7 +170,7 @@ export function LoginPage() {
     });
     setIsSubmitting(false);
     if (result.error) {
-      setError('El correo o la contraseña no son correctos.');
+      setError({ text: 'El correo o la contraseña no son correctos.', tone: 'warning' });
       resetCaptcha();
       return;
     }
@@ -162,7 +186,10 @@ export function LoginPage() {
     resetFeedback();
     const parsedOtp = otpSchema.safeParse(code);
     if (!parsedOtp.success) {
-      setError(parsedOtp.error.issues[0]?.message || 'Revisa el código.');
+      setError({
+        text: parsedOtp.error.issues[0]?.message || 'Revisa el código.',
+        tone: 'warning',
+      });
       return;
     }
 
@@ -171,16 +198,18 @@ export function LoginPage() {
     try {
       const result = await authClient.signIn.emailOtp({ email, otp: parsedOtp.data });
       if (result.error) {
-        setError(
-          isServerAuthError(result.error)
+        const serverError = isServerAuthError(result.error);
+        setError({
+          text: serverError
             ? 'No pudimos iniciar sesión por un error del servidor. Inténtalo nuevamente.'
             : 'El código no es válido o ya expiró.',
-        );
+          tone: serverError ? 'danger' : 'warning',
+        });
         return;
       }
       void navigate('/app', { replace: true });
     } catch (verificationError) {
-      setError(getErrorMessage(verificationError));
+      setError(noticeFrom(verificationError));
     } finally {
       // Sin esto, un fallo de red dejaría el indicador de carga y el campo bloqueados.
       otpVerificationRef.current = false;
@@ -201,7 +230,7 @@ export function LoginPage() {
 
   return (
     <main className="auth-page">
-      <ThemeButton />
+      <ThemeToggle className="theme-button" />
       <Card className="auth-card">
         <Card.Content className="auth-card-content">
           <BrandMark />
@@ -223,18 +252,14 @@ export function LoginPage() {
           </div>
 
           {error && (
-            <Alert status="danger">
-              <Alert.Content>
-                <Alert.Description>{error}</Alert.Description>
-              </Alert.Content>
-            </Alert>
+            <p className={`auth-notice auth-notice--${error.tone}`} role="alert">
+              {error.text}
+            </p>
           )}
           {notice && (
-            <Alert status="success">
-              <Alert.Content>
-                <Alert.Description>{notice}</Alert.Description>
-              </Alert.Content>
-            </Alert>
+            <p className="auth-notice auth-notice--success" role="status">
+              {notice}
+            </p>
           )}
 
           {mode === 'email' && (

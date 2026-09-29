@@ -5,18 +5,16 @@ import {
   Boxes3,
   Gear,
   LayoutSideContentLeft,
-  Moon,
   Persons,
   PersonMagnifier,
   ShoppingCart,
-  Sun,
   Ticket,
   Xmark,
 } from '@gravity-ui/icons';
 import { hasPermission } from '@sevale/permissions';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { authClient } from '../auth/auth-client';
-import { useTheme } from '../theme/ThemeProvider';
+import { ThemeToggle } from '../theme/ThemeToggle';
 import { useCurrentUser } from '../users/useCurrentUser';
 import { useRealtimeUpdates } from '../realtime/useRealtimeUpdates';
 import { NotificationCenter } from '../notifications/NotificationCenter';
@@ -87,7 +85,6 @@ export function AppShell() {
   const navigate = useNavigate();
   const location = useLocation();
   const { user, isLoading } = useCurrentUser();
-  const { theme, toggleTheme } = useTheme();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(getStoredSidebarState);
   const [isMobile, setIsMobile] = useState(
@@ -310,16 +307,7 @@ export function AppShell() {
           </div>
 
           <div className="crm-header-actions">
-            <Button
-              className="shell-icon-button"
-              isIconOnly
-              size="sm"
-              variant="ghost"
-              aria-label={theme === 'dark' ? 'Cambiar a tema claro' : 'Cambiar a tema oscuro'}
-              onPress={toggleTheme}
-            >
-              {theme === 'dark' ? <Sun width={19} height={19} /> : <Moon width={19} height={19} />}
-            </Button>
+            <ThemeToggle />
 
             <NotificationCenter />
           </div>
