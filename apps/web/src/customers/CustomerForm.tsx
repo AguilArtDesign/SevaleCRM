@@ -13,7 +13,7 @@ import {
   Switch,
   TextField,
 } from '@heroui/react';
-import { CircleCheck, CircleXmark, PersonPlus } from '@gravity-ui/icons';
+import { CircleCheck, CircleXmark, MapPin, PersonPlus } from '@gravity-ui/icons';
 import {
   createCustomerSchema,
   customerDocumentTypes,
@@ -835,7 +835,9 @@ export function CustomerForm({
                     </TextField>
                     {!isEdit && originLocation && (
                       <p className="customer-address-origin customer-field-full">
-                        Ubicación del origen: <strong>{originLocation}</strong>
+                        <MapPin width={14} height={14} aria-hidden="true" />
+                        Ubicación encontrada
+                        <span className="customer-address-origin-value">{originLocation}</span>
                       </p>
                     )}
                     {!isEdit &&

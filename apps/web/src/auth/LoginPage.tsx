@@ -1,6 +1,15 @@
-import { useEffect, useState, type FormEvent } from 'react';
-import { Alert, Button, Card, InputOTP, Label, TextField, Typography } from '@heroui/react';
-import { Envelope, Key } from '@gravity-ui/icons';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
+import {
+  Alert,
+  Button,
+  Card,
+  InputOTP,
+  Label,
+  Spinner,
+  TextField,
+  Typography,
+} from '@heroui/react';
+import { Envelope, PaperPlane, ShieldKeyhole } from '@gravity-ui/icons';
 import { emailSchema, otpSchema, passwordSchema } from '@sevale/validation';
 import { Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { authClient } from './auth-client';
@@ -41,6 +50,7 @@ export function LoginPage() {
   const [captchaToken, setCaptchaToken] = useState('');
   const [captchaResetKey, setCaptchaResetKey] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const otpVerificationRef = useRef(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState(
     () => (location.state as { notice?: string } | null)?.notice || '',
@@ -94,7 +104,6 @@ export function LoginPage() {
     setMode('otp');
     setOtp('');
     setResendSeconds(60);
-    setNotice('Si el correo está habilitado, recibirás un código de acceso.');
   };
 
   const handleEmailSubmit = async (event: FormEvent) => {
@@ -144,27 +153,44 @@ export function LoginPage() {
     void navigate('/app', { replace: true });
   };
 
-  const handleOtpSubmit = async (event: FormEvent) => {
-    event.preventDefault();
+  /**
+   * Verifica el código contra la API. Se invoca al completar los seis dígitos y también desde el
+   * botón, por lo que `otpVerificationRef` evita dos peticiones simultáneas con el mismo código.
+   */
+  const verifyOtp = async (code: string) => {
+    if (otpVerificationRef.current) return;
     resetFeedback();
-    const parsedOtp = otpSchema.safeParse(otp);
+    const parsedOtp = otpSchema.safeParse(code);
     if (!parsedOtp.success) {
       setError(parsedOtp.error.issues[0]?.message || 'Revisa el código.');
       return;
     }
 
+    otpVerificationRef.current = true;
     setIsSubmitting(true);
-    const result = await authClient.signIn.emailOtp({ email, otp: parsedOtp.data });
-    setIsSubmitting(false);
-    if (result.error) {
-      setError(
-        isServerAuthError(result.error)
-          ? 'No pudimos iniciar sesión por un error del servidor. Inténtalo nuevamente.'
-          : 'El código no es válido o ya expiró.',
-      );
-      return;
+    try {
+      const result = await authClient.signIn.emailOtp({ email, otp: parsedOtp.data });
+      if (result.error) {
+        setError(
+          isServerAuthError(result.error)
+            ? 'No pudimos iniciar sesión por un error del servidor. Inténtalo nuevamente.'
+            : 'El código no es válido o ya expiró.',
+        );
+        return;
+      }
+      void navigate('/app', { replace: true });
+    } catch (verificationError) {
+      setError(getErrorMessage(verificationError));
+    } finally {
+      // Sin esto, un fallo de red dejaría el indicador de carga y el campo bloqueados.
+      otpVerificationRef.current = false;
+      setIsSubmitting(false);
     }
-    void navigate('/app', { replace: true });
+  };
+
+  const handleOtpSubmit = (event: FormEvent) => {
+    event.preventDefault();
+    void verifyOtp(otp);
   };
 
   const handleResend = () => {
@@ -180,18 +206,20 @@ export function LoginPage() {
         <Card.Content className="auth-card-content">
           <BrandMark />
           <div className="auth-heading">
-            <Typography.Heading level={1}>
+            <Typography.Heading level={1} className="auth-title">
               {mode === 'password'
                 ? 'Iniciar con contraseña'
                 : mode === 'otp'
-                  ? 'Revisa tu correo'
+                  ? 'Verificar tu cuenta'
                   : 'Iniciar sesión'}
             </Typography.Heading>
-            {mode === 'otp' && (
-              <Typography.Paragraph color="muted" size="sm">
-                Ingresa el código enviado a {maskEmail(email)}
-              </Typography.Paragraph>
-            )}
+            <Typography.Paragraph color="muted" size="sm">
+              {mode === 'password'
+                ? 'Introduce tus credenciales para acceder a tu cuenta.'
+                : mode === 'otp'
+                  ? `Ingresa el código enviado a ${maskEmail(email)}`
+                  : 'Introduce tu correo electrónico para acceder'}
+            </Typography.Paragraph>
           </div>
 
           {error && (
@@ -273,9 +301,14 @@ export function LoginPage() {
                 <Label>Código de verificación</Label>
                 <InputOTP
                   value={otp}
-                  onChange={setOtp}
+                  onChange={(code) => {
+                    setOtp(code);
+                    // El código se valida al completar los seis dígitos, sin pulsar el botón.
+                    if (code.length === 6) void verifyOtp(code);
+                  }}
                   maxLength={6}
                   inputMode="numeric"
+                  variant="secondary"
                   isDisabled={isSubmitting}
                 >
                   <InputOTP.Group>
@@ -287,6 +320,7 @@ export function LoginPage() {
               </div>
               <Button fullWidth type="submit" variant="primary" isPending={isSubmitting}>
                 Verificar código
+                {isSubmitting && <Spinner color="current" size="sm" />}
               </Button>
             </form>
           )}
@@ -294,7 +328,7 @@ export function LoginPage() {
           <div className="auth-actions">
             {mode === 'email' && (
               <Button variant="ghost" onPress={() => switchMode('password')}>
-                <Key width={17} height={17} />
+                <ShieldKeyhole width={17} height={17} />
                 Iniciar con contraseña
               </Button>
             )}
@@ -307,12 +341,21 @@ export function LoginPage() {
             {mode === 'otp' && (
               <>
                 <Button variant="ghost" isDisabled={resendSeconds > 0} onPress={handleResend}>
-                  {resendSeconds > 0 ? `Reenviar código en ${resendSeconds}s` : 'Reenviar código'}
+                  {resendSeconds > 0 ? (
+                    `Reenviar código en ${resendSeconds}s`
+                  ) : (
+                    <>
+                      <PaperPlane width={17} height={17} />
+                      Reenviar código
+                    </>
+                  )}
                 </Button>
                 <Button variant="ghost" onPress={() => switchMode('email')}>
+                  <Envelope width={17} height={17} />
                   Usar otro correo
                 </Button>
                 <Button variant="ghost" onPress={() => switchMode('password')}>
+                  <ShieldKeyhole width={17} height={17} />
                   Iniciar con contraseña
                 </Button>
               </>
