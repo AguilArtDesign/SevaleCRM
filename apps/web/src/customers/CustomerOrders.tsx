@@ -1,11 +1,9 @@
-import { useState } from 'react';
 import { useInfiniteQuery } from '@tanstack/react-query';
-import { Button, EmptyState, Modal, Spinner, Table } from '@heroui/react';
+import { Button, EmptyState, Spinner, Table } from '@heroui/react';
 import { Eye, ShoppingCart } from '@gravity-ui/icons';
 import { ordersApi, type CustomerOrderRecord, type CustomerOrdersResponse } from '../orders/api';
 import {
   formattedDate,
-  formattedMoney,
   formattedMoneyWithCode,
   OrderStatusChip,
   StoreChip,
@@ -42,115 +40,17 @@ function OrdersSummary({ summary }: { summary?: CustomerOrdersResponse['summary'
   );
 }
 
-/** Detalle de un pedido de tienda: sus productos, totales y los datos de envío. */
-function CustomerOrderDetail({ order }: { order: CustomerOrderRecord }) {
-  const address = [
-    order.shipping.address1,
-    order.shipping.address2,
-    order.shipping.city,
-    order.shipping.state,
-    order.shipping.postcode,
-  ]
-    .filter(Boolean)
-    .join(', ');
-  const recipient = [order.shipping.firstName, order.shipping.lastName].filter(Boolean).join(' ');
-
-  return (
-    <div className="order-detail">
-      <section className="order-detail-overview">
-        <div>
-          <span>Estado</span>
-          <OrderStatusChip status={order.status} wooStatus={order.wooStatus} />
-        </div>
-        <div>
-          <span>Tienda</span>
-          <StoreChip store={order.store} />
-        </div>
-        <div>
-          <span>Operación</span>
-          <strong>{order.operationCode}</strong>
-          <small>{order.source === 'CRM' ? 'CRM' : 'WooCommerce'}</small>
-        </div>
-        <div>
-          <span>Fecha</span>
-          <strong>{formattedDate(order.wooCreatedAt ?? order.createdAt)}</strong>
-        </div>
-      </section>
-
-      <section className="order-detail-section">
-        <h3>Productos</h3>
-        <div className="order-detail-stores">
-          <article>
-            <header>
-              <div className="order-detail-store-heading">
-                <StoreChip store={order.store} />
-              </div>
-              <strong>{formattedMoney(order.total, order.currency)}</strong>
-            </header>
-            {order.items.map((item) => (
-              <div className="order-detail-item" key={item.id}>
-                <div>
-                  <strong>{item.nameSnapshot}</strong>
-                  <span>
-                    {item.skuSnapshot} · {item.quantity} unidad(es)
-                  </span>
-                </div>
-                <div>
-                  <strong>{formattedMoney(item.total, order.currency)}</strong>
-                  {item.priceModified && <small>Precio modificado</small>}
-                </div>
-              </div>
-            ))}
-            <dl>
-              <div>
-                <dt>Subtotal</dt>
-                <dd>{formattedMoney(order.subtotal, order.currency)}</dd>
-              </div>
-              {order.coupons.map((coupon) => (
-                <div key={coupon.id}>
-                  <dt>Cupón {coupon.code}</dt>
-                  <dd>- {formattedMoney(coupon.discountTotal, order.currency)}</dd>
-                </div>
-              ))}
-              <div>
-                <dt>Descuento</dt>
-                <dd>- {formattedMoney(order.discountTotal, order.currency)}</dd>
-              </div>
-              <div>
-                <dt>Envío</dt>
-                <dd>{formattedMoney(order.shippingTotal, order.currency)}</dd>
-              </div>
-              <div>
-                <dt>Total</dt>
-                <dd>{formattedMoney(order.total, order.currency)}</dd>
-              </div>
-            </dl>
-          </article>
-        </div>
-      </section>
-
-      <section className="order-detail-section">
-        <h3>Envío</h3>
-        <p>
-          <strong>{recipient || 'Sin destinatario registrado'}</strong>
-        </p>
-        <p>{address || 'Sin dirección registrada'}</p>
-        <p>
-          {order.shipping.methodTitle || order.shipping.method || 'Sin método de envío'} ·{' '}
-          {order.shipping.phone || 'Sin teléfono'}
-        </p>
-      </section>
-    </div>
-  );
-}
-
 /**
  * Pedidos del cliente dentro de su detalle. Cada fila es un pedido de tienda: una operación creada
  * en el CRM y enviada a ambas tiendas aparece una vez por tienda, igual que en el panel de Pedidos.
  */
-export function CustomerOrders({ customerId }: { customerId: number }) {
-  const [selected, setSelected] = useState<CustomerOrderRecord | null>(null);
-
+export function CustomerOrders({
+  customerId,
+  onSelectOrder,
+}: {
+  customerId: number;
+  onSelectOrder: (order: CustomerOrderRecord) => void;
+}) {
   const ordersQuery = useInfiniteQuery({
     queryKey: ['orders', 'customer', customerId],
     queryFn: ({ pageParam }) => ordersApi.customerOrders(customerId, pageParam, pageSize),
@@ -234,7 +134,7 @@ export function CustomerOrders({ customerId }: { customerId: number }) {
                       size="sm"
                       variant="ghost"
                       aria-label={`Ver el pedido #${order.wooOrderId ?? order.id}`}
-                      onPress={() => setSelected(order)}
+                      onPress={() => onSelectOrder(order)}
                     >
                       <Eye width={17} height={17} />
                     </Button>
@@ -258,32 +158,6 @@ export function CustomerOrders({ customerId }: { customerId: number }) {
           </Table.Content>
         </Table.ScrollContainer>
       </Table>
-
-      {selected && (
-        <Modal
-          isOpen
-          onOpenChange={(open) => {
-            if (!open) setSelected(null);
-          }}
-        >
-          <Modal.Backdrop>
-            <Modal.Container size="lg" placement="center" scroll="inside">
-              <Modal.Dialog className="order-detail-modal">
-                <Modal.CloseTrigger aria-label="Cerrar detalle" />
-                <Modal.Header>
-                  <div>
-                    <Modal.Heading>#{selected.wooOrderId ?? selected.id}</Modal.Heading>
-                    <p>Pedido enviado a la tienda.</p>
-                  </div>
-                </Modal.Header>
-                <Modal.Body>
-                  <CustomerOrderDetail order={selected} />
-                </Modal.Body>
-              </Modal.Dialog>
-            </Modal.Container>
-          </Modal.Backdrop>
-        </Modal>
-      )}
     </section>
   );
 }

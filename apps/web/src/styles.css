@@ -2062,6 +2062,66 @@ select {
   padding-top: 1rem;
 }
 
+/* Empuje del drawer de cliente. El panel del pedido ocupa el mismo ancho, así que al correr el
+   drawer la mitad de su ancho el panel entra justo en el espacio que deja libre y los dos quedan
+   visibles. HeroUI ya anima el cambio de `translate` del drawer, así que basta con moverlo. */
+.customer-detail-drawer--pushed {
+  translate: 50% 0;
+}
+
+/* El fondo atenuado lo pone el overlay del panel mientras está abierto, así que su capa va por
+   debajo de la del drawer para que el panel pase por detrás del detalle del cliente. */
+.customer-order-panel-backdrop {
+  z-index: 40;
+  /* El atenuado cambia de overlay en el mismo fotograma en que el drawer se vuelve transparente.
+     Si este fondo entrara con su propia animación de opacidad, los dos quedarían a medio atenuar a
+     la vez y el nivel total bajaría: ese era el parpadeo. */
+  opacity: 1;
+  transition: none;
+}
+
+/* Al cerrar ocurre lo mismo al revés: el drawer recupera su atenuado en el fotograma en que este
+   fondo se va, así que se apaga de golpe y no se suman los dos. */
+.customer-order-panel-backdrop[data-exiting='true'] {
+  opacity: 0;
+}
+
+/* Panel del detalle del pedido. Comparte medidas con el drawer de cliente y se ubica a su izquierda:
+   el margen derecho es el del propio panel, más el del drawer, más la mitad del ancho del drawer,
+   que es lo que el drawer ocupa del espacio libre al correrse. */
+.customer-order-panel.drawer__dialog {
+  width: min(32rem, calc(100vw - 2.5rem));
+  max-width: calc(100vw - 2.5rem);
+  height: calc(100dvh - 2.5rem);
+  margin: 1.25rem;
+  margin-right: calc(2.5rem + min(16rem, 50vw - 1.25rem));
+  border-radius: min(2rem, calc(var(--radius) * 2.5));
+}
+
+.customer-order-panel .drawer__body {
+  padding-top: 1rem;
+}
+
+.customer-order-panel-back {
+  margin-left: -0.5rem;
+}
+
+.customer-order-panel .drawer__heading {
+  font-size: 1.1rem;
+}
+
+/* Donde los dos paneles no caben uno al lado del otro, el del pedido se queda con el lugar del
+   drawer en vez de correrlo, así no se sale de la pantalla. */
+@media (max-width: 900px) {
+  .customer-detail-drawer--pushed {
+    translate: 0 0;
+  }
+
+  .customer-order-panel.drawer__dialog {
+    margin-right: 1.25rem;
+  }
+}
+
 .customer-form-modal form,
 .user-form-modal form {
   display: contents;

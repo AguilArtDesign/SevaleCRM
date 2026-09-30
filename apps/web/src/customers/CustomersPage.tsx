@@ -48,10 +48,12 @@ import { getPaginationItems, Pagination } from '../components/Pagination';
 import { Select } from '../components/Select';
 import { useCurrentUser } from '../users/useCurrentUser';
 import { CustomerForm } from './CustomerForm';
+import { CustomerOrderPanel } from './CustomerOrderPanel';
 import { CustomerOrders } from './CustomerOrders';
 import { customerAvatarClass, customerDisplayName, customerInitials } from './presentation';
 import { CustomerAutocomplete } from './CustomerAutocomplete';
 import { customersApi, type CustomerRecord } from './api';
+import type { CustomerOrderRecord } from '../orders/api';
 
 type Filters = {
   search: string;
@@ -194,6 +196,7 @@ function CustomerDetail({
   onSiigoStateChange,
   onSiigoCityChange,
   onConfirmSiigoLocation,
+  onSelectOrder,
 }: {
   customer: CustomerRecord;
   canRetry: boolean;
@@ -210,6 +213,7 @@ function CustomerDetail({
   onSiigoStateChange: (stateCode: string) => void;
   onSiigoCityChange: (cityCode: string) => void;
   onConfirmSiigoLocation: () => void;
+  onSelectOrder: (order: CustomerOrderRecord) => void;
 }) {
   return (
     <div className="customer-detail">
@@ -369,7 +373,7 @@ function CustomerDetail({
           })}
         </div>
       </section>
-      <CustomerOrders customerId={customer.id} />
+      <CustomerOrders customerId={customer.id} onSelectOrder={onSelectOrder} />
     </div>
   );
 }
@@ -384,6 +388,7 @@ export function CustomersPage() {
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<CustomerRecord | null>(null);
   const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [selectedOrder, setSelectedOrder] = useState<CustomerOrderRecord | null>(null);
   const [selectedKeys, setSelectedKeys] = useState<Selection>(new Set());
   const [deleteTarget, setDeleteTarget] = useState<CustomerRecord | null>(null);
   const retryingProvidersRef = useRef(new Set<CustomerProvider>());
@@ -1072,13 +1077,16 @@ export function CustomersPage() {
         onOpenChange={(open) => {
           if (!open) {
             setSelectedId(null);
+            setSelectedOrder(null);
             setSiigoResolutionTarget(null);
           }
         }}
       >
-        <Drawer.Backdrop>
+        <Drawer.Backdrop variant={selectedOrder ? 'transparent' : 'opaque'}>
           <Drawer.Content placement="right">
-            <Drawer.Dialog className="customer-detail-drawer">
+            <Drawer.Dialog
+              className={`customer-detail-drawer${selectedOrder ? ' customer-detail-drawer--pushed' : ''}`}
+            >
               <Drawer.CloseTrigger aria-label="Cerrar detalle" />
               <Drawer.Header>
                 <div>
@@ -1132,6 +1140,7 @@ export function CustomersPage() {
                       setSiigoResolutionError('');
                     }}
                     onConfirmSiigoLocation={() => void confirmSiigoLocation()}
+                    onSelectOrder={setSelectedOrder}
                   />
                 ) : null}
               </Drawer.Body>
@@ -1139,6 +1148,8 @@ export function CustomersPage() {
           </Drawer.Content>
         </Drawer.Backdrop>
       </Drawer>
+
+      <CustomerOrderPanel order={selectedOrder} onClose={() => setSelectedOrder(null)} />
 
       {isAdmin && (
         <AlertDialog
