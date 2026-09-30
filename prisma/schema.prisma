@@ -445,6 +445,7 @@ model Order {
   @@unique([store, wooOrderId])
   @@index([syncStatus])
   @@index([createdAt])
+  @@index([wooCreatedAt])
   @@map("orders")
 }
 

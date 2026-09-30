@@ -22,6 +22,8 @@ export type OrderListRecord = {
   store: ProductStore;
   wooOrderId: string | null;
   wooStatus: string | null;
+  /** Fecha de creación del pedido en WooCommerce; la del CRM mientras no exista en la tienda. */
+  wooCreatedAt: string | null;
   syncStatus: OrderSyncStatus;
   lastSyncAt: string | null;
   lastSyncErrorCode: string | null;
@@ -199,6 +201,8 @@ export type CustomerOrderRecord = {
   source: OrderSource;
   status: OrderStatus;
   currency: 'COP' | 'USD';
+  /** Fecha de creación del pedido en WooCommerce; la del CRM mientras no exista en la tienda. */
+  wooCreatedAt: string | null;
   createdAt: string;
   updatedAt: string;
   shipping: {

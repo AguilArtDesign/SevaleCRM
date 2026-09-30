@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { parseBogotaDateTime } from '@sevale/shared';
 import type { Store } from '../../generated/prisma/client.js';
 import {
   integrationDelete,
@@ -119,8 +120,7 @@ function identifier(value: unknown): string | null {
 
 function date(value: unknown): Date | null {
   if (typeof value !== 'string' || !value.trim()) return null;
-  const result = new Date(value);
-  return Number.isNaN(result.getTime()) ? null : result;
+  return parseBogotaDateTime(value);
 }
 
 function orderMetadata(value: unknown, key: string): string | null {

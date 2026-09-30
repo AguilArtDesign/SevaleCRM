@@ -1,5 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
-import { resolveCountry, resolveLocationFromWoo } from '@sevale/shared';
+import { parseBogotaDateTime, resolveCountry, resolveLocationFromWoo } from '@sevale/shared';
 import { createCustomerSchema, type WooOrderInboundInput } from '@sevale/validation';
 import { Prisma, type OperationStatus } from '../generated/prisma/client.js';
 import {
@@ -29,8 +29,7 @@ function metadata(order: WooOrder, key: string): string | null {
 
 function validDate(value: string): Date | null {
   if (!value) return null;
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? null : date;
+  return parseBogotaDateTime(value);
 }
 
 function decimalDifference(first: string, second: string): string {

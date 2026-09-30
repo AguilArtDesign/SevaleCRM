@@ -164,9 +164,27 @@ export type SiigoQuotationClaim =
   | { outcome: 'IN_PROGRESS' }
   | { outcome: 'CLAIMED'; quotationId: number };
 
+/**
+ * Orden del panel. "createdAt" es la fecha de creación del pedido y no la de la operación: la que
+ * registró WooCommerce cuando el pedido ya existe en la tienda y la del CRM mientras tanto. Las
+ * demás columnas ordenan por el campo equivalente de la operación.
+ */
+function orderSort(query: OrderListQuery): Prisma.OrderOrderByWithRelationInput[] {
+  if (query.sort === 'total') return [{ total: query.order }, { id: 'desc' }];
+  if (query.sort === 'createdAt') return [{ wooCreatedAt: query.order }, { id: 'desc' }];
+  return [{ operation: { [query.sort]: query.order } }, { id: 'desc' }];
+}
+
+/**
+ * Un pedido nace en el CRM o en la tienda, y su fecha de creación es la del sistema que lo registró
+ * primero. Al crearlo aquí se guarda la fecha del CRM como provisional en `wooCreatedAt`; cuando el
+ * pedido llega a WooCommerce (por el envío o por el webhook) la fecha de la tienda la reemplaza.
+ * Tener siempre el valor permite ordenar el historial por la fecha real del pedido.
+ */
 function orderCreateData(order: PreparedStoreOrder) {
   return {
     store: order.store,
+    wooCreatedAt: new Date(),
     subtotal: order.subtotal,
     discountTotal: order.discountTotal,
     shippingTotal: order.shippingTotal,
@@ -250,12 +268,7 @@ export class OrdersRepository {
           }
         : {}),
     };
-    const orderBy: Prisma.OrderOrderByWithRelationInput[] = [
-      query.sort === 'total'
-        ? { total: query.order }
-        : { operation: { [query.sort]: query.order } },
-      { id: 'desc' },
-    ];
+    const orderBy = orderSort(query);
 
     return this.prisma.$transaction([
       this.prisma.order.findMany({
@@ -292,7 +305,8 @@ export class OrdersRepository {
 
   /**
    * Pedidos de tienda del cliente, uno por tienda: es lo que muestra el historial de su detalle y
-   * coincide con las filas del panel de Pedidos.
+   * coincide con las filas del panel de Pedidos. Se ordenan por la fecha de creación del pedido, la
+   * misma que muestra la columna Fecha.
    */
   customerOrders(customerId: number, page: number, pageSize: number) {
     const where: Prisma.OrderWhereInput = { operation: { is: { customerId, deletedAt: null } } };
@@ -300,7 +314,7 @@ export class OrdersRepository {
     return this.prisma.$transaction([
       this.prisma.order.findMany({
         where,
-        orderBy: [{ operation: { createdAt: 'desc' } }, { id: 'desc' }],
+        orderBy: [{ wooCreatedAt: 'desc' }, { id: 'desc' }],
         skip: (page - 1) * pageSize,
         take: pageSize,
         include: {

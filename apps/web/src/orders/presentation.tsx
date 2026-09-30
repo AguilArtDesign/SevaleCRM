@@ -1,3 +1,4 @@
+import { bogotaTimeZone } from '@sevale/shared';
 import { Chip } from '../components/Chip';
 import type { OrderListRecord, OrderStatus } from './api';
 
@@ -30,31 +31,37 @@ export function formattedMoney(value: string, currency: string): string {
   }).format(Number(value));
 }
 
-/** Importe con el código de moneda al final, para totales donde la divisa no es obvia. */
+/**
+ * Importe con el código de moneda al final, para totales donde la divisa no es obvia.
+ * Intl separa el símbolo del importe con un espacio duro; el CRM los muestra pegados.
+ */
 export function formattedMoneyWithCode(value: string, currency: string): string {
-  const amount = new Intl.NumberFormat('es-CO', {
+  const parts = new Intl.NumberFormat('es-CO', {
     style: 'currency',
     currency,
     currencyDisplay: 'narrowSymbol',
     minimumFractionDigits: 0,
     maximumFractionDigits: currency === 'COP' ? 0 : 2,
-  }).format(Number(value));
+  }).formatToParts(Number(value));
 
-  return `${amount} ${currency}`;
+  const symbol = parts.find((part) => part.type === 'currency')?.value ?? '';
+  const amount = parts
+    .filter((part) => part.type !== 'currency' && part.type !== 'literal')
+    .map((part) => part.value)
+    .join('');
+
+  return `${symbol}${amount} ${currency}`;
 }
 
+/**
+ * Las fechas del CRM son eventos de negocio en Colombia, así que se muestran en hora de Bogotá sin
+ * importar el huso horario de quien consulte.
+ */
 export function formattedDate(value: string): string {
-  return new Intl.DateTimeFormat('es-CO', { dateStyle: 'medium', timeStyle: 'short' }).format(
-    new Date(value),
-  );
-}
-
-/** Solo la fecha, para la columna Fecha del historial. */
-export function formattedDateOnly(value: string): string {
   return new Intl.DateTimeFormat('es-CO', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
+    dateStyle: 'medium',
+    timeStyle: 'short',
+    timeZone: bogotaTimeZone,
   }).format(new Date(value));
 }
 

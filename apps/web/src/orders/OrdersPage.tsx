@@ -793,7 +793,9 @@ export function OrdersPage() {
                       </strong>
                     </Table.Cell>
                     <Table.Cell onClick={stopRowSelection} onPointerDown={stopRowSelection}>
-                      <span className="order-date">{formattedDate(order.createdAt)}</span>
+                      <span className="order-date">
+                        {formattedDate(order.wooCreatedAt ?? order.createdAt)}
+                      </span>
                     </Table.Cell>
                     <Table.Cell onClick={stopRowSelection} onPointerDown={stopRowSelection}>
                       <div className="inventory-row-actions">

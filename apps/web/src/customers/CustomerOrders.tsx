@@ -5,7 +5,6 @@ import { Eye, ShoppingCart } from '@gravity-ui/icons';
 import { ordersApi, type CustomerOrderRecord, type CustomerOrdersResponse } from '../orders/api';
 import {
   formattedDate,
-  formattedDateOnly,
   formattedMoney,
   formattedMoneyWithCode,
   OrderStatusChip,
@@ -74,7 +73,7 @@ function CustomerOrderDetail({ order }: { order: CustomerOrderRecord }) {
         </div>
         <div>
           <span>Fecha</span>
-          <strong>{formattedDate(order.createdAt)}</strong>
+          <strong>{formattedDate(order.wooCreatedAt ?? order.createdAt)}</strong>
         </div>
       </section>
 
@@ -223,9 +222,11 @@ export function CustomerOrders({ customerId }: { customerId: number }) {
                     <OrderStatusChip status={order.status} wooStatus={order.wooStatus} />
                   </Table.Cell>
                   <Table.Cell className="customer-orders-total">
-                    {formattedMoney(order.total, order.currency)}
+                    {formattedMoneyWithCode(order.total, order.currency)}
                   </Table.Cell>
-                  <Table.Cell>{formattedDateOnly(order.createdAt)}</Table.Cell>
+                  <Table.Cell className="customer-orders-date">
+                    {formattedDate(order.wooCreatedAt ?? order.createdAt)}
+                  </Table.Cell>
                   <Table.Cell className="customer-orders-actions">
                     <Button
                       className="inventory-actions-trigger"

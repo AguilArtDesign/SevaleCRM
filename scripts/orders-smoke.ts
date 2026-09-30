@@ -35,6 +35,20 @@ function expectStatus(response: Response, status: number, context: string) {
   }
 }
 
+function isDateText(value: unknown): boolean {
+  return typeof value === 'string' && !Number.isNaN(Date.parse(value));
+}
+
+/** Comprueba que las filas vengan de la fecha de creación más reciente a la más antigua. */
+function orderedByCreation(rows: Array<{ wooCreatedAt: string | null }>): boolean {
+  return rows.every((row, index) => {
+    const previous = rows[index - 1];
+    if (!previous) return true;
+    if (!isDateText(previous.wooCreatedAt) || !isDateText(row.wooCreatedAt)) return false;
+    return Date.parse(previous.wooCreatedAt as string) >= Date.parse(row.wooCreatedAt as string);
+  });
+}
+
 async function createUser(role: Role) {
   const id = randomUUID();
   const email = `orders-${role.toLowerCase()}-${runId}@example.invalid`;
@@ -605,6 +619,7 @@ try {
       operationId: number;
       operationCode: string;
       store: string;
+      wooCreatedAt: string | null;
       total: string;
     }>;
     pagination: { total: number };
@@ -625,6 +640,12 @@ try {
     throw new Error('El listado no devolvió una fila independiente por Order y tienda.');
   }
 
+  // El panel ordena por la fecha de creación del pedido, no por la de la operación: es la fecha que
+  // muestra su columna Fecha, y así los pedidos migrados de WooCommerce conservan su lugar real.
+  if (!orderedByCreation(rowList.data)) {
+    throw new Error('El listado de pedidos no viene ordenado por la fecha de creación del pedido.');
+  }
+
   if (customerId === null) {
     throw new Error('El cliente de prueba no se creó.');
   }
@@ -640,6 +661,7 @@ try {
       operationCode: string;
       store: string;
       wooOrderId: string | null;
+      wooCreatedAt: string | null;
       total: string;
       items: Array<{ id: number }>;
       shipping: { city: string | null };
@@ -654,6 +676,9 @@ try {
       (row) =>
         row.operationCode !== created.operationCode ||
         row.wooOrderId !== null ||
+        // Mientras el pedido no exista en WooCommerce, su fecha de creación es la del CRM: el
+        // endpoint la expone para que el historial no muestre la fecha de la operación.
+        !isDateText(row.wooCreatedAt) ||
         row.items.length === 0 ||
         row.total !== mixed.orders.find(({ store }) => store === row.store)?.total,
     ) ||
@@ -663,6 +688,12 @@ try {
       .join(',') !== 'PALI,SERATUS'
   ) {
     throw new Error('El historial del cliente no devolvió una fila por pedido de tienda.');
+  }
+
+  if (!orderedByCreation(history.data)) {
+    throw new Error(
+      'El historial del cliente no viene ordenado por la fecha de creación del pedido.',
+    );
   }
 
   const expectedTotalOrders = await prisma.order.count({
