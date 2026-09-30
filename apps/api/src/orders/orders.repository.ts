@@ -43,6 +43,28 @@ export type OrderOperationDetail = Prisma.OrderOperationGetPayload<{
   include: typeof orderDetailInclude;
 }>;
 
+/** Datos de la operación que acompañan a cada pedido de tienda en el historial del cliente. */
+const customerOrderOperationSelect = {
+  id: true,
+  operationCode: true,
+  source: true,
+  status: true,
+  currency: true,
+  createdAt: true,
+  updatedAt: true,
+  shippingMethod: true,
+  shippingMethodTitle: true,
+  shippingFirstName: true,
+  shippingLastName: true,
+  shippingAddress1: true,
+  shippingAddress2: true,
+  shippingCity: true,
+  shippingState: true,
+  shippingPostcode: true,
+  shippingCountry: true,
+  shippingPhone: true,
+} as const;
+
 const outboundOrderInclude = {
   operation: {
     include: {
@@ -265,6 +287,58 @@ export class OrdersRepository {
         },
       }),
       this.prisma.order.count({ where }),
+    ]);
+  }
+
+  /**
+   * Pedidos de tienda del cliente, uno por tienda: es lo que muestra el historial de su detalle y
+   * coincide con las filas del panel de Pedidos.
+   */
+  customerOrders(customerId: number, page: number, pageSize: number) {
+    const where: Prisma.OrderWhereInput = { operation: { is: { customerId, deletedAt: null } } };
+
+    return this.prisma.$transaction([
+      this.prisma.order.findMany({
+        where,
+        orderBy: [{ operation: { createdAt: 'desc' } }, { id: 'desc' }],
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+        include: {
+          operation: { select: customerOrderOperationSelect },
+          items: {
+            orderBy: { id: 'asc' as const },
+            include: {
+              product: {
+                select: {
+                  id: true,
+                  sku: true,
+                  productName: true,
+                  store: true,
+                  imageUrl: true,
+                },
+              },
+            },
+          },
+          coupons: { orderBy: { id: 'asc' as const } },
+        },
+      }),
+      this.prisma.order.count({ where }),
+    ]);
+  }
+
+  /**
+   * Resumen del historial en una sola consulta: cuántos pedidos de tienda tiene el cliente y cuánto
+   * ha comprado en pedidos completados. Se agrupa por moneda porque los totales no se suman entre sí.
+   */
+  customerOrdersSummary(customerId: number) {
+    return this.prisma.$transaction([
+      this.prisma.order.count({ where: { operation: { is: { customerId, deletedAt: null } } } }),
+      this.prisma.orderOperation.groupBy({
+        by: ['currency'],
+        where: { customerId, deletedAt: null, status: 'COMPLETED' },
+        _sum: { total: true },
+        orderBy: { currency: 'asc' },
+      }),
     ]);
   }
 

@@ -8,6 +8,7 @@ import { randomInt } from 'node:crypto';
 import type {
   CreateSiigoQuotationInput,
   CreateOrderOperationInput,
+  CustomerOrdersQuery,
   OrderListQuery,
   UpdateShipmentInput,
   UpdateOrderOperationInput,
@@ -180,6 +181,72 @@ export class OrdersService {
       throw businessError(NotFoundException, 'ORDER_NOT_FOUND', 'La operación no existe.');
     }
     return serializeDetail(operation);
+  }
+
+  /**
+   * Historial del cliente consultado desde su detalle. Devuelve una fila por pedido de tienda y, en
+   * la misma respuesta, el resumen del histórico completo para no tener que recorrer las páginas.
+   */
+  async customerOrders(customerId: number, query: CustomerOrdersQuery) {
+    const customer = await this.orders.findCustomer(customerId);
+    if (!customer) {
+      throw businessError(NotFoundException, 'CUSTOMER_NOT_FOUND', 'El cliente no existe.');
+    }
+
+    const [[rows, total], [totalOrders, completedTotals]] = await Promise.all([
+      this.orders.customerOrders(customerId, query.page, query.pageSize),
+      this.orders.customerOrdersSummary(customerId),
+    ]);
+
+    return {
+      data: rows.map(({ operation, ...order }) => ({
+        ...order,
+        operationId: operation.id,
+        operationCode: operation.operationCode,
+        source: operation.source,
+        status: operation.status,
+        currency: operation.currency,
+        createdAt: operation.createdAt,
+        updatedAt: operation.updatedAt,
+        wooOrderId: order.wooOrderId?.toString() ?? null,
+        wooStatus: order.wooStatus,
+        subtotal: money(order.subtotal),
+        discountTotal: money(order.discountTotal),
+        shippingTotal: money(order.shippingTotal),
+        total: money(order.total),
+        shipping: {
+          method: operation.shippingMethod,
+          methodTitle: operation.shippingMethodTitle,
+          firstName: operation.shippingFirstName,
+          lastName: operation.shippingLastName,
+          address1: operation.shippingAddress1,
+          address2: operation.shippingAddress2,
+          city: operation.shippingCity,
+          state: operation.shippingState,
+          postcode: operation.shippingPostcode,
+          country: operation.shippingCountry,
+          phone: operation.shippingPhone,
+        },
+        items: order.items.map(serializeItem),
+        coupons: order.coupons.map((coupon) => ({
+          ...coupon,
+          discountTotal: money(coupon.discountTotal),
+        })),
+      })),
+      pagination: {
+        page: query.page,
+        pageSize: query.pageSize,
+        total,
+        totalPages: Math.max(1, Math.ceil(total / query.pageSize)),
+      },
+      summary: {
+        totalOrders,
+        completedTotals: completedTotals.map((row) => ({
+          currency: row.currency,
+          total: row._sum.total ? money(row._sum.total) : '0.00',
+        })),
+      },
+    };
   }
 
   async create(input: CreateOrderOperationInput, createdByUserId: string) {

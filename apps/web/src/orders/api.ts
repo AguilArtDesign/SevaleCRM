@@ -171,6 +171,53 @@ export type OrderListInput = {
   order: 'asc' | 'desc';
 };
 
+export type CustomerOrdersResponse = {
+  data: CustomerOrderRecord[];
+  pagination: { page: number; pageSize: number; total: number; totalPages: number };
+  summary: {
+    totalOrders: number;
+    completedTotals: Array<{ currency: 'COP' | 'USD'; total: string }>;
+  };
+};
+
+/** Un pedido de tienda del cliente, con lo necesario para pintar la fila y su detalle. */
+export type CustomerOrderRecord = {
+  id: number;
+  store: ProductStore;
+  wooOrderId: string | null;
+  wooStatus: string | null;
+  syncStatus: OrderSyncStatus;
+  lastSyncAt: string | null;
+  lastSyncErrorCode: string | null;
+  lastSyncErrorMessage: string | null;
+  subtotal: string;
+  discountTotal: string;
+  shippingTotal: string;
+  total: string;
+  operationId: number;
+  operationCode: string;
+  source: OrderSource;
+  status: OrderStatus;
+  currency: 'COP' | 'USD';
+  createdAt: string;
+  updatedAt: string;
+  shipping: {
+    method: string | null;
+    methodTitle: string | null;
+    firstName: string | null;
+    lastName: string | null;
+    address1: string | null;
+    address2: string | null;
+    city: string | null;
+    state: string | null;
+    postcode: string | null;
+    country: string | null;
+    phone: string | null;
+  };
+  items: OrderItemRecord[];
+  coupons: Array<{ id: number; code: string; discountTotal: string }>;
+};
+
 type ApiErrorBody = { message?: string; error?: { message?: string } };
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -202,6 +249,10 @@ export const ordersApi = {
     if (input.source) query.set('source', input.source);
     if (input.store) query.set('store', input.store);
     return request<OrderListResponse>(`/api/orders?${query}`);
+  },
+  customerOrders: (customerId: number, page = 1, pageSize = 10) => {
+    const query = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
+    return request<CustomerOrdersResponse>(`/api/orders/customer/${customerId}?${query}`);
   },
   detail: (id: number) => request<OrderDetailRecord>(`/api/orders/${id}`),
   create: (input: CreateOrderOperationInput) =>

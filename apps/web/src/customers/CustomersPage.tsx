@@ -48,6 +48,7 @@ import { getPaginationItems, Pagination } from '../components/Pagination';
 import { Select } from '../components/Select';
 import { useCurrentUser } from '../users/useCurrentUser';
 import { CustomerForm } from './CustomerForm';
+import { CustomerOrders } from './CustomerOrders';
 import { customerAvatarClass, customerDisplayName, customerInitials } from './presentation';
 import { CustomerAutocomplete } from './CustomerAutocomplete';
 import { customersApi, type CustomerRecord } from './api';
@@ -368,10 +369,7 @@ function CustomerDetail({
           })}
         </div>
       </section>
-      <section className="customer-detail-section customer-orders-placeholder">
-        <h3>Compras y pedidos</h3>
-        <p>El resumen estará disponible al implementar el módulo de Pedidos.</p>
-      </section>
+      <CustomerOrders customerId={customer.id} />
     </div>
   );
 }

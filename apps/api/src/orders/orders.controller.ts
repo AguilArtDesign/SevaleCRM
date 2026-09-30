@@ -14,6 +14,8 @@ import {
 import {
   createSiigoQuotationSchema,
   createOrderOperationSchema,
+  customerIdSchema,
+  customerOrdersQuerySchema,
   orderIdSchema,
   orderListQuerySchema,
   orderOperationIdSchema,
@@ -45,6 +47,14 @@ export class OrdersController {
   @Get()
   list(@Query() query: unknown) {
     return this.orders.list(parseInput(orderListQuerySchema, query));
+  }
+
+  @Get('customer/:customerId')
+  customerOrders(@Param('customerId') customerId: string, @Query() query: unknown) {
+    return this.orders.customerOrders(
+      parseInput(customerIdSchema, customerId),
+      parseInput(customerOrdersQuerySchema, query),
+    );
   }
 
   @Get(':id')

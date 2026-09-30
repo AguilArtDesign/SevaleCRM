@@ -625,6 +625,83 @@ try {
     throw new Error('El listado no devolvió una fila independiente por Order y tienda.');
   }
 
+  if (customerId === null) {
+    throw new Error('El cliente de prueba no se creó.');
+  }
+  const historyResponse = await api(
+    `/api/orders/customer/${customerId}?page=1&pageSize=20`,
+    commercialCookie,
+  );
+  expectStatus(historyResponse, 200, 'Historial de pedidos del cliente');
+  const history = (await historyResponse.json()) as {
+    data: Array<{
+      id: number;
+      operationId: number;
+      operationCode: string;
+      store: string;
+      wooOrderId: string | null;
+      total: string;
+      items: Array<{ id: number }>;
+      shipping: { city: string | null };
+    }>;
+    pagination: { total: number };
+    summary: { totalOrders: number; completedTotals: Array<{ currency: string; total: string }> };
+  };
+  const historyRows = history.data.filter((row) => row.operationId === created.id);
+  if (
+    historyRows.length !== 2 ||
+    historyRows.some(
+      (row) =>
+        row.operationCode !== created.operationCode ||
+        row.wooOrderId !== null ||
+        row.items.length === 0 ||
+        row.total !== mixed.orders.find(({ store }) => store === row.store)?.total,
+    ) ||
+    historyRows
+      .map(({ store }) => store)
+      .sort()
+      .join(',') !== 'PALI,SERATUS'
+  ) {
+    throw new Error('El historial del cliente no devolvió una fila por pedido de tienda.');
+  }
+
+  const expectedTotalOrders = await prisma.order.count({
+    where: { operation: { customerId, deletedAt: null } },
+  });
+  const completedOperations = await prisma.orderOperation.findMany({
+    where: { customerId, status: 'COMPLETED', deletedAt: null },
+    select: { currency: true, total: true },
+  });
+  const expectedCompleted = new Map<string, number>();
+  for (const operation of completedOperations) {
+    expectedCompleted.set(
+      operation.currency,
+      (expectedCompleted.get(operation.currency) ?? 0) + Number(operation.total),
+    );
+  }
+  const actualCompleted = new Map(
+    history.summary.completedTotals.map(({ currency, total }) => [currency, Number(total)]),
+  );
+  if (
+    history.summary.totalOrders !== expectedTotalOrders ||
+    history.summary.totalOrders !== history.pagination.total ||
+    actualCompleted.size !== expectedCompleted.size ||
+    [...expectedCompleted].some(([currency, total]) => actualCompleted.get(currency) !== total)
+  ) {
+    throw new Error('El resumen del historial no coincide con los pedidos del cliente.');
+  }
+
+  expectStatus(
+    await api('/api/orders/customer/2147483000', commercialCookie),
+    404,
+    'Historial de un cliente inexistente',
+  );
+  expectStatus(
+    await api(`/api/orders/customer/${customerId}?pageSize=500`, commercialCookie),
+    400,
+    'Historial con pageSize fuera de rango',
+  );
+
   const paliOnlyPayload = {
     ...basePayload,
     items: [{ productId: pali.id, quantity: 2 }],

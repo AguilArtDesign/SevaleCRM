@@ -531,6 +531,12 @@ export const orderListQuerySchema = z
     }
   });
 
+/** Paginación del historial de pedidos de un cliente consultado desde su detalle. */
+export const customerOrdersQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(10),
+});
+
 const couponCodeSchema = z
   .string()
   .trim()
@@ -743,6 +749,7 @@ export type ProductImportCsvInput = z.infer<typeof productImportCsvSchema>;
 export type CreateOrderOperationInput = z.infer<typeof createOrderOperationSchema>;
 export type UpdateOrderOperationInput = z.infer<typeof updateOrderOperationSchema>;
 export type OrderListQuery = z.infer<typeof orderListQuerySchema>;
+export type CustomerOrdersQuery = z.infer<typeof customerOrdersQuerySchema>;
 export type UpdateShipmentInput = z.infer<typeof updateShipmentSchema>;
 export type CreateSiigoQuotationInput = z.infer<typeof createSiigoQuotationSchema>;
 export type WooOrderInboundInput = z.infer<typeof wooOrderInboundSchema>;
