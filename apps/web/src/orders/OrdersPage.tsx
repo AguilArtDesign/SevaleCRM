@@ -23,6 +23,7 @@ import {
   EllipsisVertical,
   Eye,
   FileText,
+  Gift,
   Pencil,
   Plus,
   ShoppingCart,
@@ -34,9 +35,11 @@ import type { CreateOrderOperationInput } from '@sevale/validation';
 import { Chip } from '../components/Chip';
 import { getPaginationItems, Pagination } from '../components/Pagination';
 import { Select } from '../components/Select';
+import type { ProductStore } from '../inventory/api';
 import { useCurrentUser } from '../users/useCurrentUser';
 import { OrderForm } from './OrderForm';
 import {
+  allowsShipment,
   formattedDate,
   formattedMoney,
   formattedMoneyWithCode,
@@ -45,7 +48,7 @@ import {
   StoreChip,
 } from './presentation';
 import { ShipmentModal } from './ShipmentModal';
-import { SiigoQuotationModal } from './SiigoQuotationModal';
+import { ShipmentViewModal } from './ShipmentViewModal';
 import {
   ordersApi,
   type OrderDetailRecord,
@@ -68,6 +71,12 @@ function messageFrom(error: unknown): string {
   return error instanceof Error ? error.message : 'No pudimos completar la solicitud.';
 }
 
+/** Acción de fila que necesita los datos del pedido antes de abrir su modal. */
+type OrderActionTarget = {
+  kind: 'shipment-form' | 'shipment-view';
+  operationId: number;
+};
+
 function stopRowSelection(event: { stopPropagation: () => void }) {
   event.stopPropagation();
 }
@@ -81,22 +90,12 @@ const syncStatusMeta = {
 
 function OrderDetail({
   order,
-  canUpdateShipment,
-  canCreateSiigoQuotation,
-  onEditShipment,
-  onRetryShipment,
-  onCreateSiigoQuotation,
-  isRetryingShipment,
-  isCreatingSiigoQuotation,
+  store,
+  onSelectStore,
 }: {
   order: OrderDetailRecord;
-  canUpdateShipment: boolean;
-  canCreateSiigoQuotation: boolean;
-  onEditShipment: () => void;
-  onRetryShipment: () => void;
-  onCreateSiigoQuotation: () => void;
-  isRetryingShipment: boolean;
-  isCreatingSiigoQuotation: boolean;
+  store: ProductStore;
+  onSelectStore: (store: ProductStore) => void;
 }) {
   const billingAddress = [
     order.billingAddress1,
@@ -108,9 +107,15 @@ function OrderDetail({
   ]
     .filter(Boolean)
     .join(', ');
-  const shipmentAllowed =
-    order.status === 'COMPLETED' ||
-    (order.source === 'WOOCOMMERCE' && order.status !== 'CANCELLED');
+
+  // La operación puede tener un pedido por tienda, pero el detalle es del pedido de la fila
+  // consultada: se muestran solo sus productos y sus totales.
+  const storeOrder = order.orders.find((candidate) => candidate.store === store) ?? order.orders[0];
+  // Si la operación tiene productos de las dos marcas hay un pedido hermano al que saltar.
+  const siblings = order.orders.filter(
+    (candidate) => candidate.store !== storeOrder?.store && candidate.items.length > 0,
+  );
+
   return (
     <div className="order-detail">
       <section className="order-detail-overview">
@@ -149,11 +154,11 @@ function OrderDetail({
           {order.billingEmail || '--'} · {order.billingPhone || '--'}
         </p>
       </section>
-      <section className="order-detail-section">
-        <h3>Pedidos por tienda</h3>
-        <div className="order-detail-stores">
-          {order.orders.map((storeOrder) => (
-            <article key={storeOrder.id}>
+      {storeOrder && (
+        <section className="order-detail-section">
+          <h3>Productos</h3>
+          <div className="order-detail-stores">
+            <article>
               <header>
                 <div className="order-detail-store-heading">
                   <StoreChip store={storeOrder.store} />
@@ -200,139 +205,44 @@ function OrderDetail({
                   <dt>Envío</dt>
                   <dd>{formattedMoney(storeOrder.shippingTotal, order.currency)}</dd>
                 </div>
+                <div>
+                  <dt>Total</dt>
+                  <dd>{formattedMoney(storeOrder.total, order.currency)}</dd>
+                </div>
               </dl>
             </article>
-          ))}
-        </div>
-      </section>
-      <section className="order-detail-section">
-        <div className="order-section-heading">
-          <h3>Cotización Siigo</h3>
-          {canCreateSiigoQuotation &&
-            order.status !== 'CANCELLED' &&
-            !order.siigoQuotation?.externalId &&
-            order.siigoQuotation?.status !== 'SYNCING' && (
-              <Button size="sm" variant="secondary" onPress={onCreateSiigoQuotation}>
-                <FileText width={15} />
-                {order.siigoQuotation?.status === 'ERROR' ? 'Reintentar' : 'Crear cotización'}
-              </Button>
-            )}
-        </div>
-        {order.siigoQuotation ? (
-          <div className="siigo-quotation-detail">
-            <div>
-              <strong>{order.siigoQuotation.name || 'Cotización pendiente'}</strong>
-              <Chip
-                color={
-                  order.siigoQuotation.status === 'SYNCED'
-                    ? 'success'
-                    : order.siigoQuotation.status === 'ERROR'
-                      ? 'danger'
-                      : 'accent'
-                }
+          </div>
+        </section>
+      )}
+      {siblings.length > 0 && (
+        <section className="order-detail-section">
+          <h3>Pedidos asociados</h3>
+          <div className="order-detail-siblings">
+            {siblings.map((sibling) => (
+              <Button
+                key={sibling.id}
+                className="order-detail-sibling"
+                variant="secondary"
+                onPress={() => onSelectStore(sibling.store)}
               >
-                {order.siigoQuotation.status === 'SYNCED'
-                  ? 'Creada'
-                  : order.siigoQuotation.status === 'ERROR'
-                    ? 'Error'
-                    : 'Creando'}
-              </Chip>
-            </div>
-            {order.siigoQuotation.number && <p>Número {order.siigoQuotation.number}</p>}
-            {order.siigoQuotation.syncedAt && (
-              <p>Creada el {formattedDate(order.siigoQuotation.syncedAt)}</p>
-            )}
-            {order.siigoQuotation.errorMessage && (
-              <p className="order-sync-error">{order.siigoQuotation.errorMessage}</p>
-            )}
-            {order.siigoQuotation.url && (
-              <a href={order.siigoQuotation.url} target="_blank" rel="noreferrer">
-                Ver cotización en Siigo
-              </a>
-            )}
-          </div>
-        ) : (
-          <p>La operación todavía no tiene una cotización en Siigo.</p>
-        )}
-        {isCreatingSiigoQuotation && <p>Creando cotización…</p>}
-      </section>
-      <section className="order-detail-section">
-        <div className="order-section-heading">
-          <h3>Envío</h3>
-          <div>
-            {canUpdateShipment &&
-              order.shipment?.storeSyncs.some(({ syncStatus }) => syncStatus === 'ERROR') && (
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onPress={onRetryShipment}
-                  isPending={isRetryingShipment}
-                >
-                  <ArrowRotateRight width={15} />
-                  Reintentar
-                </Button>
-              )}
-            {canUpdateShipment && shipmentAllowed && (
-              <Button size="sm" variant="secondary" onPress={onEditShipment}>
-                <Car width={15} />
-                {order.shipment ? 'Actualizar' : 'Asignar envío'}
+                <span className="order-detail-store-heading">
+                  <StoreChip store={sibling.store} />
+                  <Chip color={syncStatusMeta[sibling.syncStatus].color}>
+                    {syncStatusMeta[sibling.syncStatus].label}
+                  </Chip>
+                </span>
+                <strong>#{sibling.wooOrderId ?? sibling.id}</strong>
+                <span className="order-detail-sibling-total">
+                  {formattedMoney(sibling.total, order.currency)}
+                </span>
               </Button>
-            )}
+            ))}
           </div>
-        </div>
-        {order.shipment ? (
-          <div className="shipment-detail">
-            <dl>
-              <div>
-                <dt>Transportadora</dt>
-                <dd>{order.shipment.carrier}</dd>
-              </div>
-              <div>
-                <dt>Número de guía</dt>
-                <dd>{order.shipment.trackingNumber}</dd>
-              </div>
-              <div>
-                <dt>Estado</dt>
-                <dd>{order.shipment.status}</dd>
-              </div>
-            </dl>
-            {order.shipment.storeSyncs.length > 0 && (
-              <div className="shipment-store-syncs">
-                {order.shipment.storeSyncs.map((sync) => (
-                  <div key={sync.id}>
-                    <strong>{sync.store === 'SERATUS' ? 'Seratus' : 'Pali'}</strong>
-                    <Chip color={syncStatusMeta[sync.syncStatus].color}>
-                      {syncStatusMeta[sync.syncStatus].label}
-                    </Chip>
-                    {sync.lastSyncErrorMessage && <span>{sync.lastSyncErrorMessage}</span>}
-                  </div>
-                ))}
-              </div>
-            )}
-            {order.shipment.events.length > 0 && (
-              <div className="shipment-history">
-                <strong>Historial</strong>
-                {order.shipment.events.map((event) => (
-                  <div key={event.id}>
-                    <span>{event.status}</span>
-                    <small>
-                      {formattedDate(event.createdAt)}
-                      {event.createdBy ? ` · ${event.createdBy.name}` : ''}
-                    </small>
-                    {event.note && <p>{event.note}</p>}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        ) : (
-          <p>La operación todavía no tiene información de envío.</p>
-        )}
-      </section>
-      <section className="order-detail-total">
-        <span>Total de la operación</span>
-        <strong>{formattedMoney(order.total, order.currency)}</strong>
-      </section>
+          <p>
+            La operación tiene productos de las dos marcas: este es el pedido de la otra tienda.
+          </p>
+        </section>
+      )}
     </div>
   );
 }
@@ -341,19 +251,23 @@ export function OrdersPage() {
   const queryClient = useQueryClient();
   const { user } = useCurrentUser();
   const canManage = user?.role === 'ADMIN' || user?.role === 'COMMERCIAL';
-  const canUpdateShipment =
-    user?.role === 'ADMIN' || user?.role === 'COMMERCIAL' || user?.role === 'LOGISTICS';
+  // Logística es quien asigna el envío y el administrador puede todo; los demás solo lo consultan.
+  const canAssignShipping = user?.role === 'ADMIN' || user?.role === 'LOGISTICS';
   const isAdmin = user?.role === 'ADMIN';
   const [searchDraft, setSearchDraft] = useState('');
   const [filters, setFilters] = useState<OrderListInput>(initialFilters);
   const [formOpen, setFormOpen] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
-  const [selectedId, setSelectedId] = useState<number | null>(null);
+  // El detalle es de un pedido concreto: la operación y la tienda de la fila consultada.
+  const [selected, setSelected] = useState<{ operationId: number; store: ProductStore } | null>(
+    null,
+  );
+  const selectedId = selected?.operationId ?? null;
   const [selectedKeys, setSelectedKeys] = useState<Selection>(new Set());
   const [deleteTarget, setDeleteTarget] = useState<OrderListRecord | null>(null);
   const [completeTarget, setCompleteTarget] = useState<OrderListRecord | null>(null);
-  const [shipmentOpen, setShipmentOpen] = useState(false);
-  const [siigoQuotationOpen, setSiigoQuotationOpen] = useState(false);
+  const [actionTarget, setActionTarget] = useState<OrderActionTarget | null>(null);
+  const actionOperationId = actionTarget?.operationId ?? null;
 
   const ordersQuery = useQuery({
     queryKey: ['orders', filters],
@@ -364,6 +278,13 @@ export function OrdersPage() {
     queryKey: ['orders', 'detail', selectedId],
     queryFn: () => ordersApi.detail(selectedId as number),
     enabled: selectedId !== null,
+  });
+  // Comparte la clave de caché con el detalle, así al abrir una acción desde el propio detalle los
+  // datos ya están cargados y el modal aparece sin espera.
+  const actionQuery = useQuery({
+    queryKey: ['orders', 'detail', actionOperationId],
+    queryFn: () => ordersApi.detail(actionOperationId as number),
+    enabled: actionOperationId !== null,
   });
   const editingQuery = useQuery({
     queryKey: ['orders', 'detail', editingId],
@@ -384,7 +305,7 @@ export function OrdersPage() {
     mutationFn: (order: OrderListRecord) => ordersApi.delete(order.operationId),
     onSuccess: async (order) => {
       queryClient.removeQueries({ queryKey: ['orders', 'detail', order.id] });
-      if (selectedId === order.id) setSelectedId(null);
+      if (selectedId === order.id) setSelected(null);
       setDeleteTarget(null);
       await queryClient.invalidateQueries({ queryKey: ['orders'] });
     },
@@ -414,31 +335,13 @@ export function OrdersPage() {
     }) => ordersApi.updateShipment(id, input),
     onSuccess: async (order) => {
       queryClient.setQueryData(['orders', 'detail', order.id], order);
-      setShipmentOpen(false);
+      setActionTarget(null);
       await queryClient.invalidateQueries({ queryKey: ['orders'] });
     },
   });
-  const retryShipment = useMutation({
-    mutationFn: (id: number) => ordersApi.retryShipmentSync(id),
-    onSuccess: async (order) => {
-      queryClient.setQueryData(['orders', 'detail', order.id], order);
-      await queryClient.invalidateQueries({ queryKey: ['orders'] });
-    },
-  });
-  const createSiigoQuotation = useMutation({
-    mutationFn: ({
-      id,
-      input,
-    }: {
-      id: number;
-      input: Parameters<typeof ordersApi.createSiigoQuotation>[1];
-    }) => ordersApi.createSiigoQuotation(id, input),
-    onSuccess: async (order) => {
-      queryClient.setQueryData(['orders', 'detail', order.id], order);
-      setSiigoQuotationOpen(false);
-      await queryClient.invalidateQueries({ queryKey: ['orders'] });
-    },
-  });
+  // La cotización de Siigo todavía no se puede crear: la opción del menú está deshabilitada hasta
+  // que se ajuste la petición. El modal y ordersApi.createSiigoQuotation quedan listos para cuando
+  // se habilite.
 
   const result = ordersQuery.data;
   const selectedIdSet = selectedKeys === 'all' ? new Set<number>() : selectedKeys;
@@ -527,39 +430,10 @@ export function OrdersPage() {
     }
   };
   const saveShipment = async (input: Parameters<typeof ordersApi.updateShipment>[1]) => {
-    if (!selectedId) return;
+    if (!actionOperationId) return;
     try {
-      await updateShipment.mutateAsync({ id: selectedId, input });
+      await updateShipment.mutateAsync({ id: actionOperationId, input });
       toast.success('Información de envío guardada.');
-    } catch (error) {
-      toast.danger(messageFrom(error));
-      throw error;
-    }
-  };
-  const retryShipmentSynchronization = async () => {
-    if (!selectedId || retryShipment.isPending) return;
-    try {
-      const order = await retryShipment.mutateAsync(selectedId);
-      const failures = order.shipment?.storeSyncs.filter(
-        ({ syncStatus }) => syncStatus === 'ERROR',
-      ).length;
-      if (failures) toast.warning('Una tienda todavía requiere atención.');
-      else toast.success('Información de envío sincronizada.');
-    } catch (error) {
-      toast.danger(messageFrom(error));
-    }
-  };
-  const saveSiigoQuotation = async (
-    input: Parameters<typeof ordersApi.createSiigoQuotation>[1],
-  ) => {
-    if (!selectedId) return;
-    try {
-      const order = await createSiigoQuotation.mutateAsync({ id: selectedId, input });
-      if (order.siigoQuotation?.status === 'SYNCED') {
-        toast.success('Cotización creada en Siigo.');
-      } else {
-        toast.warning(order.siigoQuotation?.errorMessage || 'Siigo requiere atención.');
-      }
     } catch (error) {
       toast.danger(messageFrom(error));
       throw error;
@@ -816,13 +690,36 @@ export function OrdersPage() {
                             <Dropdown.Menu
                               aria-label={`Acciones para la orden ${order.wooOrderId ?? order.id}`}
                               onAction={(key) => {
-                                if (key === 'view') setSelectedId(order.operationId);
+                                if (key === 'view')
+                                  setSelected({
+                                    operationId: order.operationId,
+                                    store: order.store,
+                                  });
                                 if (key === 'edit') openEdit(order.operationId);
                                 if (key === 'complete') setCompleteTarget(order);
                                 if (key === 'retry') void retryOrderSync(order);
                                 if (key === 'delete') setDeleteTarget(order);
+                                if (key === 'shipment') {
+                                  // Logística asigna el envío, pero solo cuando la operación ya lo
+                                  // admite; si no, la acción muestra los datos en solo lectura.
+                                  updateShipment.reset();
+                                  setActionTarget({
+                                    kind:
+                                      canAssignShipping && allowsShipment(order)
+                                        ? 'shipment-form'
+                                        : 'shipment-view',
+                                    operationId: order.operationId,
+                                  });
+                                }
                               }}
                             >
+                              <Dropdown.Section>
+                                <Dropdown.Item id="shipment" textValue="Envío">
+                                  <Car className="size-4 shrink-0 text-muted" />
+                                  <Label>Envío</Label>
+                                </Dropdown.Item>
+                              </Dropdown.Section>
+                              <Separator />
                               <Dropdown.Section>
                                 <Dropdown.Item id="view" textValue="Ver pedido">
                                   <Eye className="size-4 shrink-0 text-muted" />
@@ -855,18 +752,46 @@ export function OrdersPage() {
                                     </Dropdown.Item>
                                   )}
                               </Dropdown.Section>
-                              {isAdmin && <Separator />}
+                              {canManage && (
+                                <>
+                                  <Separator />
+                                  <Dropdown.Section>
+                                    {/* Sin funcionalidad todavía: hay que ajustar la petición antes
+                                        de habilitar la creación de cotizaciones en Siigo. */}
+                                    <Dropdown.Item
+                                      id="siigo-quotation"
+                                      textValue="Cotización Siigo"
+                                      isDisabled
+                                    >
+                                      <FileText className="size-4 shrink-0 text-muted" />
+                                      <Label>Cotización Siigo</Label>
+                                    </Dropdown.Item>
+                                    {/* Todavía sin funcionalidad: se activará más adelante. */}
+                                    <Dropdown.Item
+                                      id="colombia-points"
+                                      textValue="Puntos Colombia"
+                                      isDisabled
+                                    >
+                                      <Gift className="size-4 shrink-0 text-muted" />
+                                      <Label>Puntos Colombia</Label>
+                                    </Dropdown.Item>
+                                  </Dropdown.Section>
+                                </>
+                              )}
                               {isAdmin && (
-                                <Dropdown.Section>
-                                  <Dropdown.Item
-                                    id="delete"
-                                    textValue="Eliminar pedido"
-                                    variant="danger"
-                                  >
-                                    <TrashBin className="size-4 shrink-0 text-danger" />
-                                    <Label>Eliminar</Label>
-                                  </Dropdown.Item>
-                                </Dropdown.Section>
+                                <>
+                                  <Separator />
+                                  <Dropdown.Section>
+                                    <Dropdown.Item
+                                      id="delete"
+                                      textValue="Eliminar pedido"
+                                      variant="danger"
+                                    >
+                                      <TrashBin className="size-4 shrink-0 text-danger" />
+                                      <Label>Eliminar</Label>
+                                    </Dropdown.Item>
+                                  </Dropdown.Section>
+                                </>
                               )}
                             </Dropdown.Menu>
                           </Dropdown.Popover>
@@ -980,7 +905,7 @@ export function OrdersPage() {
         </div>
       )}
 
-      <Modal isOpen={selectedId !== null} onOpenChange={(open) => !open && setSelectedId(null)}>
+      <Modal isOpen={selected !== null} onOpenChange={(open) => !open && setSelected(null)}>
         <Modal.Backdrop>
           <Modal.Container size="lg" placement="center" scroll="inside">
             <Modal.Dialog className="order-detail-modal">
@@ -990,7 +915,7 @@ export function OrdersPage() {
                   <Modal.Heading>
                     {selectedQuery.data?.operationCode ?? 'Detalle del pedido'}
                   </Modal.Heading>
-                  <p>Información local de la operación y sus tiendas.</p>
+                  <p>Información local del pedido.</p>
                 </div>
               </Modal.Header>
               <Modal.Body>
@@ -1007,22 +932,13 @@ export function OrdersPage() {
                     </Alert.Content>
                   </Alert>
                 )}
-                {selectedQuery.data && (
+                {selected && selectedQuery.data && (
                   <OrderDetail
                     order={selectedQuery.data}
-                    canUpdateShipment={canUpdateShipment}
-                    canCreateSiigoQuotation={canManage}
-                    onEditShipment={() => {
-                      updateShipment.reset();
-                      setShipmentOpen(true);
-                    }}
-                    onRetryShipment={() => void retryShipmentSynchronization()}
-                    onCreateSiigoQuotation={() => {
-                      createSiigoQuotation.reset();
-                      setSiigoQuotationOpen(true);
-                    }}
-                    isRetryingShipment={retryShipment.isPending}
-                    isCreatingSiigoQuotation={createSiigoQuotation.isPending}
+                    store={selected.store}
+                    onSelectStore={(store) =>
+                      setSelected({ operationId: selected.operationId, store })
+                    }
                   />
                 )}
               </Modal.Body>
@@ -1031,26 +947,27 @@ export function OrdersPage() {
         </Modal.Backdrop>
       </Modal>
 
-      {shipmentOpen && selectedQuery.data && (
+      {/* Una fila puede pedir datos que todavía no están cargados: el aviso evita el salto en seco.
+          La vista de envío no lo necesita porque muestra su propia carga dentro del modal. */}
+      {actionTarget && actionTarget.kind !== 'shipment-view' && actionQuery.isPending && (
+        <div className="order-edit-loading" aria-label="Cargando pedido">
+          <Spinner />
+        </div>
+      )}
+
+      {actionTarget?.kind === 'shipment-form' && actionQuery.data && (
         <ShipmentModal
           isOpen
-          order={selectedQuery.data}
+          order={actionQuery.data}
           isSubmitting={updateShipment.isPending}
           serverError={updateShipment.isError ? messageFrom(updateShipment.error) : ''}
-          onClose={() => setShipmentOpen(false)}
+          onClose={() => setActionTarget(null)}
           onSubmit={saveShipment}
         />
       )}
 
-      {siigoQuotationOpen && selectedQuery.data && (
-        <SiigoQuotationModal
-          isOpen
-          order={selectedQuery.data}
-          isSubmitting={createSiigoQuotation.isPending}
-          serverError={createSiigoQuotation.isError ? messageFrom(createSiigoQuotation.error) : ''}
-          onClose={() => setSiigoQuotationOpen(false)}
-          onSubmit={saveSiigoQuotation}
-        />
+      {actionTarget?.kind === 'shipment-view' && (
+        <ShipmentViewModal isOpen order={actionQuery.data} onClose={() => setActionTarget(null)} />
       )}
 
       <AlertDialog

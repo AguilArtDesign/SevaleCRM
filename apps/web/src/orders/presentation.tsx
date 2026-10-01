@@ -1,6 +1,6 @@
 import { bogotaTimeZone } from '@sevale/shared';
 import { Chip } from '../components/Chip';
-import type { OrderListRecord, OrderStatus } from './api';
+import type { OrderListRecord, OrderSource, OrderStatus } from './api';
 
 const statusMeta: Record<OrderStatus, { label: string; color: 'warning' | 'success' | 'danger' }> =
   {
@@ -63,6 +63,16 @@ export function formattedDate(value: string): string {
     timeStyle: 'short',
     timeZone: bogotaTimeZone,
   }).format(new Date(value));
+}
+
+/**
+ * El envío solo se puede asignar cuando la operación ya se completó, o cuando es un pedido de
+ * WooCommerce que todavía no se canceló. El backend aplica la misma regla.
+ */
+export function allowsShipment(order: { status: OrderStatus; source: OrderSource }): boolean {
+  return (
+    order.status === 'COMPLETED' || (order.source === 'WOOCOMMERCE' && order.status !== 'CANCELLED')
+  );
 }
 
 /** Un pedido cuenta como completado si el estado que ve el usuario es "Completado". */

@@ -1231,6 +1231,47 @@ select {
   min-width: 54rem;
 }
 
+/* HeroUI dibuja un separador vertical en el borde derecho de cada columna de la cabecera; las tablas
+   del CRM solo deben dividir las filas, no las columnas. */
+.inventory-products-table .table__column::after,
+.coupons-table-shell .table__column::after {
+  content: none;
+}
+
+/* Las celdas del cuerpo son opacas sobre el fondo del contenedor de la tabla, que es más claro
+   (`--surface-secondary`). Cuando el borde de una columna cae en un píxel fraccionario ese fondo se
+   asoma y deja una costura vertical de 1px entre columnas. El hueco entre columnas pertenece a la caja
+   de la tabla, no a la del grupo de filas, así que el fondo que lo rellena va aquí. Se recorta el
+   ancho del radio de las esquinas para que el redondeo de la primera y la última fila siga
+   recortándose contra el color del contenedor: los elementos internos de tabla ignoran
+   `border-radius` en Chromium, así que este fondo no se puede redondear. La primera costura queda muy
+   por dentro de ese recorte. */
+.inventory-products-table .table__content,
+.coupons-table-shell .table__content {
+  background-image: linear-gradient(var(--surface), var(--surface));
+  background-repeat: no-repeat;
+  background-position: var(--radius-2xl) 0;
+  background-size: calc(100% - var(--radius-2xl) * 2) 100%;
+}
+
+/* Los estados de fila se pintan como `--surface` translúcido sobre el fondo de la tabla, así que al
+   cambiar ese fondo hay que redeclararlos con el color compuesto que ya producía HeroUI. */
+.inventory-products-table tbody .table__row:is(:hover, [data-hovered='true']) > .table__cell,
+.coupons-table-shell tbody .table__row:is(:hover, [data-hovered='true']) > .table__cell {
+  background: color-mix(in srgb, var(--surface) 40%, var(--surface-secondary));
+}
+
+.inventory-products-table tbody .table__row[data-selected='true'] > .table__cell,
+.coupons-table-shell tbody .table__row[data-selected='true'] > .table__cell {
+  background: color-mix(in srgb, var(--surface) 10%, var(--surface-secondary));
+}
+
+/* Las filas que no son de datos (el centinela de "cargar más") conservan el fondo del contenedor. */
+.inventory-products-table tbody > tr:not(.table__row),
+.coupons-table-shell tbody > tr:not(.table__row) {
+  background: var(--surface-secondary);
+}
+
 .inventory-selection-column,
 .inventory-selection-cell {
   width: 3rem;
@@ -2837,8 +2878,24 @@ select {
 }
 
 .customer-orders-table tbody .table__row:is(:hover, [data-hovered='true']) > td:first-child,
-.customer-orders-table tbody .table__row:is(:hover, [data-hovered='true']) > td:last-child {
+.customer-orders-table tbody .table__row:is(:hover, [data-hovered='true']) > td:last-child,
+.customer-orders-table tbody .table__row:is(:hover, [data-hovered='true']) > .table__cell {
   background: color-mix(in srgb, var(--surface) 40%, var(--surface-secondary));
+}
+
+/* Mismo relleno de la costura entre columnas que en las demás tablas del CRM, aquí para el historial
+   del cliente. */
+.customer-orders-table .table__content {
+  background-image: linear-gradient(var(--surface), var(--surface));
+  background-repeat: no-repeat;
+  background-position: var(--radius-2xl) 0;
+  background-size: calc(100% - var(--radius-2xl) * 2) 100%;
+}
+
+/* El centinela de "cargar más" no es una fila de datos: conserva el fondo del contenedor para que su
+   aspecto no cambie al pintar el fondo de la tabla. */
+.customer-orders-table tbody > tr:not(.table__row) {
+  background: var(--surface-secondary);
 }
 
 .customer-orders-total {
@@ -3245,6 +3302,33 @@ select {
 .order-detail-modal .modal__header {
   padding-bottom: 1rem;
   border-bottom: 1px solid var(--separator);
+}
+
+/* La regla general de `.modal__body` deja el desbordamiento visible y gana a la de HeroUI, que sí
+   trae el scroll interno: sin este override el contenido del detalle se recorta contra el diálogo y
+   no hay forma de alcanzar lo que queda abajo. */
+.order-detail-modal .modal__body {
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.order-detail-siblings {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.order-detail-sibling {
+  display: flex;
+  width: 100%;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.order-detail-sibling-total {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
 }
 
 .order-form-modal .modal__header p,
