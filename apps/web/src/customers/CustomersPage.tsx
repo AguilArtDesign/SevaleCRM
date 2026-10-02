@@ -586,7 +586,11 @@ export function CustomersPage() {
     if (provider === 'SIIGO' && customer.country !== 'CO') {
       const integration = customer.integrations.find((item) => item.provider === 'SIIGO');
       const storedMapping = readCustomerSiigoLocationMapping(integration?.externalData);
+      // Con un error registrado la ubicación guardada ya falló, así que no se reenvía a ciegas: se
+      // reabre el selector con lo último enviado para que el administrador pueda elegir otra ciudad
+      // en lugar de repetir la misma selección y volver a chocar con el catálogo de Siigo.
       if (
+        integration?.status !== 'ERROR' &&
         storedMapping &&
         customer.country &&
         isCustomerSiigoLocationMappingCurrent(storedMapping, {
@@ -612,8 +616,8 @@ export function CustomersPage() {
         return;
       }
       setSiigoResolutionTarget(customer);
-      setSiigoStateCode('');
-      setSiigoCityCode('');
+      setSiigoStateCode(storedMapping?.target.stateCode ?? '');
+      setSiigoCityCode(storedMapping?.target.cityCode ?? '');
       setSiigoResolutionError('');
       return;
     }
