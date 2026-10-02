@@ -2341,6 +2341,10 @@ select {
   border-radius: var(--field-radius);
   text-align: start;
   cursor: pointer;
+  /* HeroUI fija white-space: nowrap en .button, así que una dirección larga se salía de la fila y el
+     final quedaba cortado por el borde del modal. La fila ocupa todo el ancho y el valor se reparte
+     en varias líneas, dejando los chips de origen siempre visibles a la derecha. */
+  white-space: normal;
 }
 
 .customer-conflict-option:hover {
@@ -2353,6 +2357,8 @@ select {
   font-size: 0.875rem;
   font-weight: 500;
   line-height: 1.35;
+  /* Una dirección sin espacios intermedios no debe desbordar la fila. */
+  overflow-wrap: break-word;
 }
 
 .customer-source-chips {
