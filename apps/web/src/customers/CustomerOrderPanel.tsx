@@ -7,7 +7,6 @@ import {
   addressLines,
   formattedDate,
   formattedMoneyWithCode,
-  formattedPhone,
   OrderAddress,
   orderStatusEmoji,
   OrderStatusChip,
@@ -15,6 +14,7 @@ import {
   StoreChip,
   syncStatusMeta,
 } from '../orders/presentation';
+import { useFormattedPhone } from '../components/useFormattedPhone';
 
 /** Detalle de un pedido de tienda, con el mismo formato de recibo que el detalle del panel de Pedidos. */
 function OrderDetail({ order }: { order: CustomerOrderRecord }) {
@@ -23,6 +23,8 @@ function OrderDetail({ order }: { order: CustomerOrderRecord }) {
     [order.billing.firstName, order.billing.lastName].filter(Boolean).join(' ') ||
     order.billing.company ||
     '--';
+  const billingPhone = useFormattedPhone(order.billing.phone, order.billing.country);
+  const shippingPhone = useFormattedPhone(order.shipping.phone, order.shipping.country);
 
   return (
     <div className="order-detail">
@@ -132,7 +134,7 @@ function OrderDetail({ order }: { order: CustomerOrderRecord }) {
                 country: order.billing.country,
               }),
               order.billing.email,
-              formattedPhone(order.billing.phone, order.billing.country),
+              billingPhone,
             ]}
           />
           <OrderAddress
@@ -147,7 +149,7 @@ function OrderDetail({ order }: { order: CustomerOrderRecord }) {
                 postcode: order.shipping.postcode,
                 country: order.shipping.country,
               }),
-              formattedPhone(order.shipping.phone, order.shipping.country),
+              shippingPhone,
             ]}
           />
           <div>

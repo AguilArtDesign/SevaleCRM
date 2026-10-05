@@ -2,7 +2,9 @@ export const applicationName = 'SevaleCRM';
 
 export { bogotaTimeZone } from './bogota-datetime.js';
 
-export { formatPhoneInternational, mapPhoneToSiigo, normalizePhoneE164 } from './customer-phone.js';
+// El módulo de teléfono sincrónico importa `intl-tel-input` de forma estática, así que no se expone
+// aquí: el navegador usa las variantes diferidas, que cargan la librería solo cuando hace falta.
+export { formatPhoneInternationalLazy, normalizePhoneE164Lazy } from './customer-phone-lazy.js';
 
 export {
   couponTypes,

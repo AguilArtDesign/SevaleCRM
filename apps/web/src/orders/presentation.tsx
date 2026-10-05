@@ -1,6 +1,5 @@
 import {
   bogotaTimeZone,
-  formatPhoneInternational,
   resolveCustomerCountryName,
   resolveCustomerRegionName,
 } from '@sevale/shared';
@@ -91,17 +90,6 @@ export function addressLines(parts: AddressParts): string[] {
   return [parts.address1, parts.address2, parts.city, region, country, parts.postcode].filter(
     (line): line is string => Boolean(line),
   );
-}
-
-/**
- * Teléfono con la agrupación del país: las tiendas lo mandan pegado (`+573044251788`) y el CRM lo
- * muestra espaciado (`+57 304 4251788`). Si no se puede interpretar, se deja tal cual; si no hay
- * teléfono no devuelve línea, para no dejar un renglón vacío en la lista de la dirección.
- */
-export function formattedPhone(phone: string | null, country: string | null): string | null {
-  if (!phone) return null;
-  if (!country) return phone;
-  return formatPhoneInternational(phone, country) ?? phone;
 }
 
 /**

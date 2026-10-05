@@ -44,7 +44,6 @@ import {
   formattedDate,
   formattedMoney,
   formattedMoneyWithCode,
-  formattedPhone,
   OrderAddress,
   orderStatusEmoji,
   OrderStatusChip,
@@ -52,6 +51,7 @@ import {
   StoreChip,
   syncStatusMeta,
 } from './presentation';
+import { useFormattedPhone } from '../components/useFormattedPhone';
 import { ShipmentModal } from './ShipmentModal';
 import { ShipmentViewModal } from './ShipmentViewModal';
 import {
@@ -103,8 +103,8 @@ function OrderDetail({
     [order.shippingFirstName, order.shippingLastName].filter(Boolean).join(' ') ||
     order.shippingCompany ||
     '--';
-  const billingPhone = formattedPhone(order.billingPhone, order.billingCountry);
-  const shippingPhone = formattedPhone(order.shippingPhone, order.shippingCountry);
+  const billingPhone = useFormattedPhone(order.billingPhone, order.billingCountry);
+  const shippingPhone = useFormattedPhone(order.shippingPhone, order.shippingCountry);
 
   // La operación puede tener un pedido por tienda, pero el detalle es del pedido de la fila
   // consultada: se muestran solo sus productos y sus totales.

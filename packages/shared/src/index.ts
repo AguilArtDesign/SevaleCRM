@@ -4,6 +4,10 @@ export { bogotaTimeZone, parseBogotaDateTime } from './bogota-datetime.js';
 
 export { formatPhoneInternational, mapPhoneToSiigo, normalizePhoneE164 } from './customer-phone.js';
 export type { SiigoPhone } from './customer-phone.js';
+// El navegador no puede usar las anteriores: arrastran `intl-tel-input` al paquete inicial. Estas
+// cargan la librería cuando hacen falta, y se exportan desde los dos puntos de entrada para que los
+// tipos y el código de ejecución coincidan.
+export { formatPhoneInternationalLazy, normalizePhoneE164Lazy } from './customer-phone-lazy.js';
 
 export {
   couponTypes,

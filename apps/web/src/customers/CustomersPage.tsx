@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useRef, useState } from 'react';
+import { Fragment, useRef, useState } from 'react';
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { Selection } from '@heroui/react';
 import {
@@ -46,6 +46,7 @@ import {
 import { Chip } from '../components/Chip';
 import { getPaginationItems, Pagination } from '../components/Pagination';
 import { Select } from '../components/Select';
+import { useFormattedPhone } from '../components/useFormattedPhone';
 import { useCurrentUser } from '../users/useCurrentUser';
 import { CustomerForm } from './CustomerForm';
 import { CustomerOrderPanel } from './CustomerOrderPanel';
@@ -133,27 +134,7 @@ function CustomerPhone({
   country: string | null;
   showFlag?: boolean;
 }) {
-  const [formatted, setFormatted] = useState(phone || emptyValue);
-
-  useEffect(() => {
-    let active = true;
-    setFormatted(phone || emptyValue);
-    if (!phone) return () => undefined;
-    void import('intl-tel-input/utils')
-      .then(({ default: phoneUtils }) => {
-        if (!active) return;
-        const international = phoneUtils.formatNumber(
-          phone,
-          country?.toLocaleLowerCase() ?? '',
-          'INTERNATIONAL',
-        );
-        setFormatted(international || phone);
-      })
-      .catch(() => undefined);
-    return () => {
-      active = false;
-    };
-  }, [country, phone]);
+  const formatted = useFormattedPhone(phone, country) || emptyValue;
 
   if (!showFlag) return <strong className="customer-phone-cell">{formatted}</strong>;
 

@@ -25,7 +25,7 @@ import {
   getCustomerColombiaStates,
   getCustomerCountries,
   getCustomerWooStates,
-  normalizePhoneE164,
+  normalizePhoneE164Lazy,
   resolveCustomerCityName,
   resolveCustomerCountryName,
   resolveCustomerRegionName,
@@ -302,7 +302,7 @@ export function CustomerForm({
       return;
     }
     const normalizedPhone = parsed.data.phone
-      ? normalizePhoneE164(parsed.data.phone, parsed.data.country ?? '')
+      ? await normalizePhoneE164Lazy(parsed.data.phone, parsed.data.country ?? '')
       : null;
     if (parsed.data.phone && !normalizedPhone) {
       setError('El teléfono no es válido para el país seleccionado.');
