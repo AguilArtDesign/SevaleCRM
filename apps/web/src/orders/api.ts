@@ -144,6 +144,8 @@ export type OrderDetailRecord = {
     store: ProductStore;
     wooOrderId: string | null;
     wooStatus: string | null;
+    /** Fecha de creación en WooCommerce; el backend la incluye y aún no estaba declarada aquí. */
+    wooCreatedAt: string | null;
     syncStatus: OrderSyncStatus;
     lastSyncAt: string | null;
     lastSyncErrorCode: string | null;
@@ -205,6 +207,22 @@ export type CustomerOrderRecord = {
   wooCreatedAt: string | null;
   createdAt: string;
   updatedAt: string;
+  paymentMethod: string | null;
+  paymentMethodTitle: string | null;
+  createdBy: { id: string; name: string; email: string } | null;
+  billing: {
+    firstName: string | null;
+    lastName: string | null;
+    company: string | null;
+    address1: string | null;
+    address2: string | null;
+    city: string | null;
+    state: string | null;
+    postcode: string | null;
+    country: string | null;
+    email: string | null;
+    phone: string | null;
+  };
   shipping: {
     method: string | null;
     methodTitle: string | null;

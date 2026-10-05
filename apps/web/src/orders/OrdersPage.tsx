@@ -39,13 +39,18 @@ import type { ProductStore } from '../inventory/api';
 import { useCurrentUser } from '../users/useCurrentUser';
 import { OrderForm } from './OrderForm';
 import {
+  addressLines,
   allowsShipment,
   formattedDate,
   formattedMoney,
   formattedMoneyWithCode,
+  formattedPhone,
+  OrderAddress,
+  orderStatusEmoji,
   OrderStatusChip,
-  resolveWooStatus,
+  ProductThumb,
   StoreChip,
+  syncStatusMeta,
 } from './presentation';
 import { ShipmentModal } from './ShipmentModal';
 import { ShipmentViewModal } from './ShipmentViewModal';
@@ -81,13 +86,6 @@ function stopRowSelection(event: { stopPropagation: () => void }) {
   event.stopPropagation();
 }
 
-const syncStatusMeta = {
-  PENDING: { label: 'Pendiente', color: 'warning' as const },
-  SYNCING: { label: 'Sincronizando', color: 'accent' as const },
-  SYNCED: { label: 'Sincronizado', color: 'success' as const },
-  ERROR: { label: 'Error', color: 'danger' as const },
-};
-
 function OrderDetail({
   order,
   store,
@@ -97,16 +95,16 @@ function OrderDetail({
   store: ProductStore;
   onSelectStore: (store: ProductStore) => void;
 }) {
-  const billingAddress = [
-    order.billingAddress1,
-    order.billingAddress2,
-    order.billingCity,
-    order.billingState,
-    order.billingPostcode,
-    order.billingCountry,
-  ]
-    .filter(Boolean)
-    .join(', ');
+  const billingRecipient =
+    [order.billingFirstName, order.billingLastName].filter(Boolean).join(' ') ||
+    order.billingCompany ||
+    '--';
+  const shippingRecipient =
+    [order.shippingFirstName, order.shippingLastName].filter(Boolean).join(' ') ||
+    order.shippingCompany ||
+    '--';
+  const billingPhone = formattedPhone(order.billingPhone, order.billingCountry);
+  const shippingPhone = formattedPhone(order.shippingPhone, order.shippingCountry);
 
   // La operación puede tener un pedido por tienda, pero el detalle es del pedido de la fila
   // consultada: se muestran solo sus productos y sus totales.
@@ -118,101 +116,146 @@ function OrderDetail({
 
   return (
     <div className="order-detail">
-      <section className="order-detail-overview">
-        <div>
-          <span>Estado</span>
-          <OrderStatusChip status={order.status} />
-        </div>
-        <div>
-          <span>Origen</span>
-          <strong>{order.source === 'CRM' ? 'CRM' : 'WooCommerce'}</strong>
-        </div>
-        <div>
-          <span>Cliente</span>
-          <strong>{order.customer.displayName}</strong>
-          <small>{order.customer.documentNumber}</small>
-        </div>
-        <div>
-          <span>Creado por</span>
-          <strong>
-            {order.createdBy?.name ?? (order.source === 'WOOCOMMERCE' ? 'WooCommerce' : '—')}
-          </strong>
-          <small>{formattedDate(order.createdAt)}</small>
-        </div>
-      </section>
-      <section className="order-detail-section">
-        <h3>Facturación y entrega</h3>
-        <p>
-          <strong>
-            {[order.billingFirstName, order.billingLastName].filter(Boolean).join(' ') ||
-              order.billingCompany ||
-              '--'}
-          </strong>
-        </p>
-        <p>{billingAddress || 'Sin dirección registrada'}</p>
-        <p>
-          {order.billingEmail || '--'} · {order.billingPhone || '--'}
-        </p>
-      </section>
       {storeOrder && (
-        <section className="order-detail-section">
-          <h3>Productos</h3>
-          <div className="order-detail-stores">
-            <article>
-              <header>
-                <div className="order-detail-store-heading">
-                  <StoreChip store={storeOrder.store} />
-                  <Chip color={syncStatusMeta[storeOrder.syncStatus].color}>
-                    {syncStatusMeta[storeOrder.syncStatus].label}
-                  </Chip>
-                </div>
-                <strong>{formattedMoney(storeOrder.total, order.currency)}</strong>
-              </header>
-              {storeOrder.wooOrderId && <p>WooCommerce #{storeOrder.wooOrderId}</p>}
-              {storeOrder.wooStatus && (
-                <p>
-                  Estado en WooCommerce:{' '}
-                  <strong>{resolveWooStatus(storeOrder.wooStatus).label}</strong>
-                </p>
-              )}
-              {storeOrder.lastSyncErrorMessage && (
-                <p className="order-sync-error">{storeOrder.lastSyncErrorMessage}</p>
-              )}
-              {storeOrder.items.map((item) => (
-                <div className="order-detail-item" key={item.id}>
+        <article className="order-ticket">
+          <header className="order-ticket-head">
+            <div className="order-ticket-chips">
+              <StoreChip store={storeOrder.store} />
+              <Chip color={syncStatusMeta[storeOrder.syncStatus].color}>
+                {syncStatusMeta[storeOrder.syncStatus].label}
+              </Chip>
+            </div>
+            <img
+              className="order-ticket-emoji"
+              src={orderStatusEmoji(order.status, storeOrder.wooStatus)}
+              alt=""
+            />
+            <h3 className="order-ticket-title">Pedido #{storeOrder.wooOrderId ?? storeOrder.id}</h3>
+            <p className="order-ticket-meta">
+              {order.operationCode} · {order.source === 'CRM' ? 'CRM' : 'WooCommerce'}
+            </p>
+            <span className="order-ticket-status">
+              <OrderStatusChip status={order.status} wooStatus={storeOrder.wooStatus} />
+            </span>
+          </header>
+
+          <div className="order-ticket-perforation" aria-hidden="true" />
+
+          <dl className="order-ticket-facts">
+            <div>
+              <dt>Fecha &amp; hora</dt>
+              <dd>{formattedDate(storeOrder.wooCreatedAt ?? order.createdAt)}</dd>
+            </div>
+            <div className="order-ticket-fact-end">
+              <dt>Método de pago</dt>
+              <dd>{order.paymentMethodTitle || order.paymentMethod || 'N/A'}</dd>
+            </div>
+          </dl>
+
+          <div className="order-ticket-items">
+            <div className="order-ticket-items-head">
+              <span>Producto</span>
+              <span className="order-ticket-qty">Cant</span>
+              <span className="order-ticket-amount">Total</span>
+            </div>
+            {storeOrder.items.map((item) => (
+              <div className="order-ticket-item" key={item.id}>
+                <div className="order-ticket-product">
+                  <ProductThumb src={item.product?.imageUrl} />
                   <div>
                     <strong>{item.nameSnapshot}</strong>
-                    <span>
-                      {item.skuSnapshot} · {item.quantity} unidad(es)
-                    </span>
-                  </div>
-                  <div>
-                    <strong>{formattedMoney(item.total, order.currency)}</strong>
-                    {item.priceModified && <small>Precio modificado</small>}
+                    <span>{item.skuSnapshot}</span>
                   </div>
                 </div>
-              ))}
-              <dl>
-                <div>
-                  <dt>Subtotal</dt>
-                  <dd>{formattedMoney(storeOrder.subtotal, order.currency)}</dd>
+                <span className="order-ticket-qty">{item.quantity}</span>
+                <div className="order-ticket-amount">
+                  {item.priceModified && item.originalPrice && (
+                    <del>{formattedMoneyWithCode(item.originalPrice, order.currency)}</del>
+                  )}
+                  <strong>{formattedMoneyWithCode(item.total, order.currency)}</strong>
                 </div>
-                <div>
-                  <dt>Descuento</dt>
-                  <dd>- {formattedMoney(storeOrder.discountTotal, order.currency)}</dd>
-                </div>
-                <div>
-                  <dt>Envío</dt>
-                  <dd>{formattedMoney(storeOrder.shippingTotal, order.currency)}</dd>
-                </div>
-                <div>
-                  <dt>Total</dt>
-                  <dd>{formattedMoney(storeOrder.total, order.currency)}</dd>
-                </div>
-              </dl>
-            </article>
+              </div>
+            ))}
           </div>
-        </section>
+
+          <div className="order-ticket-perforation" aria-hidden="true" />
+
+          <dl className="order-ticket-lines">
+            <div>
+              <dt>Subtotal</dt>
+              <dd>{formattedMoneyWithCode(storeOrder.subtotal, order.currency)}</dd>
+            </div>
+            <div>
+              <dt>Envío</dt>
+              <dd>{formattedMoneyWithCode(storeOrder.shippingTotal, order.currency)}</dd>
+            </div>
+            {storeOrder.coupons.map((coupon) => (
+              <div key={coupon.id}>
+                <dt className="order-ticket-coupon">
+                  Cupón
+                  <strong>{coupon.code}</strong>
+                </dt>
+                <dd>- {formattedMoneyWithCode(coupon.discountTotal, order.currency)}</dd>
+              </div>
+            ))}
+          </dl>
+
+          <div className="order-ticket-divider" aria-hidden="true" />
+
+          <dl className="order-ticket-paid">
+            <dt>Total pagado</dt>
+            <dd>{formattedMoneyWithCode(storeOrder.total, order.currency)}</dd>
+          </dl>
+
+          <div className="order-ticket-perforation" aria-hidden="true" />
+
+          <div className="order-ticket-data">
+            <OrderAddress
+              title="Datos de Facturación"
+              name={billingRecipient}
+              lines={[
+                ...addressLines({
+                  address1: order.billingAddress1,
+                  address2: order.billingAddress2,
+                  city: order.billingCity,
+                  state: order.billingState,
+                  postcode: order.billingPostcode,
+                  country: order.billingCountry,
+                }),
+                order.billingEmail,
+                billingPhone,
+              ]}
+            />
+            <OrderAddress
+              title="Datos de Envío"
+              name={shippingRecipient}
+              lines={[
+                ...addressLines({
+                  address1: order.shippingAddress1,
+                  address2: order.shippingAddress2,
+                  city: order.shippingCity,
+                  state: order.shippingState,
+                  postcode: order.shippingPostcode,
+                  country: order.shippingCountry,
+                }),
+                shippingPhone,
+              ]}
+            />
+            <div>
+              <span>Creado por</span>
+              <strong>
+                {order.createdBy?.name ?? (order.source === 'WOOCOMMERCE' ? 'WooCommerce' : '--')}
+              </strong>
+              <p>{formattedDate(order.createdAt)}</p>
+            </div>
+            {order.updatedAt !== order.createdAt && (
+              <div>
+                <span>Última modificación</span>
+                <p>{formattedDate(order.updatedAt)}</p>
+              </div>
+            )}
+          </div>
+        </article>
       )}
       {siblings.length > 0 && (
         <section className="order-detail-section">
@@ -911,12 +954,9 @@ export function OrdersPage() {
             <Modal.Dialog className="order-detail-modal">
               <Modal.CloseTrigger aria-label="Cerrar detalle" />
               <Modal.Header>
-                <div>
-                  <Modal.Heading>
-                    {selectedQuery.data?.operationCode ?? 'Detalle del pedido'}
-                  </Modal.Heading>
-                  <p>Información local del pedido.</p>
-                </div>
+                <Modal.Heading>
+                  {selectedQuery.data?.operationCode ?? 'Detalle del pedido'}
+                </Modal.Heading>
               </Modal.Header>
               <Modal.Body>
                 {selectedQuery.isPending && (

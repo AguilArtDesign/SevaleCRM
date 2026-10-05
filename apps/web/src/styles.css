@@ -2143,12 +2143,25 @@ select {
   padding-top: 1rem;
 }
 
-.customer-order-panel-back {
-  margin-left: -0.5rem;
+/* La acción vive a la derecha, con la flecha después del texto. Se empuja con un margen automático
+   y no con `justify-content`: el encabezado del drawer ya trae su propia alineación y el margen
+   automático se impone a cualquier `justify-content`. */
+.customer-order-panel-header {
+  display: flex;
+  align-items: center;
 }
 
-.customer-order-panel .drawer__heading {
-  font-size: 1.1rem;
+.customer-order-panel-back {
+  margin-left: auto;
+}
+
+.customer-order-panel-heading {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
 /* Donde los dos paneles no caben uno al lado del otro, el del pedido se queda con el lugar del
@@ -3304,10 +3317,30 @@ select {
   overscroll-behavior: contain;
 }
 
-.order-form-modal .modal__header,
-.order-detail-modal .modal__header {
+.order-form-modal .modal__header {
   padding-bottom: 1rem;
   border-bottom: 1px solid var(--separator);
+}
+
+/* El recibo ya muestra el número del pedido, así que el encabezado del detalle solo repetía el dato.
+   Se retira de la vista pero se conserva en el marcado: de él toma el diálogo su nombre accesible. */
+.order-detail-modal .modal__header {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  border: 0;
+  white-space: nowrap;
+}
+
+/* El botón de cerrar se ancla al borde del diálogo, así que el relleno de arriba va en el propio
+   diálogo: así el cuerpo del detalle —y su barra de scroll— empieza por debajo del botón. Con el
+   relleno en el cuerpo la barra seguiría subiendo hasta el borde y el botón la taparía. */
+.order-detail-modal {
+  padding-top: 3rem;
 }
 
 /* La regla general de `.modal__body` deja el desbordamiento visible y gana a la de HeroUI, que sí
@@ -3337,8 +3370,7 @@ select {
   font-variant-numeric: tabular-nums;
 }
 
-.order-form-modal .modal__header p,
-.order-detail-modal .modal__header p {
+.order-form-modal .modal__header p {
   margin: 0.2rem 0 0;
   color: var(--muted);
   font-size: 0.85rem;
@@ -3812,8 +3844,7 @@ select {
 }
 
 .order-items,
-.order-store-settings,
-.order-detail-stores {
+.order-store-settings {
   display: grid;
   gap: 0.65rem;
 }
@@ -4170,16 +4201,14 @@ select {
 }
 
 .order-store-summary dl,
-.order-summary-general,
-.order-detail-stores dl {
+.order-summary-general {
   display: grid;
   margin: 0;
   gap: 0.4rem;
 }
 
 .order-store-summary dl > div,
-.order-summary-general > div,
-.order-detail-stores dl > div {
+.order-summary-general > div {
   display: flex;
   justify-content: space-between;
   gap: 1rem;
@@ -4191,8 +4220,7 @@ select {
 }
 
 .order-store-summary dd,
-.order-summary-general dd,
-.order-detail-stores dd {
+.order-summary-general dd {
   margin: 0;
   font-weight: 600;
 }
@@ -4210,25 +4238,303 @@ select {
   gap: 1rem;
 }
 
-.order-detail-overview {
+.order-ticket {
+  --ticket-page: var(--surface);
+  --ticket-notch: 14px;
+  --ticket-padding: 1.15rem;
+  position: relative;
+  display: grid;
+  padding: var(--ticket-padding) var(--ticket-padding) 1.7rem;
+  background-color: var(--surface-secondary);
+  background-image: radial-gradient(circle at 8px 12px, var(--ticket-page) 6px, transparent 6.5px);
+  background-size: 16px 12px;
+  background-repeat: repeat-x;
+  background-position: 0 100%;
+  border-radius: 1.15rem 1.15rem 0 0;
+  /* Las muescas del desprendible son círculos centrados en el borde del recibo, así que asoman media
+     muesca a cada lado. Sin este recorte ese saliente agranda el área desplazable y el contenedor
+     con scroll horizontal saca una barra. Recortar aquí no cambia el dibujo: lo que se recorta cae
+     sobre el fondo de la página, que es del mismo color que las muescas. */
+  overflow-x: clip;
+}
+
+.order-ticket-head {
+  display: grid;
+  justify-items: center;
+  text-align: center;
+}
+
+.order-ticket-chips {
+  position: absolute;
+  top: var(--ticket-padding);
+  left: var(--ticket-padding);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.3rem;
+}
+
+.order-ticket-emoji {
+  width: 5rem;
+  height: 5rem;
+  margin-top: 0.35rem;
+}
+
+.order-ticket-title {
+  margin: 0;
+  color: var(--foreground);
+  font-size: 1.5rem;
+  font-weight: 700;
+}
+
+/* Operación y origen del pedido, bajo el número. */
+.order-ticket-meta {
+  margin: 0 0 0.4rem 0;
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.order-ticket-status {
+  margin-top: 0.15rem;
+}
+
+/* Línea de desprendible: guiones con una muesca a cada lado, centrada en la línea. */
+.order-ticket-perforation {
+  position: relative;
+  margin: 1.05rem calc(var(--ticket-padding) * -1);
+  border-top: 2px dashed color-mix(in srgb, var(--muted) 15%, transparent);
+}
+
+.order-ticket-perforation::before,
+.order-ticket-perforation::after {
+  content: '';
+  position: absolute;
+  top: calc(var(--ticket-notch) / -2 - 0.5px);
+  width: var(--ticket-notch);
+  height: var(--ticket-notch);
+  border-radius: 50%;
+  background: var(--ticket-page);
+}
+
+.order-ticket-perforation::before {
+  left: calc(var(--ticket-notch) / -2);
+}
+
+.order-ticket-perforation::after {
+  right: calc(var(--ticket-notch) / -2);
+}
+
+.order-ticket-facts {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.9rem;
+  margin: 0;
+}
+
+/* Etiquetas de las secciones del recibo. */
+.order-ticket-facts dt,
+.order-ticket-lines dt,
+.order-ticket-paid dt,
+.order-ticket-items-head {
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 400;
+}
+
+.order-ticket-facts dd {
+  margin: 0;
+  color: var(--foreground);
+  font-size: 0.8125rem;
+  font-weight: 500;
+}
+
+.order-ticket-fact-end {
+  text-align: right;
+}
+
+.order-ticket-items {
+  margin-top: 2rem;
+}
+
+/* Anchos fijos en cantidad y precio para que las columnas no se deformen con nombres largos. */
+.order-ticket-items-head,
+.order-ticket-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 2.5rem 8.25rem;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.order-ticket-items-head {
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid color-mix(in srgb, var(--muted) 15%, transparent);
+  color: var(--foreground);
+}
+
+/* La cabecera manda sobre el tamaño del cuerpo: cantidad y total son más pequeños aquí. */
+.order-ticket .order-ticket-items-head > span {
+  font-size: 0.75rem;
+  font-weight: 400;
+}
+
+.order-ticket-item {
+  padding: 0.6rem 0;
+}
+
+/* La miniatura cae a la imagen de respaldo cuando el producto no está en el inventario o no tiene
+   foto, así que siempre ocupa el mismo cuadro. */
+.order-ticket-product {
+  display: grid;
+  grid-template-columns: 2rem minmax(0, 1fr);
+  gap: 0.6rem;
+  align-items: center;
+  min-width: 0;
+}
+
+.order-ticket-thumb {
+  width: 2rem;
+  background: color-mix(in srgb, var(--ticket-page) 60%, var(--surface-secondary));
+  border-radius: 0.5rem;
+}
+
+.order-ticket-product strong {
+  display: block;
+  color: var(--foreground);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  line-height: 1.2;
+}
+
+.order-ticket-product span {
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 400;
+}
+
+.order-ticket-qty {
+  font-size: 0.8125rem;
+  text-align: center;
+}
+
+.order-ticket-amount {
+  display: grid;
+  justify-items: end;
+  color: var(--foreground);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  text-align: right;
+}
+
+.order-ticket-amount del {
+  color: var(--muted);
+  font-size: 0.625rem;
+  font-weight: 400;
+}
+
+.order-ticket-amount strong {
+  font-weight: 500;
+}
+
+.order-ticket-lines {
+  display: grid;
+  gap: 0.35rem;
+  margin: 0;
+}
+
+.order-ticket-lines > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+/* El nombre del cupón va debajo de su etiqueta, en mayúsculas: el código de la tienda viene en
+   minúsculas y así se lee como un nombre. */
+.order-ticket-lines dt.order-ticket-coupon {
+  display: grid;
+  gap: 0.1rem;
+}
+
+.order-ticket-lines dt.order-ticket-coupon strong {
+  color: var(--foreground);
+  font-weight: 500;
+  text-transform: uppercase;
+}
+
+.order-ticket-lines dd {
+  margin: 0;
+  color: var(--foreground);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Separador continuo, para cerrar el bloque de importes antes del total. */
+.order-ticket-divider {
+  margin: 0.85rem 0;
+  border-top: 1px solid color-mix(in srgb, var(--muted) 15%, transparent);
+}
+
+.order-ticket-paid {
+  display: grid;
+  gap: 0.1rem;
+  text-align: right;
+}
+
+.order-ticket-paid dd {
+  margin: 0;
+  color: var(--foreground);
+  font-size: 1.5rem;
+  font-weight: 600;
+}
+
+/* Facturación, envío y trazabilidad, en una cuadrícula de dos columnas dentro del recibo. */
+.order-ticket-data {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.75rem;
+  gap: 0.9rem 1.25rem;
 }
 
-.order-detail-overview > div {
+.order-ticket-data > div {
   display: grid;
-  padding: 0.8rem;
-  gap: 0.15rem;
-  background: var(--surface-secondary);
-  border-radius: 0.75rem;
+  align-content: start;
+  /* Sin separación entre las líneas del bloque: las líneas que parten de un texto largo (la
+     dirección) no deben leerse como campos distintos. La etiqueta sí se separa, abajo. */
+  gap: 0;
 }
 
-.order-detail-overview span,
-.order-detail-overview small,
-.order-detail-section p,
-.order-detail-item span,
-.order-detail-item small {
+.order-ticket .order-ticket-data span:first-child {
+  margin-bottom: 0.3rem;
+}
+
+.order-ticket .order-ticket-data span:first-child {
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.order-ticket .order-ticket-data strong {
+  color: var(--foreground);
+  font-size: 0.8125rem;
+  font-weight: 500;
+}
+
+/* Una línea por dato, todas pegadas: son partes de la misma dirección, no campos. */
+.order-ticket .order-ticket-data p {
+  margin: 0;
+  color: var(--foreground);
+  font-size: 0.8125rem;
+  line-height: 1.35;
+}
+
+/* Un recibo estrecho no da para dos columnas de direcciones. */
+@media (max-width: 30rem) {
+  .order-ticket-data {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.order-detail-section p {
   color: var(--muted);
   font-size: 0.78rem;
 }
@@ -4241,23 +4547,6 @@ select {
 
 .order-detail-section p {
   margin: 0;
-}
-
-.order-detail-stores article {
-  display: grid;
-  padding: 0.9rem;
-  gap: 0.75rem;
-  background: var(--surface-secondary);
-  border-radius: 0.85rem;
-}
-
-.order-detail-stores header,
-.order-detail-item,
-.order-detail-total {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
 }
 
 .order-detail-store-heading {
@@ -4373,31 +4662,6 @@ select {
   margin: 0;
 }
 
-.order-detail-item {
-  padding-block: 0.55rem;
-  border-bottom: 1px solid var(--separator);
-}
-
-.order-detail-item > div {
-  display: grid;
-  gap: 0.1rem;
-}
-
-.order-detail-item > div:last-child {
-  text-align: right;
-}
-
-.order-detail-total {
-  padding: 1rem;
-  color: var(--foreground);
-  background: var(--surface-secondary);
-  border-radius: 0.85rem;
-}
-
-.order-detail-total strong {
-  font-size: 1.15rem;
-}
-
 .order-edit-loading {
   position: fixed;
   inset: 0;
@@ -4438,8 +4702,7 @@ select {
   .shipment-form-grid,
   .shipment-detail dl,
   .order-store-settings,
-  .order-store-summaries,
-  .order-detail-overview {
+  .order-store-summaries {
     grid-template-columns: 1fr;
   }
 
