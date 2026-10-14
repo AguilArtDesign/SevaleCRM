@@ -88,16 +88,17 @@ Con el puerto 587, `SMTP_SECURE=false` inicia la conexión normal y exige STARTT
 
 ## Migraciones
 
-Las migraciones no forman parte del comando de arranque. Antes de aplicarlas:
-
-1. crear un respaldo verificable de MySQL;
-2. revisar en Git los archivos nuevos de `prisma/migrations`;
-3. comprobar que no contienen pérdidas de datos no autorizadas;
-4. ejecutar manualmente, una sola vez por versión:
+El script de despliegue aplica las migraciones en cada publicación con:
 
 ```bash
 npm run prisma:migrate:deploy
 ```
+
+Quedan fuera del comando de arranque: se ejecutan durante el despliegue, antes de levantar el proceso. Como se aplican solas, el control está antes de publicar:
+
+1. crear y verificar el respaldo de MySQL;
+2. revisar en Git los archivos nuevos de `prisma/migrations`;
+3. comprobar que no contienen pérdidas de datos no autorizadas.
 
 Para el primer despliegue, ejecutar el seed idempotente después de las migraciones:
 
@@ -112,7 +113,7 @@ Nunca ejecutar `prisma migrate reset`, `prisma migrate dev` ni `DROP DATABASE` e
 1. Configurar dominio, HTTPS y variables en xCloud.
 2. Crear y verificar el respaldo de MySQL.
 3. Ejecutar `npm ci && npm run build`.
-4. Revisar y ejecutar `npm run prisma:migrate:deploy` manualmente.
+4. Revisar los archivos nuevos de `prisma/migrations`; el despliegue los aplica automáticamente.
 5. En el primer despliegue, ejecutar `npm run prisma:seed` y retirar `INITIAL_ADMIN_PASSWORD` si se utilizó.
 6. Iniciar con `npm run start`.
 7. Comprobar `/api/health`, login, Socket.IO y una lectura de inventario.

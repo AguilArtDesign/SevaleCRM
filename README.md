@@ -300,8 +300,10 @@ El despliegue utiliza un único proceso NestJS que sirve la API, Socket.IO y el 
 Node.js:        24.16.0
 Build command:  npm ci && npm run build
 Start command:  npm run start
-Migraciones:    npm run prisma:migrate:deploy (paso manual y revisado)
+Migraciones:    npm run prisma:migrate:deploy (automático en el despliegue)
 Health check:   /api/health
 ```
 
-No se ejecutan migraciones desde el comando de arranque ni se almacena ningún secreto en Git. El despliegue automático continúa desautorizado hasta que sea solicitado expresamente.
+El script de despliegue ejecuta las migraciones en cada publicación, así que se aplican solas y no queda un paso manual pendiente. Como se ejecutan de forma automática, la revisión de los archivos nuevos de `prisma/migrations` ocurre antes de integrar el cambio, no durante el despliegue.
+
+Las migraciones siguen sin formar parte del comando de arranque y ningún secreto se almacena en Git. El despliegue automático continúa desautorizado hasta que sea solicitado expresamente.
