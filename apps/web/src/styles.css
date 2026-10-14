@@ -3370,15 +3370,76 @@ select {
 }
 
 .order-detail-sibling {
-  display: flex;
+  --sibling-brand: var(--muted);
+  --sibling-page: var(--surface);
+  /* La muesca es media circunferencia: 0.375rem de radio dan una abertura de 0.75rem de ancho por
+     0.375rem de alto, la misma medida de los dientes del desprendible del recibo grande. El paso es
+     el del desprendible (1rem), así que el ritmo también coincide. */
+  --sibling-notch: 0.375rem;
+  --sibling-notch-step: 1rem;
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 0.6rem;
   width: 100%;
-  justify-content: space-between;
-  gap: 1rem;
+  /* HeroUI fija 2.25rem en .button--md. La tarjeta mide 3rem para que quepan tres muescas enteras
+     con el paso de 1rem; el contenido se centra en el espacio sobrante. */
+  height: auto;
+  min-height: 3rem;
+  padding: 0.75rem 0.9rem 0.75rem 0.5rem;
+  border-left: 0.25rem solid var(--sibling-brand);
+  border-radius: 0.5rem 0 0 0.5rem;
+}
+
+.order-detail-sibling-pali {
+  --sibling-brand: var(--pali-text);
+}
+
+.order-detail-sibling-seratus {
+  --sibling-brand: var(--seratus-text);
+}
+
+/* La muesca es media circunferencia apoyada en el borde derecho, con el mismo trazo que los dientes
+   del desprendible. La franja solo pinta el interior del círculo, así el relleno de la tarjeta y
+   sus esquinas redondeadas se conservan intactos. */
+.order-detail-sibling::after {
+  content: '';
+  position: absolute;
+  inset-block: 0;
+  inset-inline-end: 0;
+  width: calc(var(--sibling-notch) * 2);
+  pointer-events: none;
+  background-image: radial-gradient(
+    circle at 100% 50%,
+    var(--sibling-page) var(--sibling-notch),
+    transparent var(--sibling-notch)
+  );
+  background-size: calc(var(--sibling-notch) * 2) var(--sibling-notch-step);
+  background-repeat: repeat-y;
+}
+
+.order-detail-sibling-store {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.4rem;
+  justify-self: start;
+}
+
+.order-detail-sibling-code {
+  color: var(--foreground);
+  font-size: 0.75rem;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
 }
 
 .order-detail-sibling-total {
-  font-weight: 600;
+  color: var(--foreground);
+  font-size: 0.75rem;
+  font-weight: 400;
   font-variant-numeric: tabular-nums;
+  justify-self: end;
 }
 
 .order-form-modal .modal__header p {
@@ -4577,13 +4638,6 @@ select {
 
 .order-detail-section p {
   margin: 0;
-}
-
-.order-detail-store-heading {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 0.4rem;
 }
 
 .order-sync-error {

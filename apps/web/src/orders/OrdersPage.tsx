@@ -42,7 +42,6 @@ import {
   addressLines,
   allowsShipment,
   formattedDate,
-  formattedMoney,
   formattedMoneyWithCode,
   OrderAddress,
   orderStatusEmoji,
@@ -265,26 +264,23 @@ function OrderDetail({
             {siblings.map((sibling) => (
               <Button
                 key={sibling.id}
-                className="order-detail-sibling"
+                className={`order-detail-sibling order-detail-sibling-${sibling.store.toLowerCase()}`}
                 variant="secondary"
                 onPress={() => onSelectStore(sibling.store)}
               >
-                <span className="order-detail-store-heading">
+                <span className="order-detail-sibling-store">
                   <StoreChip store={sibling.store} />
-                  <Chip color={syncStatusMeta[sibling.syncStatus].color}>
-                    {syncStatusMeta[sibling.syncStatus].label}
-                  </Chip>
+                  <OrderStatusChip status={order.status} wooStatus={sibling.wooStatus} />
                 </span>
-                <strong>#{sibling.wooOrderId ?? sibling.id}</strong>
+                <strong className="order-detail-sibling-code">
+                  #{sibling.wooOrderId ?? sibling.id}
+                </strong>
                 <span className="order-detail-sibling-total">
-                  {formattedMoney(sibling.total, order.currency)}
+                  {formattedMoneyWithCode(sibling.total, order.currency)}
                 </span>
               </Button>
             ))}
           </div>
-          <p>
-            La operación tiene productos de las dos marcas: este es el pedido de la otra tienda.
-          </p>
         </section>
       )}
     </div>

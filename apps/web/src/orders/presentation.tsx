@@ -27,14 +27,6 @@ const wooStatusMeta: Record<
   failed: { label: 'Fallido', color: 'danger' },
 };
 
-export function formattedMoney(value: string, currency: string): string {
-  return new Intl.NumberFormat('es-CO', {
-    style: 'currency',
-    currency,
-    minimumFractionDigits: currency === 'COP' ? 0 : 2,
-  }).format(Number(value));
-}
-
 /**
  * Importe con el código de moneda al final, para totales donde la divisa no es obvia.
  * Intl separa el símbolo del importe con un espacio duro; el CRM los muestra pegados.
