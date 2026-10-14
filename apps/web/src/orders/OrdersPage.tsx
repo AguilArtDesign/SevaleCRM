@@ -19,6 +19,7 @@ import {
 } from '@heroui/react';
 import {
   ArrowRotateRight,
+  Box,
   Check,
   EllipsisVertical,
   Eye,
@@ -27,7 +28,6 @@ import {
   Pencil,
   Plus,
   ShoppingCart,
-  Car,
   TrashBin,
   Xmark,
 } from '@gravity-ui/icons';
@@ -47,6 +47,7 @@ import {
   OrderAddress,
   orderStatusEmoji,
   OrderStatusChip,
+  OrderSourceChip,
   ProductThumb,
   StoreChip,
   syncStatusMeta,
@@ -643,7 +644,6 @@ export function OrdersPage() {
                 <Table.Column>Tienda</Table.Column>
                 <Table.Column>Origen</Table.Column>
                 <Table.Column>Estado</Table.Column>
-                <Table.Column>Sincronización</Table.Column>
                 <Table.Column>Total</Table.Column>
                 <Table.Column>Fecha</Table.Column>
                 <Table.Column className="inventory-actions-column">Acciones</Table.Column>
@@ -694,15 +694,10 @@ export function OrdersPage() {
                       <StoreChip store={order.store} />
                     </Table.Cell>
                     <Table.Cell onClick={stopRowSelection} onPointerDown={stopRowSelection}>
-                      {order.source === 'CRM' ? 'CRM' : 'WooCommerce'}
+                      <OrderSourceChip source={order.source} />
                     </Table.Cell>
                     <Table.Cell onClick={stopRowSelection} onPointerDown={stopRowSelection}>
                       <OrderStatusChip status={order.status} wooStatus={order.wooStatus} />
-                    </Table.Cell>
-                    <Table.Cell onClick={stopRowSelection} onPointerDown={stopRowSelection}>
-                      <Chip color={syncStatusMeta[order.syncStatus].color}>
-                        {syncStatusMeta[order.syncStatus].label}
-                      </Chip>
                     </Table.Cell>
                     <Table.Cell onClick={stopRowSelection} onPointerDown={stopRowSelection}>
                       <strong className="order-total">
@@ -743,26 +738,27 @@ export function OrdersPage() {
                                 if (key === 'retry') void retryOrderSync(order);
                                 if (key === 'delete') setDeleteTarget(order);
                                 if (key === 'shipment') {
-                                  // Logística asigna el envío, pero solo cuando la operación ya lo
-                                  // admite; si no, la acción muestra los datos en solo lectura.
+                                  // Logística asigna el envío; quien no tenga el permiso lo
+                                  // consulta en solo lectura.
                                   updateShipment.reset();
                                   setActionTarget({
-                                    kind:
-                                      canAssignShipping && allowsShipment(order)
-                                        ? 'shipment-form'
-                                        : 'shipment-view',
+                                    kind: canAssignShipping ? 'shipment-form' : 'shipment-view',
                                     operationId: order.operationId,
                                   });
                                 }
                               }}
                             >
-                              <Dropdown.Section>
-                                <Dropdown.Item id="shipment" textValue="Envío">
-                                  <Car className="size-4 shrink-0 text-muted" />
-                                  <Label>Envío</Label>
-                                </Dropdown.Item>
-                              </Dropdown.Section>
-                              <Separator />
+                              {allowsShipment(order) && (
+                                <>
+                                  <Dropdown.Section>
+                                    <Dropdown.Item id="shipment" textValue="Envío">
+                                      <Box className="size-4 shrink-0 text-muted" />
+                                      <Label>Envío</Label>
+                                    </Dropdown.Item>
+                                  </Dropdown.Section>
+                                  <Separator />
+                                </>
+                              )}
                               <Dropdown.Section>
                                 <Dropdown.Item id="view" textValue="Ver pedido">
                                   <Eye className="size-4 shrink-0 text-muted" />

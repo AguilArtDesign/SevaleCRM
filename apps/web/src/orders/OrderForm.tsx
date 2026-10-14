@@ -625,6 +625,7 @@ export function OrderForm({
   onSubmit: (value: CreateOrderOperationInput) => Promise<void>;
 }) {
   const [customer, setCustomer] = useState<SelectableCustomer | null>(order?.customer ?? null);
+  const isEditing = order !== null;
   const [currency, setCurrency] = useState<'COP' | 'USD'>(order?.currency ?? 'COP');
   const [billing, setBilling] = useState<BillingValue>(() =>
     order ? billingFromOrder(order) : { ...emptyAddress, email: '' },
@@ -1200,6 +1201,9 @@ export function OrderForm({
                     aria-label="Moneda"
                     value={currency}
                     className="order-currency-group"
+                    // La moneda queda fija al editar: cambiarla reinterpretaría los importes que las
+                    // tiendas y Siigo ya recibieron.
+                    isDisabled={isEditing}
                     name="order-currency"
                     orientation="horizontal"
                     onChange={(value) => changeCurrency(String(value) as 'COP' | 'USD')}
@@ -1231,6 +1235,11 @@ export function OrderForm({
                         </Radio.Content>
                       </Radio>
                     </div>
+                    {isEditing && (
+                      <p className="order-currency-locked">
+                        La moneda no se puede cambiar después de crear la operación.
+                      </p>
+                    )}
                   </RadioGroup>
 
                   <div className="order-operation-conditions">

@@ -540,32 +540,9 @@ try {
     throw new Error('La regla USD por encima del umbral es incorrecta.');
   }
 
-  const currencyChangeResponse = await api(`/api/orders/${copFlat.id}`, commercialCookie, {
-    method: 'PATCH',
-    body: JSON.stringify({
-      ...basePayload,
-      currency: 'USD',
-      paymentMethod: 'cod',
-      shippingMethod: 'flat_rate',
-      couponId: null,
-      items: [{ productId: seratus.id, quantity: 1, unitPrice: '99.99' }],
-    }),
-  });
-  expectStatus(currencyChangeResponse, 200, 'Recálculo al cambiar de COP a USD');
-  const currencyChanged = (await currencyChangeResponse.json()) as {
-    currency: string;
-    subtotal: string;
-    shippingTotal: string;
-    total: string;
-  };
-  if (
-    currencyChanged.currency !== 'USD' ||
-    currencyChanged.subtotal !== '99.99' ||
-    currencyChanged.shippingTotal !== '20.00' ||
-    currencyChanged.total !== '119.99'
-  ) {
-    throw new Error('Cambiar la moneda no recalculó automáticamente el envío y los totales.');
-  }
+  // El cambio de moneda deja de estar permitido en una operación existente: los importes ya
+  // enviados a las tiendas y a Siigo no se pueden reinterpretar. La regla USD de precio fijo se
+  // verifica más arriba, al crear la operación en su moneda definitiva.
 
   const mixedPayload = {
     ...basePayload,
@@ -853,6 +830,32 @@ try {
     );
   }
 
+  // La moneda se fija al crear la operación: los importes ya enviados a las tiendas y a Siigo no se
+  // pueden reinterpretar cambiándola al editar. Sin `unitPrice`, los importes se preparan al precio
+  // de referencia en USD y la petición llega hasta la validación de moneda.
+  const currencyLockResponse = await api(`/api/orders/${created.id}`, commercialCookie, {
+    method: 'PATCH',
+    body: JSON.stringify({
+      ...basePayload,
+      currency: 'USD',
+      couponId: null,
+      items: [{ productId: seratus.id, quantity: 2 }],
+    }),
+  });
+  expectStatus(currencyLockResponse, 409, 'Cambio de moneda en operación existente');
+  const currencyLockError = (await currencyLockResponse.json()) as {
+    error?: { code?: string };
+  };
+  if (currencyLockError.error?.code !== 'ORDER_CURRENCY_LOCKED') {
+    throw new Error('El rechazo por cambio de moneda no devolvió el código ORDER_CURRENCY_LOCKED.');
+  }
+  const afterCurrencyChange = (await (
+    await api(`/api/orders/${created.id}`, commercialCookie)
+  ).json()) as { currency: string };
+  if (afterCurrencyChange.currency !== 'COP') {
+    throw new Error('El intento de cambio de moneda modificó la operación.');
+  }
+
   expectStatus(
     await api(`/api/orders/${created.id}`, commercialCookie, { method: 'DELETE' }),
     403,
@@ -1013,7 +1016,7 @@ try {
   }
 
   process.stdout.write(
-    'Orders smoke: payment catalogs, COP/USD shipping thresholds, custom shipping, coupon snapshots, missing coupon rejection, consolidated and per-store discounts, manual price capped at the original value, authentication, RBAC, list, create, pending edit and store reconciliation checks passed.\n',
+    'Orders smoke: payment catalogs, COP/USD shipping thresholds, custom shipping, coupon snapshots, missing coupon rejection, consolidated and per-store discounts, manual price capped at the original value, locked currency on edit, authentication, RBAC, list, create, pending edit and store reconciliation checks passed.\n',
   );
 } finally {
   if (operationIds.length > 0) {

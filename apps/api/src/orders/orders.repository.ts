@@ -105,6 +105,7 @@ export type OutboundOrder = Prisma.OrderGetPayload<{ include: typeof outboundOrd
 type UpdateResult =
   | { outcome: 'NOT_FOUND' }
   | { outcome: 'NOT_EDITABLE' }
+  | { outcome: 'CURRENCY_LOCKED' }
   | { outcome: 'UPDATED'; operation: OrderOperationDetail };
 
 type DeleteResult =
@@ -531,18 +532,12 @@ export class OrdersRepository {
       const operation = await transaction.orderOperation.findFirst({
         where: { id: operationId, deletedAt: null },
         select: {
-          source: true,
           status: true,
           orders: { select: { store: true, wooOrderId: true } },
         },
       });
       if (!operation) return { outcome: 'NOT_FOUND' };
-      if (
-        (operation.source === 'CRM' && operation.status !== 'COMPLETED') ||
-        (operation.source === 'WOOCOMMERCE' && operation.status === 'CANCELLED')
-      ) {
-        return { outcome: 'NOT_ALLOWED' };
-      }
+      if (operation.status !== 'COMPLETED') return { outcome: 'NOT_ALLOWED' };
 
       const shipment = await transaction.shipment.upsert({
         where: { operationId },
@@ -748,10 +743,13 @@ export class OrdersRepository {
     return this.prisma.$transaction(async (transaction) => {
       const current = await transaction.orderOperation.findFirst({
         where: { id, deletedAt: null },
-        select: { status: true },
+        select: { status: true, currency: true },
       });
       if (!current) return { outcome: 'NOT_FOUND' };
       if (current.status !== 'PENDING') return { outcome: 'NOT_EDITABLE' };
+      // La moneda se fija al crear la operación: los pedidos ya enviados a WooCommerce y las
+      // cotizaciones de Siigo quedan con importes en esa moneda y no se pueden reinterpretar.
+      if (current.currency !== operation.currency) return { outcome: 'CURRENCY_LOCKED' };
 
       await transaction.orderOperation.update({
         where: { id },

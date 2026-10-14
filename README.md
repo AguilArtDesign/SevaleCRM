@@ -187,6 +187,40 @@ La API aplica el límite en `prepareItem`, la única puerta de entrada de precio
 
 El formulario replica el límite para avisar antes de enviar, pero la API es la fuente de verdad: un precio nunca se acepta solo porque el navegador lo permita. El campo de precio admite únicamente números enteros; no se capturan centavos.
 
+### Regla de la moneda
+
+La moneda se elige al crear la operación y queda fija: representa los importes que ya se enviaron a
+las tiendas y a Siigo, así que reinterpretarla al editar sería un error de datos. El formulario
+deshabilita el selector cuando se está editando y la API rechaza el intento con `409` y el código
+`ORDER_CURRENCY_LOCKED`:
+
+```json
+{
+  "success": false,
+  "error": {
+    "code": "ORDER_CURRENCY_LOCKED",
+    "message": "La moneda de la operación no se puede cambiar después de crearla."
+  }
+}
+```
+
+El umbral de envío depende de la moneda, así que una operación que necesite USD debe crearse en USD
+desde el principio.
+
+### Regla del envío
+
+La logística solo puede asignar datos de envío cuando la operación está completada. El menú de acciones oculta la opción **Envío** para cualquier otro estado, y la API rechaza la asignación con `409` y el código `SHIPMENT_NOT_ALLOWED`:
+
+```json
+{
+  "success": false,
+  "error": {
+    "code": "SHIPMENT_NOT_ALLOWED",
+    "message": "La operación debe estar completada para asignar información de envío."
+  }
+}
+```
+
 ### Regla del cupón
 
 Un producto cuyo precio fue modificado a la baja **queda excluido de la base del cupón**, mientras que los productos sin modificar sí lo reciben. Si un producto cuesta 127.000 y el comercial lo deja en 100.000, ese producto no participa del descuento aunque la operación tenga un cupón aplicado.

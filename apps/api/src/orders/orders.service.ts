@@ -297,6 +297,13 @@ export class OrdersService {
         'Solo las operaciones pendientes pueden editarse.',
       );
     }
+    if (result.outcome === 'CURRENCY_LOCKED') {
+      throw businessError(
+        ConflictException,
+        'ORDER_CURRENCY_LOCKED',
+        'La moneda de la operación no se puede cambiar después de crearla.',
+      );
+    }
     this.events.operationUpdated(result.operation);
     return serializeDetail(result.operation);
   }
@@ -455,7 +462,7 @@ export class OrdersService {
       throw businessError(
         ConflictException,
         'SHIPMENT_NOT_ALLOWED',
-        'La operación todavía no permite asignar información de envío.',
+        'La operación debe estar completada para asignar información de envío.',
       );
     }
     const shipmentId = result.operation.shipment?.id;

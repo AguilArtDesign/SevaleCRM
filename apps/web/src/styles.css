@@ -1348,6 +1348,17 @@ select {
   background: var(--seratus-bg);
 }
 
+/* Origen del pedido. WooCommerce conserva su morado de marca; el CRM usa una variante del acento. */
+.order-source-chip-woocommerce {
+  color: var(--woocommerce-text);
+  background: var(--woocommerce-bg);
+}
+
+.order-source-chip-crm {
+  color: var(--accent);
+  background: color-mix(in oklch, var(--accent) 14%, transparent);
+}
+
 .inventory-actions-column {
   text-align: center;
 }
@@ -3579,6 +3590,25 @@ select {
 }
 
 .order-currency-copy small {
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+/* Al editar, la moneda ya está fijada: la tarjeta elegida conserva su contraste para seguir
+   informando la moneda de la operación y la alternativa deja de parecer disponible. */
+.order-currency-group[data-disabled] .order-currency-option {
+  cursor: not-allowed;
+}
+
+.order-currency-group[data-disabled] .order-currency-option[data-selected] {
+  opacity: 1;
+}
+
+.order-currency-group[data-disabled] .order-currency-option:not([data-selected]) {
+  opacity: 0.55;
+}
+
+.order-currency-locked {
   color: var(--muted);
   font-size: 0.75rem;
 }

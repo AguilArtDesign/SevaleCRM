@@ -119,13 +119,11 @@ export function OrderAddress({
 }
 
 /**
- * El envío solo se puede asignar cuando la operación ya se completó, o cuando es un pedido de
- * WooCommerce que todavía no se canceló. El backend aplica la misma regla.
+ * El envío solo se gestiona cuando la operación está completada, que además es el estado con el que
+ * el CRM crea sus pedidos en WooCommerce. El backend aplica la misma regla.
  */
-export function allowsShipment(order: { status: OrderStatus; source: OrderSource }): boolean {
-  return (
-    order.status === 'COMPLETED' || (order.source === 'WOOCOMMERCE' && order.status !== 'CANCELLED')
-  );
+export function allowsShipment(order: { status: OrderStatus }): boolean {
+  return order.status === 'COMPLETED';
 }
 
 /** Un pedido cuenta como completado si el estado que ve el usuario es "Completado". */
@@ -223,6 +221,15 @@ export function StoreChip({ store }: Pick<OrderListRecord, 'store'>) {
       className={store === 'SERATUS' ? 'inventory-store-chip-seratus' : 'inventory-store-chip-pali'}
     >
       {store === 'SERATUS' ? 'Seratus' : 'Pali'}
+    </Chip>
+  );
+}
+
+// Origen del pedido: las tiendas usan su propio morado y el CRM el azul de acento de la aplicación.
+export function OrderSourceChip({ source }: { source: OrderSource }) {
+  return (
+    <Chip className={source === 'CRM' ? 'order-source-chip-crm' : 'order-source-chip-woocommerce'}>
+      {source === 'CRM' ? 'CRM' : 'WooCommerce'}
     </Chip>
   );
 }
