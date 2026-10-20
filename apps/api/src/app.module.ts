@@ -11,6 +11,7 @@ import { NotificationsModule } from './notifications/notifications.module.js';
 import { CustomersModule } from './customers/customers.module.js';
 import { OrdersModule } from './orders/orders.module.js';
 import { CouponsModule } from './coupons/coupons.module.js';
+import { AgreementsModule } from './agreements/agreements.module.js';
 
 @Module({
   imports: [
@@ -24,6 +25,7 @@ import { CouponsModule } from './coupons/coupons.module.js';
     CustomersModule,
     OrdersModule,
     CouponsModule,
+    AgreementsModule,
   ],
   controllers: [HealthController],
   providers: [HealthService],

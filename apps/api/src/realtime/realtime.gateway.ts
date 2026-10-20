@@ -48,6 +48,12 @@ type OrderEventBase = {
   occurredAt: string;
 };
 
+type AgreementEventBase = {
+  agreementId: number;
+  companyName: string;
+  occurredAt: string;
+};
+
 const permissionRoom = (permission: Permission) => `permission:${permission}`;
 
 function isRole(value: unknown): value is Role {
@@ -238,8 +244,47 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection {
     });
   }
 
+  emitAgreementCreated(agreement: { id: number; companyName: string }) {
+    this.agreementAudience().emit('agreement.created', this.agreementEvent(agreement));
+  }
+
+  emitAgreementUpdated(agreement: { id: number; companyName: string }) {
+    this.agreementAudience().emit('agreement.updated', this.agreementEvent(agreement));
+  }
+
+  emitAgreementCommentAdded(
+    agreement: { id: number; companyName: string },
+    comment: { id: number; comment: string },
+  ) {
+    this.agreementAudience().emit('agreement.comment.added', {
+      ...this.agreementEvent(agreement),
+      commentId: comment.id,
+      preview: comment.comment.slice(0, 120),
+    });
+  }
+
+  emitAgreementTaskUpdated(
+    agreement: { id: number; companyName: string },
+    task: { id: number; title: string; status: string },
+  ) {
+    this.agreementAudience().emit('agreement.task.updated', {
+      ...this.agreementEvent(agreement),
+      taskId: task.id,
+      title: task.title,
+      status: task.status,
+    });
+  }
+
   private productEvent(product: { id: number; sku: string }): ProductEventBase {
     return { productId: product.id, sku: product.sku, occurredAt: new Date().toISOString() };
+  }
+
+  private agreementEvent(agreement: { id: number; companyName: string }): AgreementEventBase {
+    return {
+      agreementId: agreement.id,
+      companyName: agreement.companyName,
+      occurredAt: new Date().toISOString(),
+    };
   }
 
   private customerEvent(customer: { id: number; displayName: string }): CustomerEventBase {
@@ -271,5 +316,9 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection {
 
   private orderAudience() {
     return this.server.to(permissionRoom('orders.read'));
+  }
+
+  private agreementAudience() {
+    return this.server.to(permissionRoom('agreements.read'));
   }
 }

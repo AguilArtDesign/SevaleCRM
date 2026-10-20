@@ -10,6 +10,8 @@ import { CustomersRoute } from './customers/CustomersRoute';
 import { OrdersPage } from './orders/OrdersPage';
 import { OrdersRoute } from './orders/OrdersRoute';
 import { CouponsPage } from './coupons/CouponsPage';
+import { AgreementsPage } from './agreements/AgreementsPage';
+import { AgreementDetailPage } from './agreements/AgreementDetailPage';
 import { PermissionRoute } from './auth/PermissionRoute';
 
 export function App() {
@@ -45,6 +47,22 @@ export function App() {
           element={
             <PermissionRoute permission="coupons.read">
               <CouponsPage />
+            </PermissionRoute>
+          }
+        />
+        <Route
+          path="/agreements"
+          element={
+            <PermissionRoute permission="agreements.read">
+              <AgreementsPage />
+            </PermissionRoute>
+          }
+        />
+        <Route
+          path="/agreements/:id"
+          element={
+            <PermissionRoute permission="agreements.read">
+              <AgreementDetailPage />
             </PermissionRoute>
           }
         />

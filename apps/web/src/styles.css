@@ -5005,3 +5005,290 @@ select {
     width: 100%;
   }
 }
+
+/* --- Convenios -------------------------------------------------------------------------- */
+
+.agreements-table .table__content {
+  min-width: 72rem;
+}
+
+.agreement-name-cell {
+  padding: 0;
+  background: none;
+  border: 0;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+/* El nombre de la empresa es el enlace natural a la ficha; el subrayado solo aparece al pasar. */
+.agreement-name-cell:hover strong {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.agreement-contact-cell {
+  display: grid;
+  gap: 0.1rem;
+  min-width: 0;
+}
+
+.agreement-contact-cell span {
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+/* Activo e inactivo comparten forma; sólo cambia el color, porque un inactivo sigue siendo válido. */
+.agreement-status {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  background: var(--default);
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.agreement-status--active {
+  background: var(--success-soft, var(--default));
+  color: var(--success, var(--foreground));
+}
+
+.agreement-detail-avatar {
+  background: var(--accent-soft, var(--default));
+  color: var(--accent-soft-foreground, var(--foreground));
+  font-size: 0.85rem;
+}
+
+.agreement-section {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.agreement-section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.agreement-section-heading h3 {
+  margin: 0;
+}
+
+.agreement-empty {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.8125rem;
+}
+
+/* Historial: una línea de fecha y autor, y debajo el texto tal como se escribió. */
+.agreement-comments {
+  display: grid;
+  gap: 0.75rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.agreement-comment {
+  display: grid;
+  gap: 0.25rem;
+  padding: 0.6rem 0.75rem;
+  border-radius: var(--field-radius);
+  background: var(--surface-secondary);
+}
+
+.agreement-comment-meta {
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.agreement-comment p {
+  margin: 0;
+  color: var(--foreground);
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+}
+
+.agreement-comment-form {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+}
+
+.agreement-comment-field {
+  flex: 1;
+  min-width: 0;
+}
+
+.agreement-task-tools {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.agreement-task-tools .select {
+  width: 9.5rem;
+  min-width: 0;
+}
+
+.agreement-tasks {
+  display: grid;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.agreement-task {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.6rem 0.75rem;
+  border-radius: var(--field-radius);
+  background: var(--surface-secondary);
+}
+
+/* Una tarea completada o cancelada se atenúa pero sigue visible: nunca se borra. */
+.agreement-task.is-done {
+  opacity: 0.72;
+}
+
+.agreement-task-main {
+  display: grid;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.agreement-task-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.agreement-task-title strong {
+  font-size: 0.8125rem;
+}
+
+.agreement-task-main p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  overflow-wrap: break-word;
+}
+
+.agreement-task-meta {
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.agreement-task-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  flex-shrink: 0;
+}
+
+.agreement-field-error {
+  color: var(--danger);
+  font-size: 0.75rem;
+}
+
+.agreement-form-body {
+  gap: 1.25rem;
+}
+
+/* El formulario envuelve cuerpo y pie para que Enter envíe: tiene que continuar el flex del
+   diálogo, que espera esos bloques como hijos directos, o el pie termina fuera de la ventana. */
+.agreement-form {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.agreement-task-body {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.agreement-task-assignee {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.agreement-task-assignee-label {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--foreground);
+}
+
+/* Ficha del convenio como página: la información, los comentarios y las tareas necesitan más ancho
+   que un drawer, así que la lectura se limita a una columna cómoda. */
+.agreements-detail-page {
+  display: grid;
+  gap: 1rem;
+  width: 100%;
+  max-width: 60rem;
+  margin-inline: auto;
+  align-content: start;
+}
+
+.agreements-detail-heading {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.agreements-detail-page .customer-detail-identity {
+  padding-bottom: 0.5rem;
+}
+
+.agreements-detail-page .customer-detail-section dl {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.agreements-detail-page .customer-detail-section dl .customer-detail-address,
+.agreements-detail-page .customer-detail-section dl > div:nth-child(3):last-child {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 640px) {
+  .agreements-detail-page .customer-detail-section dl {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 640px) {
+  .agreement-section-heading,
+  .agreement-comment-form {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .agreement-task-tools .select {
+    width: 100%;
+  }
+}
+
+/* La barra de Convenios tiene tres filtros fijos; sin poder envolverse, su ancho mínimo estira la
+   rejilla del panel y la página gana scroll horizontal entre 768 y 1100 px. Los anchos de cada
+   control se dejan como los define el CRM: solo se permite que salten de línea. */
+.agreements-layout {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.agreements-toolbar,
+.agreements-toolbar .customers-filters {
+  flex-wrap: wrap;
+  min-width: 0;
+}

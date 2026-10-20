@@ -3,6 +3,7 @@ import { Avatar, Button, Spinner, Typography } from '@heroui/react';
 import {
   ArrowRightFromSquare,
   Boxes3,
+  Briefcase,
   Gear,
   LayoutSideContentLeft,
   Persons,
@@ -192,6 +193,18 @@ export function AppShell() {
                 <Ticket />
               </span>
               <span>Cupones</span>
+            </NavLink>
+          )}
+
+          {user && hasPermission(user.role, 'agreements.read') && (
+            <NavLink
+              to="/agreements"
+              className={({ isActive }) => `sidebar-link${isActive ? ' sidebar-link-active' : ''}`}
+            >
+              <span className="sidebar-menu-icon" aria-hidden="true">
+                <Briefcase />
+              </span>
+              <span>Convenios</span>
             </NavLink>
           )}
 

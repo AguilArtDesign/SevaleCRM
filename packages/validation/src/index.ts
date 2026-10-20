@@ -819,6 +819,143 @@ export const notificationIdSchema = z.coerce
   .int('El identificador de la notificación no es válido.')
   .positive('El identificador de la notificación no es válido.');
 
+// --- Convenios -------------------------------------------------------------------------------
+// Los convenios son solo de Colombia: no hay país ni nombre de ciudad. El departamento se guarda
+// con su wooCode (CO-ANT) y la ciudad con el código del catálogo (05001); los nombres se resuelven
+// al leer contra el mismo catálogo que usa Clientes.
+
+export const agreementIdSchema = z.coerce
+  .number()
+  .int('El identificador del convenio no es válido.')
+  .positive('El identificador del convenio no es válido.');
+
+export const agreementCommentIdSchema = z.coerce
+  .number()
+  .int('El identificador del comentario no es válido.')
+  .positive('El identificador del comentario no es válido.');
+
+export const agreementTaskIdSchema = z.coerce
+  .number()
+  .int('El identificador de la tarea no es válido.')
+  .positive('El identificador de la tarea no es válido.');
+
+// Un NIT puede llevar guiones y dígito de verificación, así que se guarda como texto. Es único
+// cuando existe, pero puede quedar vacío: en MySQL varios NULL no chocan en un índice único.
+const agreementNitSchema = z
+  .union([
+    z.string().trim().max(32, 'El NIT no puede superar los 32 caracteres.'),
+    z.null(),
+    z.undefined(),
+  ])
+  .optional()
+  .transform((value) => value || null);
+
+const agreementEmailSchema = z
+  .union([emailSchema, z.literal(''), z.null(), z.undefined()])
+  .optional()
+  .transform((value) => value || null);
+
+// La fecha y hora de una tarea llega del navegador como ISO (con huso), o como Date cuando el
+// propio formulario reutiliza este esquema antes de enviar. Se normaliza siempre a Date.
+const agreementScheduledAtSchema = z
+  .union([z.string().trim().min(1, 'Selecciona la fecha y hora de la tarea.'), z.date()])
+  .transform((value) => (value instanceof Date ? value : new Date(value)))
+  .refine(
+    (date) => !Number.isNaN(date.getTime()),
+    'Selecciona una fecha y hora válidas para la tarea.',
+  );
+
+const agreementOptionalUserIdSchema = z
+  .union([userIdSchema, z.literal(''), z.null(), z.undefined()])
+  .optional()
+  .transform((value) => value || null);
+
+const agreementFieldsSchema = z.object({
+  companyName: z
+    .string()
+    .trim()
+    .min(1, 'Ingresa el nombre de la empresa.')
+    .max(255, 'El nombre de la empresa no puede superar los 255 caracteres.'),
+  nit: agreementNitSchema,
+  region: optionalText(32),
+  cityCode: optionalText(32),
+  postalCode: optionalText(32),
+  addressLine1: optionalText(255),
+  addressLine2: optionalText(255),
+  contactName: optionalText(191),
+  contactPosition: optionalText(191),
+  contactEmail: agreementEmailSchema,
+  contactPhone: optionalText(32),
+  description: optionalText(5_000),
+  // Sin default aquí: un `active` con valor por defecto haría que un PATCH vacío activara el
+  // convenio sin que nadie lo pidiera. El valor inicial se define solo en el alta.
+  active: z.boolean().optional(),
+});
+
+export const createAgreementSchema = agreementFieldsSchema.extend({
+  active: z.boolean().default(true),
+});
+
+export const updateAgreementSchema = agreementFieldsSchema
+  .partial()
+  .refine((data) => Object.keys(data).length > 0, 'Debes enviar al menos un cambio.');
+
+export const agreementListQuerySchema = z.object({
+  search: z.string().trim().max(191, 'La búsqueda es demasiado larga.').default(''),
+  // Los inactivos no se ocultan solos: el filtro decide qué se ve.
+  active: z.enum(['all', 'active', 'inactive']).default('all'),
+  region: z.string().trim().max(32).optional(),
+  cityCode: z.string().trim().max(32).optional(),
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(20),
+  sort: z.enum(['companyName', 'nit', 'createdAt', 'updatedAt']).default('createdAt'),
+  order: z.enum(['asc', 'desc']).default('desc'),
+});
+
+export const agreementCommentsQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(50),
+});
+
+// Los comentarios son el historial de lo hablado con la empresa: se crean y se leen, nunca se
+// editan ni se eliminan.
+export const createAgreementCommentSchema = z.object({
+  comment: z
+    .string()
+    .trim()
+    .min(1, 'Escribe un comentario.')
+    .max(5_000, 'El comentario no puede superar los 5000 caracteres.'),
+});
+
+export const agreementTaskStatusSchema = z.enum(['PENDING', 'COMPLETED', 'CANCELLED']);
+
+export const agreementTasksQuerySchema = z.object({
+  status: agreementTaskStatusSchema.optional(),
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(50),
+});
+
+export const createAgreementTaskSchema = z.object({
+  title: z
+    .string()
+    .trim()
+    .min(1, 'Escribe el título de la tarea.')
+    .max(255, 'El título no puede superar los 255 caracteres.'),
+  description: optionalText(5_000),
+  scheduledAt: agreementScheduledAtSchema,
+  assignedUserId: agreementOptionalUserIdSchema,
+});
+
+// El estado no se edita a mano: se completa o se cancela con sus propias acciones.
+export const updateAgreementTaskSchema = z
+  .object({
+    title: z.string().trim().min(1, 'Escribe el título de la tarea.').max(255).optional(),
+    description: optionalText(5_000).optional(),
+    scheduledAt: agreementScheduledAtSchema.optional(),
+    assignedUserId: agreementOptionalUserIdSchema.optional(),
+  })
+  .refine((data) => Object.keys(data).length > 0, 'Debes enviar al menos un cambio.');
+
 export type ExternalProductQuery = z.infer<typeof externalProductQuerySchema>;
 export type CreateProductLinkInput = z.infer<typeof createProductLinkSchema>;
 export type SiigoProductLookupQuery = z.infer<typeof siigoProductLookupQuerySchema>;
@@ -840,3 +977,13 @@ export type UpdateCouponInput = z.infer<typeof updateCouponSchema>;
 export type CouponListQuery = z.infer<typeof couponListQuerySchema>;
 export type ProductListQuery = z.infer<typeof productListQuerySchema>;
 export type BulkProductSyncInput = z.infer<typeof bulkProductSyncSchema>;
+
+export type CreateAgreementInput = z.infer<typeof createAgreementSchema>;
+export type UpdateAgreementInput = z.infer<typeof updateAgreementSchema>;
+export type AgreementListQuery = z.infer<typeof agreementListQuerySchema>;
+export type AgreementCommentsQuery = z.infer<typeof agreementCommentsQuerySchema>;
+export type CreateAgreementCommentInput = z.infer<typeof createAgreementCommentSchema>;
+export type AgreementTasksQuery = z.infer<typeof agreementTasksQuerySchema>;
+export type CreateAgreementTaskInput = z.infer<typeof createAgreementTaskSchema>;
+export type UpdateAgreementTaskInput = z.infer<typeof updateAgreementTaskSchema>;
+export type AgreementTaskStatusInput = z.infer<typeof agreementTaskStatusSchema>;

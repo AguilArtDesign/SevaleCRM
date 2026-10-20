@@ -29,6 +29,12 @@ export const permissions = [
   'coupons.update',
   'coupons.delete',
   'coupons.sync',
+  'agreements.read',
+  'agreements.create',
+  'agreements.update',
+  'agreements.comments.create',
+  'agreements.tasks.create',
+  'agreements.tasks.update',
 ] as const;
 
 export type Role = (typeof roles)[number];
@@ -50,6 +56,12 @@ export const rolePermissions = {
     'orders.siigo_quote.create',
     'orders.sync.retry',
     'coupons.read',
+    'agreements.read',
+    'agreements.create',
+    'agreements.update',
+    'agreements.comments.create',
+    'agreements.tasks.create',
+    'agreements.tasks.update',
   ],
   LOGISTICS: ['inventory.read', 'orders.read', 'orders.shipping.update'],
 } as const satisfies Record<Role, readonly Permission[]>;

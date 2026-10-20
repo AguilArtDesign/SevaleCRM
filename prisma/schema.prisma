@@ -89,23 +89,27 @@ enum CouponSyncStatus {
 }
 
 model User {
-  id                String             @id @default(uuid()) @db.VarChar(36)
-  name              String             @db.VarChar(191)
-  email             String             @unique @db.VarChar(191)
-  sellerId          Int?               @unique @map("seller_id")
-  emailVerified     Boolean            @default(false) @map("email_verified")
-  image             String?            @db.Text
-  role              Role               @default(COMMERCIAL)
-  active            Boolean            @default(true)
-  lastLoginAt       DateTime?          @map("last_login_at")
-  createdAt         DateTime           @default(now()) @map("created_at")
-  updatedAt         DateTime           @updatedAt @map("updated_at")
-  sessions          Session[]
-  accounts          Account[]
-  notificationReads NotificationRead[]
-  productSyncJobs   ProductSyncJob[]
-  orderOperations   OrderOperation[]   @relation("OrderOperationCreatedBy")
-  shipmentEvents    ShipmentEvent[]    @relation("ShipmentEventCreatedBy")
+  id                     String             @id @default(uuid()) @db.VarChar(36)
+  name                   String             @db.VarChar(191)
+  email                  String             @unique @db.VarChar(191)
+  sellerId               Int?               @unique @map("seller_id")
+  emailVerified          Boolean            @default(false) @map("email_verified")
+  image                  String?            @db.Text
+  role                   Role               @default(COMMERCIAL)
+  active                 Boolean            @default(true)
+  lastLoginAt            DateTime?          @map("last_login_at")
+  createdAt              DateTime           @default(now()) @map("created_at")
+  updatedAt              DateTime           @updatedAt @map("updated_at")
+  sessions               Session[]
+  accounts               Account[]
+  notificationReads      NotificationRead[]
+  productSyncJobs        ProductSyncJob[]
+  orderOperations        OrderOperation[]   @relation("OrderOperationCreatedBy")
+  shipmentEvents         ShipmentEvent[]    @relation("ShipmentEventCreatedBy")
+  agreementsCreated      Agreement[]        @relation("AgreementCreatedBy")
+  agreementComments      AgreementComment[] @relation("AgreementCommentAuthor")
+  agreementTasksCreated  AgreementTask[]    @relation("AgreementTaskCreatedBy")
+  agreementTasksAssigned AgreementTask[]    @relation("AgreementTaskAssignee")
 
   @@map("users")
 }
@@ -587,4 +591,88 @@ model NotificationRead {
   @@id([notificationId, userId])
   @@index([userId])
   @@map("notification_reads")
+}
+
+enum AgreementTaskStatus {
+  PENDING
+  COMPLETED
+  CANCELLED
+}
+
+/// Convenio comercial con una empresa. Es una entidad maestra independiente: no es un cliente, no
+/// tiene integraciones y nunca se borra. Su ciclo de vida es active = true / false.
+model Agreement {
+  id              Int      @id @default(autoincrement())
+  companyName     String   @map("company_name") @db.VarChar(255)
+  nit             String?  @unique @db.VarChar(32)
+  // Solo Colombia: el departamento se guarda con su woocode (CO-ANT) y la ciudad con el código del
+  // catálogo (05001). Los nombres se resuelven al leer, igual que en customers.
+  region          String?  @db.VarChar(32)
+  cityCode        String?  @map("city_code") @db.VarChar(32)
+  postalCode      String?  @map("postal_code") @db.VarChar(32)
+  addressLine1    String?  @map("address_line_1") @db.VarChar(255)
+  addressLine2    String?  @map("address_line_2") @db.VarChar(255)
+  contactName     String?  @map("contact_name") @db.VarChar(191)
+  contactPosition String?  @map("contact_position") @db.VarChar(191)
+  contactEmail    String?  @map("contact_email") @db.VarChar(191)
+  contactPhone    String?  @map("contact_phone") @db.VarChar(32)
+  description     String?  @db.Text
+  active          Boolean  @default(true)
+  // Nullable con SetNull para que eliminar un usuario no bloquee ni borre el convenio.
+  createdByUserId String?  @map("created_by_user_id") @db.VarChar(36)
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  createdBy User?              @relation("AgreementCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  comments  AgreementComment[]
+  tasks     AgreementTask[]
+
+  @@index([companyName])
+  @@index([active])
+  @@index([region])
+  @@index([cityCode])
+  @@index([createdAt])
+  @@map("agreements")
+}
+
+/// Historial de lo hablado con la empresa. Inmutable: no se edita ni se elimina, por eso no tiene
+/// deletedAt y el módulo no expone PATCH ni DELETE.
+model AgreementComment {
+  id          Int      @id @default(autoincrement())
+  agreementId Int      @map("agreement_id")
+  userId      String?  @map("user_id") @db.VarChar(36)
+  comment     String   @db.Text
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  agreement Agreement @relation(fields: [agreementId], references: [id], onDelete: Cascade)
+  user      User?     @relation("AgreementCommentAuthor", fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([agreementId, createdAt])
+  @@index([userId])
+  @@map("agreement_comments")
+}
+
+/// Compromiso o actividad del convenio. Se completa o se cancela; nunca se borra.
+model AgreementTask {
+  id              Int                 @id @default(autoincrement())
+  agreementId     Int                 @map("agreement_id")
+  title           String              @db.VarChar(255)
+  description     String?             @db.Text
+  scheduledAt     DateTime            @map("scheduled_at")
+  status          AgreementTaskStatus @default(PENDING)
+  assignedUserId  String?             @map("assigned_user_id") @db.VarChar(36)
+  createdByUserId String?             @map("created_by_user_id") @db.VarChar(36)
+  completedAt     DateTime?           @map("completed_at")
+  createdAt       DateTime            @default(now()) @map("created_at")
+  updatedAt       DateTime            @updatedAt @map("updated_at")
+
+  agreement    Agreement @relation(fields: [agreementId], references: [id], onDelete: Cascade)
+  assignedUser User?     @relation("AgreementTaskAssignee", fields: [assignedUserId], references: [id], onDelete: SetNull)
+  createdBy    User?     @relation("AgreementTaskCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+
+  @@index([agreementId, status])
+  @@index([scheduledAt])
+  @@index([assignedUserId])
+  @@map("agreement_tasks")
 }
