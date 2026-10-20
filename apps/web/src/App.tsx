@@ -12,6 +12,7 @@ import { OrdersRoute } from './orders/OrdersRoute';
 import { CouponsPage } from './coupons/CouponsPage';
 import { AgreementsPage } from './agreements/AgreementsPage';
 import { AgreementDetailPage } from './agreements/AgreementDetailPage';
+import { ProspectsPage } from './prospects/ProspectsPage';
 import { PermissionRoute } from './auth/PermissionRoute';
 
 export function App() {
@@ -63,6 +64,14 @@ export function App() {
           element={
             <PermissionRoute permission="agreements.read">
               <AgreementDetailPage />
+            </PermissionRoute>
+          }
+        />
+        <Route
+          path="/prospects"
+          element={
+            <PermissionRoute permission="prospects.read">
+              <ProspectsPage />
             </PermissionRoute>
           }
         />

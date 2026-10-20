@@ -32,6 +32,6 @@ import { WooCustomerMapper } from './mapping/woo-customer.mapper.js';
     SiigoCustomerService,
     WooCustomerService,
   ],
-  exports: [SiigoCustomerService, WooCustomerService],
+  exports: [SiigoCustomerService, WooCustomerService, CustomersService],
 })
 export class CustomersModule {}

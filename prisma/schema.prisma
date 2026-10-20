@@ -110,6 +110,8 @@ model User {
   agreementComments      AgreementComment[] @relation("AgreementCommentAuthor")
   agreementTasksCreated  AgreementTask[]    @relation("AgreementTaskCreatedBy")
   agreementTasksAssigned AgreementTask[]    @relation("AgreementTaskAssignee")
+  prospectsAssigned      Prospect[]         @relation("ProspectAssignee")
+  prospectsCreated       Prospect[]         @relation("ProspectCreator")
 
   @@map("users")
 }
@@ -185,6 +187,7 @@ model Customer {
   integrations           CustomerIntegration[]
   notifications          Notification[]
   orderOperations        OrderOperation[]
+  convertedProspects     Prospect[]            @relation("ProspectConvertedCustomer")
 
   @@unique([documentType, documentNumber])
   @@index([documentNumber])
@@ -626,6 +629,7 @@ model Agreement {
   createdBy User?              @relation("AgreementCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
   comments  AgreementComment[]
   tasks     AgreementTask[]
+  prospects Prospect[]
 
   @@index([companyName])
   @@index([active])
@@ -675,4 +679,104 @@ model AgreementTask {
   @@index([scheduledAt])
   @@index([assignedUserId])
   @@map("agreement_tasks")
+}
+
+enum ProspectStatus {
+  NEW
+  IN_PROGRESS
+  QUALIFIED
+  CONVERTED
+  LOST
+}
+
+enum ProspectSource {
+  MANUAL
+  WHATSAPP
+  WEB
+  REFERRAL
+  OTHER
+}
+
+/// Prospecto comercial. Es un dominio aparte de Customer: admite datos incompletos, no tiene
+/// integraciones ni pedidos, y solo se convierte cuando el comercial confirma que está completo.
+/// Al convertir pasa a CONVERTED y deja de mostrarse en el panel; la fila se conserva como
+/// historial de la conversión.
+model Prospect {
+  id                  Int                 @id @default(autoincrement())
+  personType          CustomerPersonType? @map("person_type")
+  firstName           String?             @map("first_name") @db.VarChar(191)
+  lastName            String?             @map("last_name") @db.VarChar(191)
+  displayName         String              @map("display_name") @db.VarChar(255)
+  company             String?             @db.VarChar(255)
+  documentType        String?             @map("document_type") @db.VarChar(20)
+  documentNumber      String?             @map("document_number") @db.VarChar(20)
+  checkDigit          String?             @map("check_digit") @db.VarChar(1)
+  email               String?             @db.VarChar(191)
+  phone               String?             @db.VarChar(32)
+  country             String?             @db.VarChar(2)
+  // Igual que en customers: Colombia guarda region + cityCode y resuelve el nombre; el exterior
+  // guarda cityName con cityCode nulo.
+  region              String?             @db.VarChar(32)
+  cityCode            String?             @map("city_code") @db.VarChar(32)
+  cityName            String?             @map("city_name") @db.VarChar(191)
+  postalCode          String?             @map("postal_code") @db.VarChar(32)
+  addressLine1        String?             @map("address_line_1") @db.VarChar(255)
+  addressLine2        String?             @map("address_line_2") @db.VarChar(255)
+  agreementId         Int?                @map("agreement_id")
+  source              ProspectSource      @default(MANUAL)
+  status              ProspectStatus      @default(NEW)
+  // Nullable con SetNull: los usuarios se borran físicamente y eso no debe frenar ni borrar nada.
+  assignedUserId      String?             @map("assigned_user_id") @db.VarChar(36)
+  notes               String?             @db.Text
+  // Se pierde el vínculo si el cliente se borra, pero el prospecto sigue marcado como convertido.
+  convertedCustomerId Int?                @map("converted_customer_id")
+  convertedAt         DateTime?           @map("converted_at")
+  createdByUserId     String?             @map("created_by_user_id") @db.VarChar(36)
+  createdAt           DateTime            @default(now()) @map("created_at")
+  updatedAt           DateTime            @updatedAt @map("updated_at")
+
+  agreement         Agreement?    @relation(fields: [agreementId], references: [id], onDelete: SetNull)
+  assignedUser      User?         @relation("ProspectAssignee", fields: [assignedUserId], references: [id], onDelete: SetNull)
+  createdBy         User?         @relation("ProspectCreator", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  convertedCustomer Customer?     @relation("ProspectConvertedCustomer", fields: [convertedCustomerId], references: [id], onDelete: SetNull)
+  tags              ProspectTag[]
+
+  @@index([displayName])
+  @@index([documentNumber])
+  @@index([email])
+  @@index([status])
+  @@index([source])
+  @@index([assignedUserId])
+  @@index([agreementId])
+  @@index([convertedCustomerId])
+  @@index([createdAt])
+  @@map("prospects")
+}
+
+/// Catálogo de etiquetas. `name` es único para que el filtro por etiqueta no se rompa con
+/// duplicados que solo difieren en mayúsculas.
+model Tag {
+  id        Int           @id @default(autoincrement())
+  name      String        @unique @db.VarChar(100)
+  active    Boolean       @default(true)
+  createdAt DateTime      @default(now()) @map("created_at")
+  updatedAt DateTime      @updatedAt @map("updated_at")
+  prospects ProspectTag[]
+
+  @@index([active])
+  @@map("tags")
+}
+
+/// Tabla puente. No tiene valor histórico propio, así que se borra en cascada.
+model ProspectTag {
+  prospectId Int      @map("prospect_id")
+  tagId      Int      @map("tag_id")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  prospect Prospect @relation(fields: [prospectId], references: [id], onDelete: Cascade)
+  tag      Tag      @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([prospectId, tagId])
+  @@index([tagId])
+  @@map("prospect_tags")
 }

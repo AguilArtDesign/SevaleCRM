@@ -48,6 +48,11 @@ type CustomerFormValue = Omit<CreateCustomerInput, 'documentType'> & {
   documentType: CreateCustomerInput['documentType'] | '';
 };
 
+export type CustomerFormMode = 'create' | 'edit' | 'convert';
+
+/** Valores con los que se abre el formulario cuando no viene de un cliente guardado. */
+export type CustomerFormPrefill = Partial<CustomerFormValue>;
+
 type DocumentFieldErrors = Partial<Record<'documentType' | 'documentNumber', string>>;
 
 const emptyCustomer: CustomerFormValue = {
@@ -72,8 +77,11 @@ const emptyCustomer: CustomerFormValue = {
   fiscalResponsibilities: ['R-99-PN'],
 };
 
-function initialValue(customer?: CustomerRecord | null): CustomerFormValue {
-  if (!customer) return { ...emptyCustomer };
+function initialValue(
+  customer?: CustomerRecord | null,
+  prefill?: CustomerFormPrefill,
+): CustomerFormValue {
+  if (!customer) return { ...emptyCustomer, ...prefill };
   return {
     personType: customer.personType,
     firstName: customer.firstName,
@@ -157,11 +165,29 @@ function CustomerSourceChips({ sources }: { sources: CustomerIntegration['provid
   );
 }
 
+/** Campos que la conversión de un prospecto exige por encima de lo que ya pide Clientes. */
+function missingForConversion(value: CreateCustomerInput): string[] {
+  const missing: string[] = [];
+  if (!value.firstName) missing.push('nombres');
+  if (!value.lastName) missing.push('apellidos');
+  if (value.personType === 'COMPANY' && !value.company) missing.push('empresa');
+  if (!value.email) missing.push('correo');
+  if (!value.phone) missing.push('teléfono');
+  if (!value.country) missing.push('país');
+  if (!value.region) missing.push('departamento o región');
+  if (!value.cityCode && value.country === 'CO') missing.push('ciudad');
+  if (!value.cityName && value.country && value.country !== 'CO') missing.push('ciudad');
+  if (!value.addressLine1) missing.push('dirección');
+  return missing;
+}
+
 export function CustomerForm({
   isOpen,
   customer,
   isSubmitting,
   serverError,
+  mode = 'create',
+  prefill,
   onClose,
   onOpenExisting,
   onSubmit,
@@ -170,11 +196,14 @@ export function CustomerForm({
   customer?: CustomerRecord | null;
   isSubmitting: boolean;
   serverError: string;
+  /** `convert` reutiliza este mismo formulario para pasar un prospecto a cliente. */
+  mode?: CustomerFormMode;
+  prefill?: CustomerFormPrefill;
   onClose: () => void;
   onOpenExisting: (customerId: number) => void;
   onSubmit: (value: CreateCustomerInput) => Promise<void>;
 }) {
-  const [value, setValue] = useState<CustomerFormValue>(() => initialValue(customer));
+  const [value, setValue] = useState<CustomerFormValue>(() => initialValue(customer, prefill));
   const [error, setError] = useState('');
   const [documentErrors, setDocumentErrors] = useState<DocumentFieldErrors>({});
   const [lookupError, setLookupError] = useState('');
@@ -301,11 +330,22 @@ export function CustomerForm({
       setError(formIssue?.message ?? '');
       return;
     }
+    if (mode === 'convert') {
+      const missing = missingForConversion(parsed.data);
+      if (missing.length > 0) {
+        setError(`Completa ${missing.join(', ')} para convertir el prospecto en cliente.`);
+        return;
+      }
+    }
     const normalizedPhone = parsed.data.phone
       ? await normalizePhoneE164Lazy(parsed.data.phone, parsed.data.country ?? '')
       : null;
     if (parsed.data.phone && !normalizedPhone) {
-      setError('El teléfono no es válido para el país seleccionado.');
+      setError(
+        parsed.data.country
+          ? 'El teléfono no es válido para el país seleccionado.'
+          : 'Selecciona el país para validar el teléfono.',
+      );
       return;
     }
     setError('');
@@ -372,11 +412,19 @@ export function CustomerForm({
             <Modal.CloseTrigger aria-label="Cerrar formulario" />
             <Modal.Header>
               <div>
-                <Modal.Heading>{isEdit ? 'Editar cliente' : 'Crear cliente'}</Modal.Heading>
+                <Modal.Heading>
+                  {isEdit
+                    ? 'Editar cliente'
+                    : mode === 'convert'
+                      ? 'Convertir en cliente'
+                      : 'Crear cliente'}
+                </Modal.Heading>
                 <p>
                   {isEdit
                     ? 'Actualiza la información del cliente.'
-                    : 'Registra al cliente para sincronizar.'}
+                    : mode === 'convert'
+                      ? 'Completa lo que falte. Al guardar, el prospecto pasa a Clientes.'
+                      : 'Registra al cliente para sincronizar.'}
                 </p>
               </div>
             </Modal.Header>
@@ -568,7 +616,7 @@ export function CustomerForm({
                           variant="secondary"
                           onPress={() => onOpenExisting(lookupResult.customerId)}
                         >
-                          Ver cliente
+                          {mode === 'convert' ? 'Vincular a este cliente' : 'Ver cliente'}
                         </Button>
                       </Alert.Content>
                     </Alert>
@@ -964,10 +1012,14 @@ export function CustomerForm({
                       {isPending
                         ? isEdit
                           ? 'Guardando'
-                          : 'Creando'
+                          : mode === 'convert'
+                            ? 'Convirtiendo'
+                            : 'Creando'
                         : isEdit
                           ? 'Guardar cambios'
-                          : 'Crear cliente'}
+                          : mode === 'convert'
+                            ? 'Convertir en cliente'
+                            : 'Crear cliente'}
                     </>
                   )}
                 </Button>

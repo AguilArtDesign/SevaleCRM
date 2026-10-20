@@ -1,4 +1,5 @@
-import { Fragment, useRef, useState } from 'react';
+import { Fragment, useEffect, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { Selection } from '@heroui/react';
 import {
@@ -378,6 +379,24 @@ export function CustomersPage() {
   const [siigoStateCode, setSiigoStateCode] = useState('');
   const [siigoCityCode, setSiigoCityCode] = useState('');
   const [siigoResolutionError, setSiigoResolutionError] = useState('');
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  // Un enlace externo (`/customers?customer=194`) abre la ficha: lo usa la ficha del prospecto
+  // convertido para llevar al cliente concreto sin obligar a buscarlo.
+  const customerParam = searchParams.get('customer');
+  useEffect(() => {
+    if (!customerParam) return;
+    const requested = Number(customerParam);
+    if (!Number.isInteger(requested) || requested <= 0) return;
+    setSelectedId(requested);
+    setSearchParams(
+      (current) => {
+        current.delete('customer');
+        return current;
+      },
+      { replace: true },
+    );
+  }, [customerParam, setSearchParams]);
 
   const customersQuery = useQuery({
     queryKey: ['customers', filters],

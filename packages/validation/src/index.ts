@@ -987,3 +987,224 @@ export type AgreementTasksQuery = z.infer<typeof agreementTasksQuerySchema>;
 export type CreateAgreementTaskInput = z.infer<typeof createAgreementTaskSchema>;
 export type UpdateAgreementTaskInput = z.infer<typeof updateAgreementTaskSchema>;
 export type AgreementTaskStatusInput = z.infer<typeof agreementTaskStatusSchema>;
+
+// --- Prospectos ------------------------------------------------------------------------------
+// Un prospecto admite datos incompletos: casi todo es opcional y lo único que se exige es que el
+// registro no quede vacío. Los campos replican los de Clientes para que la conversión sea un mapeo
+// directo, sin renombrar nada.
+
+export const prospectIdSchema = z.coerce
+  .number()
+  .int('El identificador del prospecto no es válido.')
+  .positive('El identificador del prospecto no es válido.');
+
+export const tagIdSchema = z.coerce
+  .number()
+  .int('El identificador de la etiqueta no es válido.')
+  .positive('El identificador de la etiqueta no es válido.');
+
+export const prospectStatusSchema = z.enum([
+  'NEW',
+  'IN_PROGRESS',
+  'QUALIFIED',
+  'CONVERTED',
+  'LOST',
+]);
+
+export const prospectSourceSchema = z.enum(['MANUAL', 'WHATSAPP', 'WEB', 'REFERRAL', 'OTHER']);
+
+const prospectOptionalUserIdSchema = z
+  .union([userIdSchema, z.literal(''), z.null(), z.undefined()])
+  .optional()
+  .transform((value) => value || null);
+
+const prospectOptionalAgreementIdSchema = z
+  .union([
+    z.coerce.number().int().positive('El identificador del convenio no es válido.'),
+    z.literal(''),
+    z.null(),
+    z.undefined(),
+  ])
+  .optional()
+  .transform((value) => (value === '' || value === undefined ? null : value));
+
+const prospectFieldSchemas = {
+  personType: z
+    .union([customerPersonTypeSchema, z.literal(''), z.null(), z.undefined()])
+    .optional()
+    .transform((value) => value || null),
+  firstName: optionalText(191),
+  lastName: optionalText(191),
+  company: optionalText(255),
+  documentType: z
+    .union([z.string().trim().max(20), z.null(), z.undefined()])
+    .optional()
+    .transform((value) => value || null),
+  documentNumber: z
+    .union([z.string().trim().max(20), z.null(), z.undefined()])
+    .optional()
+    .transform((value) => value || null),
+  checkDigit: z
+    .union([
+      z.string().trim().regex(/^\d$/, 'El dígito de verificación debe ser un número.'),
+      z.literal(''),
+      z.null(),
+      z.undefined(),
+    ])
+    .optional()
+    .transform((value) => value || null),
+  email: z
+    .union([emailSchema, z.literal(''), z.null(), z.undefined()])
+    .optional()
+    .transform((value) => value || null),
+  // El teléfono se valida contra el país cuando se conoce; si no, se acepta E.164 directo. La
+  // normalización real la hace el backend con la utilidad de Clientes.
+  phone: z
+    .union([
+      z
+        .string()
+        .trim()
+        .transform((value) => value.replace(/[\s().-]/g, ''))
+        .pipe(
+          z
+            .string()
+            .regex(
+              /^\+?[0-9]{7,15}$/,
+              'El teléfono debe usar formato internacional, por ejemplo +573001234567.',
+            ),
+        ),
+      z.literal(''),
+      z.null(),
+      z.undefined(),
+    ])
+    .optional()
+    .transform((value) => value || null),
+  country: z
+    .union([
+      z.string().trim().toUpperCase().length(2, 'Selecciona un país válido.'),
+      z.literal(''),
+      z.null(),
+      z.undefined(),
+    ])
+    .optional()
+    .transform((value) => value || null),
+  region: optionalText(32),
+  cityCode: optionalText(32),
+  cityName: optionalText(191),
+  postalCode: optionalText(32),
+  addressLine1: optionalText(255),
+  addressLine2: optionalText(255),
+  agreementId: prospectOptionalAgreementIdSchema,
+  source: prospectSourceSchema.optional(),
+  status: prospectStatusSchema.optional(),
+  assignedUserId: prospectOptionalUserIdSchema,
+  notes: optionalText(5_000),
+  tagIds: z
+    .array(z.coerce.number().int().positive())
+    .max(20, 'Un prospecto no puede tener más de 20 etiquetas.')
+    .optional(),
+} as const;
+
+const prospectFieldsSchema = z.object(prospectFieldSchemas);
+
+// Un prospecto con solo estado, origen, convenio, comercial o notas no sirve de nada: exige al
+// menos un dato que permita identificarlo o contactarlo.
+const prospectIdentityFields = [
+  'firstName',
+  'lastName',
+  'company',
+  'documentNumber',
+  'email',
+  'phone',
+] as const;
+
+function hasProspectIdentity(
+  input: Record<(typeof prospectIdentityFields)[number], string | null>,
+) {
+  return prospectIdentityFields.some((field) => Boolean(input[field]));
+}
+
+export const createProspectSchema = prospectFieldsSchema.superRefine((input, context) => {
+  if (!hasProspectIdentity(input)) {
+    context.addIssue({
+      code: 'custom',
+      path: ['firstName'],
+      message:
+        'Ingresa al menos un dato del prospecto: nombre, empresa, documento, correo o teléfono.',
+    });
+  }
+});
+
+export const updateProspectSchema = prospectFieldsSchema
+  .partial()
+  .refine((data) => Object.keys(data).length > 0, 'Debes enviar al menos un cambio.');
+
+export const prospectListQuerySchema = z.object({
+  search: z.string().trim().max(191, 'La búsqueda es demasiado larga.').default(''),
+  // CONVERTED no se mezcla con el trabajo diario: solo aparece si se pide explícitamente.
+  status: z.union([prospectStatusSchema, z.literal('all')]).default('all'),
+  source: prospectSourceSchema.optional(),
+  assignedUserId: userIdSchema.optional(),
+  unassigned: z
+    .union([z.literal('true'), z.literal('false'), z.boolean()])
+    .transform((value) => value === true || value === 'true')
+    .optional(),
+  agreementId: z.coerce.number().int().positive().optional(),
+  tagId: z.coerce.number().int().positive().optional(),
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(20),
+  sort: z.enum(['displayName', 'createdAt', 'updatedAt', 'status']).default('updatedAt'),
+  order: z.enum(['asc', 'desc']).default('desc'),
+});
+
+// La conversión reutiliza el mismo contrato que el alta de Clientes: si Clientes cambia, la
+// conversión cambia con él y no hay dos validaciones que se desincronicen.
+export const prospectConvertSchema = createCustomerSchema;
+
+export const prospectConvertLinkSchema = z.object({
+  customerId: z.coerce
+    .number()
+    .int('El identificador del cliente no es válido.')
+    .positive('El identificador del cliente no es válido.'),
+});
+
+export const createTagSchema = z.object({
+  name: z
+    .string()
+    .trim()
+    .min(1, 'Escribe el nombre de la etiqueta.')
+    .max(100, 'El nombre de la etiqueta no puede superar los 100 caracteres.'),
+  active: z.boolean().default(true),
+});
+
+export const updateTagSchema = z
+  .object({
+    name: z
+      .string()
+      .trim()
+      .min(1, 'Escribe el nombre de la etiqueta.')
+      .max(100, 'El nombre de la etiqueta no puede superar los 100 caracteres.')
+      .optional(),
+    active: z.boolean().optional(),
+  })
+  .refine((data) => Object.keys(data).length > 0, 'Debes enviar al menos un cambio.');
+
+export const tagListQuerySchema = z.object({
+  // `.optional()` va al final: en Zod v4 una unión con `undefined` no marca la clave como
+  // opcional, y el esquema la exigiría aunque no llegue en la query.
+  active: z
+    .union([z.literal('true'), z.literal('false'), z.boolean()])
+    .transform((value) => value === true || value === 'true')
+    .optional(),
+});
+
+export type CreateProspectInput = z.infer<typeof createProspectSchema>;
+export type UpdateProspectInput = z.infer<typeof updateProspectSchema>;
+export type ProspectListQuery = z.infer<typeof prospectListQuerySchema>;
+export type ProspectConvertInput = z.infer<typeof prospectConvertSchema>;
+export type ProspectConvertLinkInput = z.infer<typeof prospectConvertLinkSchema>;
+export type CreateTagInput = z.infer<typeof createTagSchema>;
+export type UpdateTagInput = z.infer<typeof updateTagSchema>;
+export type TagListQuery = z.infer<typeof tagListQuerySchema>;
+export type ProspectStatusInput = z.infer<typeof prospectStatusSchema>;
+export type ProspectSourceInput = z.infer<typeof prospectSourceSchema>;

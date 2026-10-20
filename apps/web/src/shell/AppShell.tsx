@@ -208,6 +208,18 @@ export function AppShell() {
             </NavLink>
           )}
 
+          {user && hasPermission(user.role, 'prospects.read') && (
+            <NavLink
+              to="/prospects"
+              className={({ isActive }) => `sidebar-link${isActive ? ' sidebar-link-active' : ''}`}
+            >
+              <span className="sidebar-menu-icon" aria-hidden="true">
+                <PersonMagnifier />
+              </span>
+              <span>Prospectos</span>
+            </NavLink>
+          )}
+
           {(user?.role === 'ADMIN' || user?.role === 'COMMERCIAL') && (
             <NavLink
               to="/customers"

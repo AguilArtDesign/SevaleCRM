@@ -5292,3 +5292,122 @@ select {
   flex-wrap: wrap;
   min-width: 0;
 }
+
+/* --- Prospectos --- */
+/* Cinco filtros fijos más la búsqueda: la barra ocupa dos líneas a partir de ~1280 px. En lugar de
+   empujar la página fuera del viewport (la tabla tiene altura fija), el panel reserva el alto
+   disponible y la tabla cede lo que sobre. Así no aparece scroll vertical en la página. */
+.prospects-layout {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto auto minmax(0, 1fr);
+  height: calc(100vh - 6rem);
+  min-height: 0;
+}
+
+.prospects-table {
+  height: auto;
+  min-height: 0;
+}
+
+.prospects-toolbar,
+.prospects-toolbar .customers-filters {
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.prospects-heading-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.prospects-table .table__content {
+  min-width: 78rem;
+}
+
+.prospect-tag-cell {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+
+.prospect-tag-selector {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.prospect-tags-empty {
+  color: var(--muted);
+  font-size: 0.8125rem;
+}
+
+.prospect-tag-create {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.prospect-tag-create > :first-child {
+  flex: 1;
+  min-width: 0;
+}
+
+.prospect-tag-list {
+  display: grid;
+  gap: 0.25rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.prospect-tag-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding-block: 0.5rem;
+  border-bottom: 1px solid var(--separator);
+}
+
+.prospect-tag-list li:last-child {
+  border-bottom: none;
+}
+
+.prospect-tag-list li > div {
+  display: grid;
+  gap: 0.1rem;
+  min-width: 0;
+}
+
+.prospect-tag-list li span {
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.prospect-detail-drawer.drawer__dialog {
+  width: min(100%, 32rem);
+}
+
+.prospect-detail-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.prospect-detail-notes {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+}
+
+.prospect-conversion {
+  display: grid;
+  gap: 0.6rem;
+  justify-items: start;
+}
+
+.prospect-conversion p {
+  margin: 0;
+}

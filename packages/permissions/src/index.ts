@@ -35,6 +35,12 @@ export const permissions = [
   'agreements.comments.create',
   'agreements.tasks.create',
   'agreements.tasks.update',
+  'prospects.read',
+  'prospects.create',
+  'prospects.update',
+  'prospects.delete',
+  'prospects.convert',
+  'tags.manage',
 ] as const;
 
 export type Role = (typeof roles)[number];
@@ -62,6 +68,12 @@ export const rolePermissions = {
     'agreements.comments.create',
     'agreements.tasks.create',
     'agreements.tasks.update',
+    // Un comercial crea, edita y convierte prospectos, pero no los borra ni administra el
+    // catálogo de etiquetas.
+    'prospects.read',
+    'prospects.create',
+    'prospects.update',
+    'prospects.convert',
   ],
   LOGISTICS: ['inventory.read', 'orders.read', 'orders.shipping.update'],
 } as const satisfies Record<Role, readonly Permission[]>;

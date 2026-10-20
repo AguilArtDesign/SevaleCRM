@@ -54,6 +54,13 @@ type AgreementEventBase = {
   occurredAt: string;
 };
 
+type ProspectEventBase = {
+  prospectId: number;
+  displayName: string;
+  status: string;
+  occurredAt: string;
+};
+
 const permissionRoom = (permission: Permission) => `permission:${permission}`;
 
 function isRole(value: unknown): value is Role {
@@ -275,10 +282,38 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection {
     });
   }
 
+  emitProspectCreated(prospect: { id: number; displayName: string; status: string }) {
+    this.prospectAudience().emit('prospect.created', this.prospectEvent(prospect));
+  }
+
+  emitProspectUpdated(prospect: { id: number; displayName: string; status: string }) {
+    this.prospectAudience().emit('prospect.updated', this.prospectEvent(prospect));
+  }
+
+  emitProspectDeleted(prospect: { id: number; displayName: string; status: string }) {
+    this.prospectAudience().emit('prospect.deleted', this.prospectEvent(prospect));
+  }
+
+  emitProspectConverted(prospect: { id: number; displayName: string; status: string }) {
+    this.prospectAudience().emit('prospect.converted', this.prospectEvent(prospect));
+  }
+
+  private prospectEvent(prospect: {
+    id: number;
+    displayName: string;
+    status: string;
+  }): ProspectEventBase {
+    return {
+      prospectId: prospect.id,
+      displayName: prospect.displayName,
+      status: prospect.status,
+      occurredAt: new Date().toISOString(),
+    };
+  }
+
   private productEvent(product: { id: number; sku: string }): ProductEventBase {
     return { productId: product.id, sku: product.sku, occurredAt: new Date().toISOString() };
   }
-
   private agreementEvent(agreement: { id: number; companyName: string }): AgreementEventBase {
     return {
       agreementId: agreement.id,
@@ -320,5 +355,9 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection {
 
   private agreementAudience() {
     return this.server.to(permissionRoom('agreements.read'));
+  }
+
+  private prospectAudience() {
+    return this.server.to(permissionRoom('prospects.read'));
   }
 }
