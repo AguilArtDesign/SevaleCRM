@@ -12,7 +12,7 @@ const prospectInclude = {
   assignedUser: userSummary,
   createdBy: userSummary,
   convertedCustomer: { select: { id: true, displayName: true, documentNumber: true } },
-  tags: { include: { tag: { select: { id: true, name: true, active: true } } } },
+  tags: { include: { tag: { select: { id: true, name: true, color: true, active: true } } } },
 } as const;
 
 export type ProspectWithRelations = Prisma.ProspectGetPayload<{
@@ -154,7 +154,13 @@ export class ProspectsRepository {
   tags({ active }: TagListQuery) {
     return this.prisma.tag.findMany({
       where: active === undefined ? {} : { active },
-      select: { id: true, name: true, active: true, _count: { select: { prospects: true } } },
+      select: {
+        id: true,
+        name: true,
+        color: true,
+        active: true,
+        _count: { select: { prospects: true } },
+      },
       orderBy: [{ name: 'asc' }],
     });
   }
@@ -163,18 +169,30 @@ export class ProspectsRepository {
     return this.prisma.tag.findFirst({ where: { name }, select: { id: true } });
   }
 
-  createTag(name: string, active: boolean) {
+  createTag(name: string, active: boolean, color: string | null) {
     return this.prisma.tag.create({
-      data: { name, active },
-      select: { id: true, name: true, active: true, _count: { select: { prospects: true } } },
+      data: { name, active, color },
+      select: {
+        id: true,
+        name: true,
+        color: true,
+        active: true,
+        _count: { select: { prospects: true } },
+      },
     });
   }
 
-  updateTag(id: number, data: { name?: string; active?: boolean }) {
+  updateTag(id: number, data: { name?: string; active?: boolean; color?: string | null }) {
     return this.prisma.tag.update({
       where: { id },
       data,
-      select: { id: true, name: true, active: true, _count: { select: { prospects: true } } },
+      select: {
+        id: true,
+        name: true,
+        color: true,
+        active: true,
+        _count: { select: { prospects: true } },
+      },
     });
   }
 

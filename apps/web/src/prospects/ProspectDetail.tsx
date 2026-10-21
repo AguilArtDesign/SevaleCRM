@@ -2,6 +2,7 @@ import { Alert, Button, Spinner } from '@heroui/react';
 import { ArrowUpRightFromSquare, PaperPlane } from '@gravity-ui/icons';
 import { Chip } from '../components/Chip';
 import type { ProspectRecord } from './api';
+import { TagChip } from './TagChip';
 import {
   dateOnly,
   dateTime,
@@ -112,17 +113,9 @@ export function ProspectDetail({
           {prospect.tags.length === 0 ? (
             <span className="text-muted">Sin etiquetas</span>
           ) : (
-            prospect.tags.map((tag) => (
-              <Chip key={tag.id} color="default">
-                {tag.name}
-              </Chip>
-            ))
+            prospect.tags.map((tag) => <TagChip key={tag.id} tag={tag} />)
           )}
         </div>
-      </Section>
-
-      <Section title="Notas">
-        <p className="prospect-detail-notes">{prospect.notes || 'Sin notas.'}</p>
       </Section>
 
       <Section title={converted ? 'Conversión' : 'Pasar a Clientes'}>

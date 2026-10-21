@@ -90,8 +90,3 @@ export const completenessLabels: Record<string, string> = {
 export function missingFieldsText(missing: string[]): string {
   return missing.map((field) => completenessLabels[field] ?? field).join(', ');
 }
-
-/** Contacto visible en la tabla: el correo y el teléfono que existan. */
-export function prospectContactLines(prospect: ProspectRecord): string[] {
-  return [prospect.phone, prospect.email].filter((value): value is string => Boolean(value));
-}

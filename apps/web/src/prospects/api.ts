@@ -19,6 +19,8 @@ export type ProspectAgreement = { id: number; companyName: string; active: boole
 export type TagRecord = {
   id: number;
   name: string;
+  /** Hex `#RRGGBB`; nulo en las etiquetas creadas antes de existir el campo. */
+  color: string | null;
   active: boolean;
   /** Prospectos que usan la etiqueta; lo calcula la API al listar el catálogo. */
   _count?: { prospects: number };
@@ -48,7 +50,6 @@ export type ProspectRecord = {
   addressLine2: string | null;
   source: ProspectSource;
   status: ProspectStatus;
-  notes: string | null;
   agreement: ProspectAgreement | null;
   assignedUser: ProspectUser | null;
   createdBy: ProspectUser | null;

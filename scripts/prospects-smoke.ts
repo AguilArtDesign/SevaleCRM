@@ -63,18 +63,17 @@ type ProspectBody = {
   cityName: string | null;
   status: 'NEW' | 'IN_PROGRESS' | 'QUALIFIED' | 'CONVERTED' | 'LOST';
   source: 'MANUAL' | 'WHATSAPP' | 'WEB' | 'REFERRAL' | 'OTHER';
-  notes: string | null;
   agreement: { id: number; companyName: string; active: boolean } | null;
   assignedUser: { id: string; name: string } | null;
   createdBy: { id: string; name: string } | null;
   convertedCustomer: { id: number; displayName: string } | null;
   convertedAt: string | null;
-  tags: Array<{ id: number; name: string; active: boolean }>;
+  tags: Array<{ id: number; name: string; color: string | null; active: boolean }>;
   completeness: { complete: boolean; missing: string[] };
   location: { countryName: string | null; regionName: string | null; cityName: string | null };
 };
 
-type TagBody = { id: number; name: string; active: boolean };
+type TagBody = { id: number; name: string; color: string | null; active: boolean };
 
 type PageBody = {
   data: ProspectBody[];
@@ -191,6 +190,10 @@ try {
   assert(minimal.phone === '+573001112233', 'El teléfono no se normalizó a E.164.');
   assert(minimal.displayName === '+573001112233', 'displayName no cayó al teléfono.');
   assert(minimal.status === 'NEW', 'El estado inicial no es NEW.');
+  assert(
+    minimal.personType === 'PERSON',
+    'El prospecto no nació como PERSON cuando no se indicó el tipo de persona.',
+  );
   assert(minimal.source === 'MANUAL', 'El origen por defecto no es MANUAL.');
   assert(minimal.createdBy?.id === commercialId, 'No se registró al comercial como creador.');
   assert(!minimal.completeness.complete, 'Un prospecto con solo teléfono no puede estar completo.');
@@ -199,11 +202,83 @@ try {
     'La lista de datos faltantes no menciona el nombre.',
   );
 
+  // --- Alta mínima: solo nombre, solo correo, empresa con correo y documento parcial ---------
+  // Basta un dato identificable para guardar el prospecto; cada respaldo de `displayName` se prueba
+  // dejando ese único dato como fuente.
+  const nameOnly = await json<ProspectBody>(
+    await api('/api/prospects', commercialCookie, {
+      method: 'POST',
+      body: JSON.stringify({ firstName: 'Nombre', lastName: 'Suelto' }),
+    }),
+    'Alta con solo nombre',
+    201,
+  );
+  createdProspectIds.push(nameOnly.id);
+  assert(nameOnly.displayName === 'Nombre Suelto', 'displayName no se formó con el nombre.');
+  assert(
+    !nameOnly.completeness.complete,
+    'Un nombre sin contacto ni ubicación no puede estar completo.',
+  );
+
+  const emailOnly = await json<ProspectBody>(
+    await api('/api/prospects', commercialCookie, {
+      method: 'POST',
+      body: JSON.stringify({ email: '  SOLO.CORREO@Example.INVALID ' }),
+    }),
+    'Alta con solo correo',
+    201,
+  );
+  createdProspectIds.push(emailOnly.id);
+  assert(
+    emailOnly.email === 'solo.correo@example.invalid',
+    'El correo suelto no se normalizó a minúsculas y sin espacios.',
+  );
+  assert(emailOnly.displayName === 'solo.correo@example.invalid', 'displayName no cayó al correo.');
+
+  const companyOnly = await json<ProspectBody>(
+    await api('/api/prospects', commercialCookie, {
+      method: 'POST',
+      body: JSON.stringify({
+        personType: 'COMPANY',
+        company: '  Empresa Suelta SAS ',
+        email: 'empresa@example.invalid',
+      }),
+    }),
+    'Alta con empresa y correo',
+    201,
+  );
+  createdProspectIds.push(companyOnly.id);
+  assert(
+    companyOnly.displayName === 'Empresa Suelta SAS',
+    'displayName no cayó a la empresa ni se recortó.',
+  );
+
+  // El documento y sus tres campos son opcionales e independientes: mientras siga siendo prospecto
+  // se admite solo el número, sin tipo ni dígito de verificación.
+  const partialDocument = await json<ProspectBody>(
+    await api('/api/prospects', commercialCookie, {
+      method: 'POST',
+      body: JSON.stringify({
+        firstName: 'Documento',
+        lastName: 'Parcial',
+        documentNumber: '  900123456  ',
+      }),
+    }),
+    'Alta con documento parcial',
+    201,
+  );
+  createdProspectIds.push(partialDocument.id);
+  assert(partialDocument.documentNumber === '900123456', 'El número de documento no se recortó.');
+  assert(
+    !partialDocument.completeness.complete,
+    'Un documento sin tipo no completa la ficha del prospecto.',
+  );
+
   // --- Rechazo del formulario vacío -------------------------------------------------------
   await expectError(
     await api('/api/prospects', commercialCookie, {
       method: 'POST',
-      body: JSON.stringify({ notes: 'sin datos', status: 'NEW', source: 'MANUAL' }),
+      body: JSON.stringify({ status: 'NEW', source: 'MANUAL' }),
     }),
     400,
     'VALIDATION_ERROR',
@@ -252,6 +327,48 @@ try {
     listedTags.some((item) => item.id === tag.id),
     'El comercial necesita leer las etiquetas para asignarlas.',
   );
+  // El color es opcional: una etiqueta creada sin él queda en nulo y el front cae al chip neutro.
+  assert(
+    listedTags.find((item) => item.id === tag.id)?.color === null,
+    'Una etiqueta sin color debe quedar en nulo.',
+  );
+  await expectStatus(
+    await api('/api/tags', adminCookie, {
+      method: 'POST',
+      body: JSON.stringify({ name: `${tagName} color inválido`, color: 'azul' }),
+    }),
+    400,
+    'Color de etiqueta que no es hexadecimal',
+  );
+  const coloredTag = await json<TagBody>(
+    await api('/api/tags', adminCookie, {
+      method: 'POST',
+      body: JSON.stringify({ name: `${tagName} con color`, color: '#16A34A' }),
+    }),
+    'Alta de etiqueta con color',
+    201,
+  );
+  createdTagIds.push(coloredTag.id);
+  assert(coloredTag.color === '#16A34A', 'El color enviado al crear no se guardó.');
+  const recolored = await json<TagBody>(
+    await api(`/api/tags/${coloredTag.id}`, adminCookie, {
+      method: 'PATCH',
+      body: JSON.stringify({ name: `${tagName} renombrada`, color: '#F59E0B' }),
+    }),
+    'Edición de nombre y color',
+  );
+  assert(
+    recolored.name === `${tagName} renombrada` && recolored.color === '#F59E0B',
+    'Renombrar y recolorear en la misma petición no se guardó.',
+  );
+  await expectStatus(
+    await api(`/api/tags/${coloredTag.id}`, commercialCookie, {
+      method: 'PATCH',
+      body: JSON.stringify({ color: '#000000' }),
+    }),
+    403,
+    'Edición de color como comercial',
+  );
 
   // --- Alta completa -----------------------------------------------------------------------
   const full = await json<ProspectBody>(
@@ -276,7 +393,6 @@ try {
         agreementId: agreement.id,
         assignedUserId: commercialId,
         status: 'QUALIFIED',
-        notes: 'Prospecto de prueba',
         tagIds: [tag.id, secondTag.id],
       }),
     }),
@@ -495,6 +611,35 @@ try {
     byTag.data.some((item) => item.id === full.id),
     'El filtro por etiqueta no devolvió el prospecto.',
   );
+
+  // El filtro por comercial se comprueba con un prospecto realmente asignado al administrador.
+  await json<ProspectBody>(
+    await api(`/api/prospects/${companyOnly.id}`, adminCookie, {
+      method: 'PATCH',
+      body: JSON.stringify({ assignedUserId: adminId }),
+    }),
+    'Asignar el prospecto al administrador',
+  );
+  const byAssignee = await json<PageBody>(
+    await api(`/api/prospects?assignedUserId=${adminId}`, adminCookie),
+    'Filtro por comercial',
+  );
+  assert(
+    byAssignee.data.some((item) => item.id === companyOnly.id),
+    'El filtro por comercial no devolvió el prospecto asignado.',
+  );
+  assert(
+    byAssignee.data.every((item) => item.assignedUser?.id === adminId),
+    'El filtro por comercial devolvió prospectos de otra persona.',
+  );
+  const bySource = await json<PageBody>(
+    await api('/api/prospects?source=MANUAL', adminCookie),
+    'Filtro por origen',
+  );
+  assert(
+    bySource.data.length > 0 && bySource.data.every((item) => item.source === 'MANUAL'),
+    'El filtro por origen devolvió otros orígenes.',
+  );
   const byStatus = await json<PageBody>(
     await api('/api/prospects?status=QUALIFIED', adminCookie),
     'Filtro por estado',
@@ -509,6 +654,28 @@ try {
   );
   assert(paged.data.length === 1, 'La paginación no respetó pageSize.');
   assert(paged.pagination.totalPages >= 2, 'La paginación no calculó las páginas totales.');
+
+  // --- Convenio inactivo: el vínculo histórico se conserva ----------------------------------
+  await expectStatus(
+    await api(`/api/agreements/${agreement.id}`, adminCookie, {
+      method: 'PATCH',
+      body: JSON.stringify({ active: false }),
+    }),
+    200,
+    'Desactivar el convenio del prospecto',
+  );
+  const withInactiveAgreement = await json<ProspectBody>(
+    await api(`/api/prospects/${full.id}`, adminCookie),
+    'Prospecto con convenio inactivo',
+  );
+  assert(
+    withInactiveAgreement.agreement?.id === agreement.id,
+    'El prospecto perdió el convenio al desactivarlo.',
+  );
+  assert(
+    withInactiveAgreement.agreement.active === false,
+    'El prospecto no reflejó el convenio inactivo.',
+  );
 
   // El respaldo de `displayName` se comprueba al final para no borrar el nombre antes de buscarlo.
   const fallback = await json<ProspectBody>(
@@ -628,6 +795,15 @@ try {
     !defaultList.data.some((item) => item.id === full.id),
     'El prospecto convertido sigue apareciendo en el listado normal.',
   );
+  // Tampoco cuenta en el total de la paginación: el efecto para el usuario es el de un borrado.
+  const convertedCounter = await json<PageBody>(
+    await api(`/api/prospects?search=${documentNumber}2`, adminCookie),
+    'Contador tras convertir',
+  );
+  assert(
+    convertedCounter.pagination.total === 0 && convertedCounter.data.length === 0,
+    'El prospecto convertido sigue contando en el total del listado por defecto.',
+  );
   const convertedFilter = await json<PageBody>(
     await api('/api/prospects?status=CONVERTED', adminCookie),
     'Filtro de convertidos',
@@ -732,7 +908,7 @@ try {
   assert(survivor.assignedUser === null, 'El prospecto no sobrevivió al borrado del comercial.');
 
   process.stdout.write(
-    'Prospects smoke: auth, RBAC (admin/commercial/logistics), minimal and full create, empty-form rejection, phone/email normalization, displayName fallback chain, CO/international location rules, tags (unique name, admin-only writes), edit (status, unassigned, tag replacement, displayName recalculation), search, filters, pagination, conversion to new customer, link to existing customer, double-conversion guard, admin-only physical delete and survival after assignee deletion passed.\n',
+    'Prospects smoke: auth, RBAC (admin/commercial/logistics), minimal create by phone/name/email/company/partial document, empty-form rejection, phone/email normalization, displayName fallback chain, CO/international location rules, tags (unique name, admin-only writes, hex color create/rename/recolor, invalid color rejection), edit (status, assigned and unassigned, tag replacement, displayName recalculation), search, filters (status, commercial, agreement, tag, source, unassigned), pagination, inactive agreement link, conversion to new customer, converted prospect hidden from listing and counter, link to existing customer, double-conversion guard, admin-only physical delete and survival after assignee deletion passed.\n',
   );
 } finally {
   if (createdProspectIds.length) {

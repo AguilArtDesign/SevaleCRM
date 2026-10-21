@@ -1,10 +1,18 @@
-import { useEffect, useMemo, useState } from 'react';
+import {
+  useEffect,
+  useMemo,
+  useState,
+  type MouseEvent as ReactMouseEvent,
+  type PointerEvent as ReactPointerEvent,
+} from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   AlertDialog,
   Alert,
+  Avatar,
   Button,
+  Checkbox,
   Drawer,
   Dropdown,
   EmptyState,
@@ -15,10 +23,12 @@ import {
   Spinner,
   Table,
   toast,
+  type Selection,
 } from '@heroui/react';
 import {
   EllipsisVertical,
   Eye,
+  Funnel,
   Pencil,
   PersonMagnifier,
   Plus,
@@ -27,12 +37,15 @@ import {
   Xmark,
 } from '@gravity-ui/icons';
 import { hasPermission } from '@sevale/permissions';
+import { customerCountryFlagPath } from '@sevale/shared';
 import type { CreateCustomerInput } from '@sevale/validation';
 import { Chip } from '../components/Chip';
 import { getPaginationItems, Pagination } from '../components/Pagination';
 import { Select } from '../components/Select';
+import { useFormattedPhone } from '../components/useFormattedPhone';
 import { CustomerAutocomplete } from '../customers/CustomerAutocomplete';
 import { CustomerForm, type CustomerFormPrefill } from '../customers/CustomerForm';
+import { customerAvatarClass, customerInitials } from '../customers/presentation';
 import { useCurrentUser } from '../users/useCurrentUser';
 import {
   fetchActiveAgreements,
@@ -43,11 +56,11 @@ import {
 } from './api';
 import { ProspectDetail } from './ProspectDetail';
 import { ProspectForm, type ProspectFormValue } from './ProspectForm';
+import { TagChip, TagColorDot } from './TagChip';
 import { TagsDialog } from './TagsDialog';
 import {
   dateOnly,
   messageFrom,
-  prospectContactLines,
   prospectSourceMeta,
   prospectStatusFilterOptions,
   prospectStatusMeta,
@@ -105,10 +118,24 @@ function toApiInput(value: ProspectFormValue, tagIds: number[]) {
     source: value.source,
     status: value.status,
     assignedUserId: value.assignedUserId || null,
-    notes: value.notes,
     tagIds,
   };
 }
+
+/** El teléfono se guarda pegado (`+573044251788`) y se muestra con la agrupación de su país. */
+function ProspectPhone({ phone, country }: { phone: string | null; country: string | null }) {
+  const formatted = useFormattedPhone(phone, country);
+  return <strong className="customer-phone-cell">{formatted || '--'}</strong>;
+}
+
+/**
+ * La fila se marca solo con el check: estas celdas cortan el evento para que un clic en cualquier
+ * columna no seleccione el prospecto. Es el mismo recurso que usan las otras tablas del CRM.
+ */
+const ignoreRowPress = {
+  onClick: (event: ReactMouseEvent<HTMLElement>) => event.stopPropagation(),
+  onPointerDown: (event: ReactPointerEvent<HTMLElement>) => event.stopPropagation(),
+};
 
 export function ProspectsPage() {
   const { user } = useCurrentUser();
@@ -129,6 +156,11 @@ export function ProspectsPage() {
   const [convertTarget, setConvertTarget] = useState<ProspectRecord | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ProspectRecord | null>(null);
   const [tagsOpen, setTagsOpen] = useState(false);
+  // Los filtros viven siempre en el panel: así pueden crecer sin rehacer la barra.
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  // Selección de filas para las acciones masivas que vendrán después. Se guarda por página, igual
+  // que en Pedidos, para que al cambiar de página no queden ids que ya no se ven.
+  const [selectedKeys, setSelectedKeys] = useState<Selection>(new Set());
 
   const listQuery = useQuery({
     queryKey: ['prospects', filters],
@@ -219,6 +251,20 @@ export function ProspectsPage() {
 
   const totalPages = listQuery.data?.pagination.totalPages ?? 1;
   const rows = useMemo(() => listQuery.data?.data ?? [], [listQuery.data]);
+  const selectedIdSet = selectedKeys === 'all' ? new Set<number>() : selectedKeys;
+  const currentPageIds = new Set(rows.map((prospect) => prospect.id));
+  const currentPageSelection = new Set(
+    [...selectedIdSet].filter((key) => currentPageIds.has(Number(key))),
+  );
+  const updatePageSelection = (selection: Selection) => {
+    setSelectedKeys((current) => {
+      const next = new Set(current === 'all' ? [] : current);
+      currentPageIds.forEach((id) => next.delete(id));
+      if (selection === 'all') currentPageIds.forEach((id) => next.add(id));
+      else selection.forEach((key) => next.add(Number(key)));
+      return next;
+    });
+  };
 
   useEffect(() => {
     if (filters.page > totalPages) {
@@ -226,15 +272,227 @@ export function ProspectsPage() {
     }
   }, [filters.page, totalPages]);
 
-  const hasFilters =
-    Boolean(
-      filters.search ||
-      filters.source ||
-      filters.assignedUserId ||
-      filters.unassigned ||
-      filters.agreementId ||
-      filters.tagId,
-    ) || filters.status !== initialFilters.status;
+  /**
+   * Filtros aplicados con su etiqueta legible y la forma de quitarlos. Se muestran como chips bajo
+   * la barra en cualquier ancho: con el panel colapsado son la única pista de por qué la tabla trae
+   * pocos prospectos, y así nunca queda un filtro activo invisible.
+   */
+  const activeFilters = useMemo(() => {
+    const chips: Array<{ key: string; label: string; clear: () => void }> = [];
+    const resetPage = (changes: Partial<Filters>) =>
+      setFilters((current) => ({ ...current, ...changes, page: 1 }));
+
+    if (filters.search) {
+      chips.push({
+        key: 'search',
+        label: `Búsqueda: ${filters.search}`,
+        clear: () => {
+          setSearchDraft('');
+          resetPage({ search: '' });
+        },
+      });
+    }
+    if (filters.status !== initialFilters.status) {
+      const label =
+        prospectStatusFilterOptions.find((option) => option.id === filters.status)?.label ??
+        filters.status;
+      chips.push({
+        key: 'status',
+        label: `Estado: ${label}`,
+        clear: () => resetPage({ status: initialFilters.status }),
+      });
+    }
+    if (filters.source) {
+      chips.push({
+        key: 'source',
+        label: `Origen: ${prospectSourceMeta[filters.source]}`,
+        clear: () => resetPage({ source: '' }),
+      });
+    }
+    if (filters.unassigned) {
+      chips.push({
+        key: 'assignee',
+        label: 'Comercial: Sin asignar',
+        clear: () => resetPage({ unassigned: false }),
+      });
+    } else if (filters.assignedUserId) {
+      const name = assigneesQuery.data?.find((item) => item.id === filters.assignedUserId)?.name;
+      chips.push({
+        key: 'assignee',
+        label: `Comercial: ${name ?? 'Seleccionado'}`,
+        clear: () => resetPage({ assignedUserId: '' }),
+      });
+    }
+    if (filters.agreementId) {
+      const company = agreementsQuery.data?.find(
+        (item) => String(item.id) === filters.agreementId,
+      )?.companyName;
+      chips.push({
+        key: 'agreement',
+        label: `Convenio: ${company ?? 'Seleccionado'}`,
+        clear: () => resetPage({ agreementId: '' }),
+      });
+    }
+    if (filters.tagId) {
+      const tag = tagsQuery.data?.find((item) => String(item.id) === filters.tagId)?.name;
+      chips.push({
+        key: 'tag',
+        label: `Etiqueta: ${tag ?? 'Seleccionada'}`,
+        clear: () => resetPage({ tagId: '' }),
+      });
+    }
+    return chips;
+  }, [agreementsQuery.data, assigneesQuery.data, filters, tagsQuery.data]);
+
+  const clearAllFilters = () => {
+    setSearchDraft('');
+    setFilters(initialFilters);
+  };
+
+  /**
+   * Los cinco filtros se dibujan una sola vez y se usan en dos sitios: la barra (pantallas anchas) y
+   * el panel lateral (pantallas angostas). Cuál se ve lo decide el CSS, así que al cambiar el tamaño
+   * de la ventana no hay que volver a montar nada.
+   */
+  const filterControls = (
+    <>
+      <Select
+        aria-label="Filtrar por estado"
+        variant="secondary"
+        selectedKey={filters.status}
+        onSelectionChange={(key) =>
+          setFilters((current) => ({
+            ...current,
+            status: String(key) as ProspectStatusFilter,
+            page: 1,
+          }))
+        }
+      >
+        <Select.Trigger>
+          <Select.Value />
+          <Select.Indicator />
+        </Select.Trigger>
+        <Select.Popover>
+          <ListBox>
+            {prospectStatusFilterOptions.map((option) => (
+              <ListBox.Item key={option.id} id={option.id} textValue={option.label}>
+                {option.label}
+              </ListBox.Item>
+            ))}
+          </ListBox>
+        </Select.Popover>
+      </Select>
+
+      <Select
+        aria-label="Filtrar por origen"
+        variant="secondary"
+        selectedKey={filters.source || 'all'}
+        onSelectionChange={(key) =>
+          setFilters((current) => ({
+            ...current,
+            source: String(key) === 'all' ? '' : (String(key) as keyof typeof prospectSourceMeta),
+            page: 1,
+          }))
+        }
+      >
+        <Select.Trigger>
+          <Select.Value />
+          <Select.Indicator />
+        </Select.Trigger>
+        <Select.Popover>
+          <ListBox>
+            <ListBox.Item id="all" textValue="Todos los orígenes">
+              Todos los orígenes
+            </ListBox.Item>
+            {Object.entries(prospectSourceMeta).map(([key, label]) => (
+              <ListBox.Item key={key} id={key} textValue={label}>
+                {label}
+              </ListBox.Item>
+            ))}
+          </ListBox>
+        </Select.Popover>
+      </Select>
+
+      <Select
+        aria-label="Filtrar por comercial"
+        variant="secondary"
+        selectedKey={filters.unassigned ? 'unassigned' : filters.assignedUserId || 'all'}
+        onSelectionChange={(key) => {
+          const selected = String(key);
+          setFilters((current) => ({
+            ...current,
+            page: 1,
+            unassigned: selected === 'unassigned',
+            assignedUserId: selected === 'all' || selected === 'unassigned' ? '' : selected,
+          }));
+        }}
+      >
+        <Select.Trigger>
+          <Select.Value />
+          <Select.Indicator />
+        </Select.Trigger>
+        <Select.Popover>
+          <ListBox>
+            <ListBox.Item id="all" textValue="Todos los comerciales">
+              Todos los comerciales
+            </ListBox.Item>
+            <ListBox.Item id="unassigned" textValue="Sin asignar">
+              Sin asignar
+            </ListBox.Item>
+            {(assigneesQuery.data ?? []).map((assignee) => (
+              <ListBox.Item key={assignee.id} id={assignee.id} textValue={assignee.name}>
+                {assignee.name}
+              </ListBox.Item>
+            ))}
+          </ListBox>
+        </Select.Popover>
+      </Select>
+
+      <CustomerAutocomplete
+        ariaLabel="Filtrar por convenio"
+        placeholder="Todos los convenios"
+        value={filters.agreementId}
+        options={(agreementsQuery.data ?? []).map((agreement) => ({
+          id: String(agreement.id),
+          name: agreement.companyName,
+        }))}
+        onChange={(agreementId) => setFilters((current) => ({ ...current, agreementId, page: 1 }))}
+      />
+
+      <Select
+        aria-label="Filtrar por etiqueta"
+        variant="secondary"
+        selectedKey={filters.tagId || 'all'}
+        onSelectionChange={(key) =>
+          setFilters((current) => ({
+            ...current,
+            tagId: String(key) === 'all' ? '' : String(key),
+            page: 1,
+          }))
+        }
+      >
+        <Select.Trigger>
+          <Select.Value />
+          <Select.Indicator />
+        </Select.Trigger>
+        <Select.Popover>
+          <ListBox>
+            <ListBox.Item id="all" textValue="Todas las etiquetas">
+              Todas las etiquetas
+            </ListBox.Item>
+            {(tagsQuery.data ?? []).map((tag) => (
+              <ListBox.Item key={tag.id} id={String(tag.id)} textValue={tag.name}>
+                <span className="prospect-tag-option">
+                  <TagColorDot color={tag.color} />
+                  {tag.name}
+                </span>
+              </ListBox.Item>
+            ))}
+          </ListBox>
+        </Select.Popover>
+      </Select>
+    </>
+  );
 
   const openCreate = () => {
     setEditing(null);
@@ -246,58 +504,64 @@ export function ProspectsPage() {
     setFormOpen(true);
   };
 
-  const rowActions = (prospect: ProspectRecord) => (
-    <Dropdown>
-      <Button
-        className="inventory-actions-trigger"
-        isIconOnly
-        size="sm"
-        variant="ghost"
-        aria-label={`Acciones para ${prospect.displayName}`}
-      >
-        <EllipsisVertical className="text-muted" width={17} height={17} />
-      </Button>
-      <Dropdown.Popover className="inventory-actions-popover" placement="bottom end">
-        <Dropdown.Menu
+  const rowActions = (prospect: ProspectRecord) => {
+    // El convertido es historial inmutable: el backend rechaza editar, convertir y borrar, así que
+    // el menú solo ofrece la consulta en lugar de acciones que fallarían.
+    const editable = prospect.status !== 'CONVERTED';
+
+    return (
+      <Dropdown>
+        <Button
+          className="inventory-actions-trigger"
+          isIconOnly
+          size="sm"
+          variant="ghost"
           aria-label={`Acciones para ${prospect.displayName}`}
-          onAction={(key) => {
-            if (String(key) === 'view') setDetailId(prospect.id);
-            if (String(key) === 'edit') openEdit(prospect);
-            if (String(key) === 'convert') setConvertTarget(prospect);
-            if (String(key) === 'delete') setDeleteTarget(prospect);
-          }}
         >
-          <Dropdown.Section>
-            <Dropdown.Item id="view" textValue="Ver prospecto">
-              <Eye className="size-4 shrink-0 text-muted" aria-hidden="true" />
-              <Label>Ver prospecto</Label>
-            </Dropdown.Item>
-            {canUpdate && (
-              <Dropdown.Item id="edit" textValue="Editar prospecto">
-                <Pencil className="size-4 shrink-0 text-muted" aria-hidden="true" />
-                <Label>Editar</Label>
-              </Dropdown.Item>
-            )}
-            {canConvert && (
-              <Dropdown.Item id="convert" textValue="Convertir en cliente">
-                <PersonMagnifier className="size-4 shrink-0 text-muted" aria-hidden="true" />
-                <Label>Convertir en cliente</Label>
-              </Dropdown.Item>
-            )}
-          </Dropdown.Section>
-          {canDelete && <Separator />}
-          {canDelete && (
+          <EllipsisVertical className="text-muted" width={17} height={17} />
+        </Button>
+        <Dropdown.Popover className="inventory-actions-popover" placement="bottom end">
+          <Dropdown.Menu
+            aria-label={`Acciones para ${prospect.displayName}`}
+            onAction={(key) => {
+              if (String(key) === 'view') setDetailId(prospect.id);
+              if (String(key) === 'edit') openEdit(prospect);
+              if (String(key) === 'convert') setConvertTarget(prospect);
+              if (String(key) === 'delete') setDeleteTarget(prospect);
+            }}
+          >
             <Dropdown.Section>
-              <Dropdown.Item id="delete" textValue="Eliminar prospecto" variant="danger">
-                <TrashBin className="size-4 shrink-0 text-danger" aria-hidden="true" />
-                <Label>Eliminar</Label>
+              <Dropdown.Item id="view" textValue="Detalles del prospecto">
+                <Eye className="size-4 shrink-0 text-muted" aria-hidden="true" />
+                <Label>Detalles</Label>
               </Dropdown.Item>
+              {canUpdate && editable && (
+                <Dropdown.Item id="edit" textValue="Editar prospecto">
+                  <Pencil className="size-4 shrink-0 text-muted" aria-hidden="true" />
+                  <Label>Editar</Label>
+                </Dropdown.Item>
+              )}
+              {canConvert && editable && (
+                <Dropdown.Item id="convert" textValue="Convertir en cliente">
+                  <PersonMagnifier className="size-4 shrink-0 text-muted" aria-hidden="true" />
+                  <Label>Convertir</Label>
+                </Dropdown.Item>
+              )}
             </Dropdown.Section>
-          )}
-        </Dropdown.Menu>
-      </Dropdown.Popover>
-    </Dropdown>
-  );
+            {canDelete && editable && <Separator />}
+            {canDelete && editable && (
+              <Dropdown.Section>
+                <Dropdown.Item id="delete" textValue="Eliminar prospecto" variant="danger">
+                  <TrashBin className="size-4 shrink-0 text-danger" aria-hidden="true" />
+                  <Label>Eliminar</Label>
+                </Dropdown.Item>
+              </Dropdown.Section>
+            )}
+          </Dropdown.Menu>
+        </Dropdown.Popover>
+      </Dropdown>
+    );
+  };
 
   return (
     <section className="customers-layout agreements-layout prospects-layout">
@@ -323,152 +587,20 @@ export function ProspectsPage() {
       </header>
 
       <div className="customers-toolbar prospects-toolbar">
-        <div className="customers-filters">
-          <Select
-            aria-label="Filtrar por estado"
+        <div className="customers-filters prospects-filters">
+          <Button
             variant="secondary"
-            selectedKey={filters.status}
-            onSelectionChange={(key) =>
-              setFilters((current) => ({
-                ...current,
-                status: String(key) as ProspectStatusFilter,
-                page: 1,
-              }))
+            aria-label={
+              activeFilters.length ? `Filtros, ${activeFilters.length} aplicados` : 'Filtros'
             }
+            onPress={() => setFiltersOpen(true)}
           >
-            <Select.Trigger>
-              <Select.Value />
-              <Select.Indicator />
-            </Select.Trigger>
-            <Select.Popover>
-              <ListBox>
-                {prospectStatusFilterOptions.map((option) => (
-                  <ListBox.Item key={option.id} id={option.id} textValue={option.label}>
-                    {option.label}
-                  </ListBox.Item>
-                ))}
-              </ListBox>
-            </Select.Popover>
-          </Select>
-
-          <Select
-            aria-label="Filtrar por origen"
-            variant="secondary"
-            selectedKey={filters.source || 'all'}
-            onSelectionChange={(key) =>
-              setFilters((current) => ({
-                ...current,
-                source:
-                  String(key) === 'all' ? '' : (String(key) as keyof typeof prospectSourceMeta),
-                page: 1,
-              }))
-            }
-          >
-            <Select.Trigger>
-              <Select.Value />
-              <Select.Indicator />
-            </Select.Trigger>
-            <Select.Popover>
-              <ListBox>
-                <ListBox.Item id="all" textValue="Todos los orígenes">
-                  Todos los orígenes
-                </ListBox.Item>
-                {Object.entries(prospectSourceMeta).map(([key, label]) => (
-                  <ListBox.Item key={key} id={key} textValue={label}>
-                    {label}
-                  </ListBox.Item>
-                ))}
-              </ListBox>
-            </Select.Popover>
-          </Select>
-
-          <Select
-            aria-label="Filtrar por comercial"
-            variant="secondary"
-            selectedKey={filters.unassigned ? 'unassigned' : filters.assignedUserId || 'all'}
-            onSelectionChange={(key) => {
-              const selected = String(key);
-              setFilters((current) => ({
-                ...current,
-                page: 1,
-                unassigned: selected === 'unassigned',
-                assignedUserId: selected === 'all' || selected === 'unassigned' ? '' : selected,
-              }));
-            }}
-          >
-            <Select.Trigger>
-              <Select.Value />
-              <Select.Indicator />
-            </Select.Trigger>
-            <Select.Popover>
-              <ListBox>
-                <ListBox.Item id="all" textValue="Todos los comerciales">
-                  Todos los comerciales
-                </ListBox.Item>
-                <ListBox.Item id="unassigned" textValue="Sin asignar">
-                  Sin asignar
-                </ListBox.Item>
-                {(assigneesQuery.data ?? []).map((assignee) => (
-                  <ListBox.Item key={assignee.id} id={assignee.id} textValue={assignee.name}>
-                    {assignee.name}
-                  </ListBox.Item>
-                ))}
-              </ListBox>
-            </Select.Popover>
-          </Select>
-
-          <CustomerAutocomplete
-            ariaLabel="Filtrar por convenio"
-            placeholder="Todos los convenios"
-            value={filters.agreementId}
-            options={(agreementsQuery.data ?? []).map((agreement) => ({
-              id: String(agreement.id),
-              name: agreement.companyName,
-            }))}
-            onChange={(agreementId) =>
-              setFilters((current) => ({ ...current, agreementId, page: 1 }))
-            }
-          />
-
-          <Select
-            aria-label="Filtrar por etiqueta"
-            variant="secondary"
-            selectedKey={filters.tagId || 'all'}
-            onSelectionChange={(key) =>
-              setFilters((current) => ({
-                ...current,
-                tagId: String(key) === 'all' ? '' : String(key),
-                page: 1,
-              }))
-            }
-          >
-            <Select.Trigger>
-              <Select.Value />
-              <Select.Indicator />
-            </Select.Trigger>
-            <Select.Popover>
-              <ListBox>
-                <ListBox.Item id="all" textValue="Todas las etiquetas">
-                  Todas las etiquetas
-                </ListBox.Item>
-                {(tagsQuery.data ?? []).map((tag) => (
-                  <ListBox.Item key={tag.id} id={String(tag.id)} textValue={tag.name}>
-                    {tag.name}
-                  </ListBox.Item>
-                ))}
-              </ListBox>
-            </Select.Popover>
-          </Select>
-
-          {hasFilters && (
-            <Button
-              size="sm"
-              variant="danger-soft"
-              onPress={() => {
-                setSearchDraft('');
-                setFilters(initialFilters);
-              }}
-            >
+            <Funnel width={17} height={17} />
+            Filtros
+            {activeFilters.length > 0 && <Chip color="accent">{activeFilters.length}</Chip>}
+          </Button>
+          {activeFilters.length > 0 && (
+            <Button size="sm" variant="danger-soft" onPress={clearAllFilters}>
               <Xmark width={15} height={15} />
               Limpiar
             </Button>
@@ -494,6 +626,26 @@ export function ProspectsPage() {
         </div>
       </div>
 
+      {/* Los filtros viven siempre en el panel, así que pueden crecer sin tocar la barra. Los chips
+          solo muestran qué está aplicado; quitarlos se hace desde el propio chip o con "Limpiar
+          filtro" en la barra. */}
+      {activeFilters.length > 0 && (
+        <div className="prospects-active-filters">
+          {activeFilters.map((filter) => (
+            <button
+              key={filter.key}
+              type="button"
+              className="prospects-active-filter"
+              aria-label={`Quitar el filtro ${filter.label}`}
+              onClick={filter.clear}
+            >
+              {filter.label}
+              <Xmark width={12} height={12} aria-hidden="true" />
+            </button>
+          ))}
+        </div>
+      )}
+
       {listQuery.isError ? (
         <Alert status="danger">
           <Alert.Content>
@@ -504,17 +656,41 @@ export function ProspectsPage() {
       ) : (
         <Table className="inventory-products-table customers-table prospects-table agreements-table">
           <Table.ScrollContainer>
-            <Table.Content aria-label="Prospectos del CRM">
+            <Table.Content
+              aria-label="Prospectos del CRM"
+              selectionMode="multiple"
+              selectedKeys={currentPageSelection}
+              onSelectionChange={updatePageSelection}
+            >
               <Table.Header>
+                <Table.Column id="selection" className="inventory-selection-column">
+                  <Checkbox
+                    slot="selection"
+                    aria-label="Seleccionar todos los prospectos de esta página"
+                  >
+                    <Checkbox.Content>
+                      <Checkbox.Control>
+                        <Checkbox.Indicator />
+                      </Checkbox.Control>
+                    </Checkbox.Content>
+                  </Checkbox>
+                </Table.Column>
                 <Table.Column isRowHeader>Prospecto</Table.Column>
-                <Table.Column>Contacto</Table.Column>
+                <Table.Column>Teléfono</Table.Column>
+                <Table.Column>Correo</Table.Column>
+                <Table.Column>País</Table.Column>
                 <Table.Column>Convenio</Table.Column>
                 <Table.Column>Etiquetas</Table.Column>
                 <Table.Column>Estado</Table.Column>
                 <Table.Column>Comercial</Table.Column>
                 <Table.Column>Origen</Table.Column>
                 <Table.Column>Actualizado</Table.Column>
-                <Table.Column className="inventory-actions-column">Acciones</Table.Column>
+                {/* La cabecera queda sin texto: el icono de acciones se explica solo y así la
+                    columna fija ocupa lo mínimo. El nombre accesible va en el aria-label. */}
+                <Table.Column
+                  className="inventory-actions-column prospects-actions-column"
+                  aria-label="Acciones"
+                />
               </Table.Header>
               <Table.Body
                 renderEmptyState={() =>
@@ -533,54 +709,74 @@ export function ProspectsPage() {
                 }
               >
                 {rows.map((prospect) => {
-                  const contact = prospectContactLines(prospect);
                   const status = prospectStatusMeta[prospect.status];
                   return (
                     <Table.Row key={prospect.id} id={prospect.id}>
-                      <Table.Cell>
-                        <button
-                          type="button"
-                          className="agreement-name-cell"
-                          onClick={() => setDetailId(prospect.id)}
+                      <Table.Cell className="inventory-selection-cell">
+                        <Checkbox
+                          slot="selection"
+                          aria-label={`Seleccionar prospecto ${prospect.displayName}`}
+                          variant="secondary"
                         >
-                          <strong>{prospect.displayName}</strong>
-                          {prospect.company && prospect.company !== prospect.displayName && (
-                            <span>{prospect.company}</span>
-                          )}
-                        </button>
+                          <Checkbox.Content>
+                            <Checkbox.Control>
+                              <Checkbox.Indicator />
+                            </Checkbox.Control>
+                          </Checkbox.Content>
+                        </Checkbox>
                       </Table.Cell>
-                      <Table.Cell>
-                        {contact.length === 0 ? (
-                          '--'
-                        ) : (
-                          <div className="agreement-contact-cell">
-                            {contact.map((line) => (
-                              <span key={line}>{line}</span>
-                            ))}
+                      <Table.Cell {...ignoreRowPress}>
+                        <div className="customer-name-cell">
+                          <Avatar size="sm" className={customerAvatarClass(prospect.id)}>
+                            <Avatar.Fallback>{customerInitials(prospect)}</Avatar.Fallback>
+                          </Avatar>
+                          <div className="prospect-name-text">
+                            <strong title={prospect.displayName}>{prospect.displayName}</strong>
+                            {prospect.company && prospect.company !== prospect.displayName && (
+                              <span title={prospect.company}>{prospect.company}</span>
+                            )}
                           </div>
-                        )}
+                        </div>
                       </Table.Cell>
-                      <Table.Cell>{prospect.agreement?.companyName ?? '--'}</Table.Cell>
-                      <Table.Cell>
+                      <Table.Cell {...ignoreRowPress}>
+                        <ProspectPhone phone={prospect.phone} country={prospect.country} />
+                      </Table.Cell>
+                      <Table.Cell {...ignoreRowPress}>{prospect.email ?? '--'}</Table.Cell>
+                      <Table.Cell {...ignoreRowPress}>
+                        <span className="customer-country-cell">
+                          <strong>
+                            {prospect.country && (
+                              <img src={customerCountryFlagPath(prospect.country)} alt="" />
+                            )}
+                            {prospect.location.countryName || '--'}
+                          </strong>
+                        </span>
+                      </Table.Cell>
+                      <Table.Cell {...ignoreRowPress}>
+                        {prospect.agreement?.companyName ?? '--'}
+                      </Table.Cell>
+                      <Table.Cell {...ignoreRowPress}>
                         {prospect.tags.length === 0 ? (
                           '--'
                         ) : (
                           <div className="prospect-tag-cell">
                             {prospect.tags.map((tag) => (
-                              <Chip key={tag.id} color="default">
-                                {tag.name}
-                              </Chip>
+                              <TagChip key={tag.id} tag={tag} />
                             ))}
                           </div>
                         )}
                       </Table.Cell>
-                      <Table.Cell>
+                      <Table.Cell {...ignoreRowPress}>
                         <Chip color={status.color}>{status.label}</Chip>
                       </Table.Cell>
-                      <Table.Cell>{prospect.assignedUser?.name ?? '--'}</Table.Cell>
-                      <Table.Cell>{prospectSourceMeta[prospect.source]}</Table.Cell>
-                      <Table.Cell>{dateOnly(prospect.updatedAt)}</Table.Cell>
-                      <Table.Cell>
+                      <Table.Cell {...ignoreRowPress}>
+                        {prospect.assignedUser?.name ?? '--'}
+                      </Table.Cell>
+                      <Table.Cell {...ignoreRowPress}>
+                        {prospectSourceMeta[prospect.source]}
+                      </Table.Cell>
+                      <Table.Cell {...ignoreRowPress}>{dateOnly(prospect.updatedAt)}</Table.Cell>
+                      <Table.Cell {...ignoreRowPress} className="prospects-actions-cell">
                         <div className="inventory-row-actions">{rowActions(prospect)}</div>
                       </Table.Cell>
                     </Table.Row>
@@ -676,12 +872,49 @@ export function ProspectsPage() {
         isOpen={formOpen}
         prospect={editing}
         isSubmitting={saveProspect.isPending}
+        defaultAssignedUserId={user?.id}
         onClose={() => {
           setFormOpen(false);
           setEditing(null);
         }}
         onSubmit={(value, tagIds) => saveProspect.mutateAsync({ value, tagIds }).then(() => {})}
       />
+
+      <Drawer
+        isOpen={filtersOpen}
+        onOpenChange={(open) => {
+          if (!open) setFiltersOpen(false);
+        }}
+      >
+        <Drawer.Backdrop>
+          <Drawer.Content placement="right">
+            <Drawer.Dialog className="customer-detail-drawer prospect-filters-drawer">
+              <Drawer.CloseTrigger aria-label="Cerrar filtros" />
+              <Drawer.Header>
+                <div>
+                  <Drawer.Heading>Filtros</Drawer.Heading>
+                  <p>Acota la lista de prospectos sin salir del panel.</p>
+                </div>
+              </Drawer.Header>
+              <Drawer.Body>
+                <div className="prospect-filters-panel">{filterControls}</div>
+              </Drawer.Body>
+              <Drawer.Footer>
+                <Button
+                  variant="ghost"
+                  isDisabled={activeFilters.length === 0}
+                  onPress={clearAllFilters}
+                >
+                  Limpiar todo
+                </Button>
+                <Button variant="primary" onPress={() => setFiltersOpen(false)}>
+                  Ver resultados
+                </Button>
+              </Drawer.Footer>
+            </Drawer.Dialog>
+          </Drawer.Content>
+        </Drawer.Backdrop>
+      </Drawer>
 
       <Drawer
         isOpen={detailId !== null}

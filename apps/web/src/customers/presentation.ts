@@ -2,7 +2,8 @@ type CustomerName = {
   displayName: string;
   firstName?: string | null;
   lastName?: string | null;
-  personType?: 'PERSON' | 'COMPANY';
+  // El prospecto puede no tener tipo de persona: es opcional hasta que se decide al editar.
+  personType?: 'PERSON' | 'COMPANY' | null;
 };
 
 function capitalizeName(value: string) {

@@ -5299,8 +5299,18 @@ select {
    disponible y la tabla cede lo que sobre. Así no aparece scroll vertical en la página. */
 .prospects-layout {
   grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: auto auto minmax(0, 1fr);
   height: calc(100vh - 6rem);
+  min-height: 0;
+  /* Flex y no grid: la fila de chips aparece y desaparece según haya filtros, y con
+     `grid-template-rows` de tres filas fijas los chips se quedaban con la fila flexible y empujaban
+     la tabla al fondo. */
+  display: flex;
+  flex-direction: column;
+}
+
+/* La tabla se queda con todo el alto que sobra, como antes. */
+.prospects-layout > .prospects-table {
+  flex: 1 1 auto;
   min-height: 0;
 }
 
@@ -5311,8 +5321,55 @@ select {
 
 .prospects-toolbar,
 .prospects-toolbar .customers-filters {
+  flex-wrap: nowrap;
+  min-width: 0;
+}
+
+/* Los filtros viven en el panel, así que la barra solo lleva el botón, el "Limpiar filtro" y el
+   buscador. El buscador conserva su ancho de siempre y se queda a la derecha. */
+
+.prospects-active-filters {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
   flex-wrap: wrap;
   min-width: 0;
+}
+
+/* Chip removible: el nombre del filtro y su valor, con la X a la derecha. */
+.prospects-active-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.2rem 0.5rem;
+  border: 1px solid var(--separator);
+  border-radius: 999px;
+  background: var(--surface-secondary);
+  color: var(--foreground);
+  font-size: 0.75rem;
+  line-height: 1.2;
+  cursor: pointer;
+}
+
+.prospects-active-filter:hover {
+  background: color-mix(in srgb, var(--surface) 40%, var(--surface-secondary));
+}
+
+.prospects-active-filter svg {
+  color: var(--muted);
+  flex-shrink: 0;
+}
+
+.prospect-filters-panel {
+  display: grid;
+  gap: 0.85rem;
+}
+
+/* En el panel los filtros van uno por línea: el ancho de la barra ya no es una restricción. */
+.prospect-filters-panel .select,
+.prospect-filters-panel .customer-autocomplete {
+  width: 100%;
+  max-width: none;
 }
 
 .prospects-heading-actions {
@@ -5322,8 +5379,107 @@ select {
   flex-wrap: wrap;
 }
 
+/* Solo el check, el prospecto y las acciones tienen ancho fijo. Las demás columnas se ajustan a su
+   contenido: la tabla crece en horizontal (el contenedor ya scrollea) en vez de partir el texto en
+   dos líneas. */
 .prospects-table .table__content {
-  min-width: 78rem;
+  width: max-content;
+  min-width: 100%;
+}
+
+/* El texto de una celda nunca se parte: si hace falta más espacio, la tabla scrollea. */
+.prospects-table tbody .table__row > td {
+  white-space: nowrap;
+}
+
+/* El check y el prospecto quedan fijos a la izquierda: al desplazar la tabla en horizontal siguen a
+   la vista. El ancho de la columna de selección es fijo, así que el prospecto se pega justo a su
+   borde; ambos llevan fondo opaco para que el contenido que pasa por debajo no se transparente. */
+.prospects-table thead th:nth-child(1),
+.prospects-table tbody .table__row > td:nth-child(1) {
+  position: sticky;
+  left: 0;
+  z-index: 3;
+}
+
+.prospects-table thead th:nth-child(2),
+.prospects-table tbody .table__row > td:nth-child(2) {
+  position: sticky;
+  left: 3rem;
+  z-index: 3;
+  /* Ancho fijo: un nombre más largo se recorta con puntos suspensivos, no ensancha la columna. */
+  width: 16rem;
+  min-width: 16rem;
+  max-width: 16rem;
+}
+
+.prospects-table thead th:nth-child(-n + 2) {
+  background: var(--surface-secondary);
+}
+
+.prospects-table tbody .table__row > td:nth-child(-n + 2) {
+  background: var(--surface);
+}
+
+/* La columna de acciones queda fija a la derecha: al desplazar la tabla en horizontal los tres
+   puntos siguen a la vista. Como las celdas de la tabla son translúcidas, la fija lleva un fondo
+   opaco para que el contenido que pasa por debajo no se transparente. */
+.prospects-table thead th:last-child,
+.prospects-table tbody .table__row > td:last-child {
+  position: sticky;
+  right: 0;
+  z-index: 2;
+}
+
+.prospects-table thead th:last-child {
+  background: var(--surface-secondary);
+}
+
+.prospects-table tbody .table__row > td:last-child {
+  background: var(--surface);
+}
+
+/* Las celdas fijas no pueden dejar pasar el tinte que HeroUI pinta en el resto de la fila, porque
+   su fondo es opaco: el hover y la selección se replican aquí con los mismos porcentajes que usa la
+   tabla (40 % al pasar el cursor, 10 % al seleccionar). */
+.prospects-table tbody .table__row:is(:hover, [data-hovered='true']) > td:nth-child(-n + 2),
+.prospects-table tbody .table__row:is(:hover, [data-hovered='true']) > td:last-child {
+  background: color-mix(in srgb, var(--surface) 40%, var(--surface-secondary));
+}
+
+/* Va después del hover: con la fila seleccionada y el cursor encima gana el tono de selección,
+   igual que en la tabla de HeroUI. */
+.prospects-table tbody .table__row[data-selected='true'] > td:nth-child(-n + 2),
+.prospects-table tbody .table__row[data-selected='true'] > td:last-child {
+  background: color-mix(in srgb, var(--surface) 10%, var(--surface-secondary));
+}
+
+/* Sin texto en la cabecera, la columna se ajusta al botón en lugar de reservar el ancho de
+   «Acciones». */
+.prospects-actions-column,
+.prospects-actions-cell {
+  width: 3.5rem;
+  padding-inline: 0.5rem;
+}
+
+/* El nombre no es un enlace: la ficha se abre desde el menú de acciones. La columna tiene un mínimo
+   cómodo y crece si el nombre es más largo; solo si llega al límite de la tabla se recorta. */
+.prospect-name-text {
+  display: grid;
+  min-width: 0;
+}
+
+.prospect-name-text strong,
+.prospect-name-text span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Las etiquetas de una fila van en una sola línea: así la columna se ajusta al conjunto en vez de
+   apilar los chips y duplicar el alto de la fila. */
+.prospects-table .prospect-tag-cell {
+  flex-wrap: nowrap;
 }
 
 .prospect-tag-cell {
@@ -5338,18 +5494,132 @@ select {
   gap: 0.4rem;
 }
 
+/* En el selector las etiquetas son chips que se activan con clic. Al activarse toman el color de la
+   etiqueta, igual que en la columna del listado, para que el chip diga lo mismo en los dos sitios. */
+.prospect-tag-choice {
+  cursor: pointer;
+}
+
+.prospect-tag-choice[data-selected='true'] {
+  background: color-mix(in srgb, var(--tag-color) 18%, transparent);
+  color: color-mix(in srgb, var(--tag-color) 70%, var(--foreground));
+}
+
+/* El valor del multi-select de etiquetas se queda en una línea: aunque el nombre de una etiqueta
+   sea largo, se recorta con puntos suspensivos en vez de empujar la altura del campo. */
+.prospect-tags-value {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
 .prospect-tags-empty {
   color: var(--muted);
   font-size: 0.8125rem;
 }
 
-.prospect-tag-create {
-  display: flex;
+/* Etiqueta con color: el tono llega como variable desde el componente. El fondo es un tinte suave
+   y el texto se mezcla con el color de primer plano del tema, así un tono claro se oscurece en el
+   tema claro y se aclara en el oscuro sin repetir el color en cada tema. */
+.prospect-tag-chip {
+  --chip-bg: color-mix(in srgb, var(--tag-color) 18%, transparent);
+  --chip-fg: color-mix(in srgb, var(--tag-color) 70%, var(--foreground));
+}
+
+.prospect-tag-dot {
+  display: inline-block;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 999px;
+  background: var(--tag-color);
+  flex-shrink: 0;
+}
+
+.prospect-tag-option {
+  display: inline-flex;
   align-items: center;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+.prospect-tag-color-label {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--muted);
+}
+
+.prospect-tag-color-popover {
+  max-width: 15rem;
   gap: 0.5rem;
 }
 
-.prospect-tag-create > :first-child {
+.prospect-tag-color-hue {
+  display: grid;
+  gap: 0.25rem;
+  width: 100%;
+}
+
+.prospect-tag-color-hue-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.prospect-tag-color-hue-head output {
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+}
+
+/* HEX escribe el color completo en un solo campo; RGB lo reparte en tres. */
+.prospect-tag-color-channels {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.35rem;
+  width: 100%;
+}
+
+/* Sin esto el input mantiene su ancho intrínseco y se sale de su celda, tapando al de al lado. */
+.prospect-tag-color-popover .color-input-group {
+  width: 100%;
+  min-width: 0;
+}
+
+.prospect-tag-color-popover .color-input-group__input {
+  width: 100%;
+  min-width: 0;
+  padding-inline: 0.3rem;
+  text-align: center;
+}
+
+/* El hexadecimal necesita algo más de aire: seis dígitos más la almohadilla. */
+.prospect-tag-color-popover
+  .color-field:not(.prospect-tag-color-channels .color-field)
+  .color-input-group__input {
+  letter-spacing: 0.04em;
+}
+
+.prospect-tag-create-block {
+  display: grid;
+  gap: 0.4rem;
+}
+
+/* El modal hereda `form { display: contents }` de los formularios del CRM; aquí los dos formularios
+   de etiquetas sí necesitan su propia caja. El círculo, el nombre y la acción van en una sola fila,
+   y es el nombre el que se queda con el espacio sobrante. */
+.prospect-tags-modal .prospect-tag-create,
+.prospect-tags-modal .prospect-tag-editor {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+}
+
+.prospect-tags-modal .prospect-tag-create > .input,
+.prospect-tags-modal .prospect-tag-editor > .input {
   flex: 1;
   min-width: 0;
 }
@@ -5375,15 +5645,24 @@ select {
   border-bottom: none;
 }
 
-.prospect-tag-list li > div {
-  display: grid;
-  gap: 0.1rem;
+.prospect-tag-info {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
   min-width: 0;
 }
 
-.prospect-tag-list li span {
+.prospect-tag-info > span:not(.chip) {
   color: var(--muted);
   font-size: 0.75rem;
+  white-space: nowrap;
+}
+
+.prospect-tag-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-shrink: 0;
 }
 
 .prospect-detail-drawer.drawer__dialog {
@@ -5394,12 +5673,6 @@ select {
   display: flex;
   flex-wrap: wrap;
   gap: 0.35rem;
-}
-
-.prospect-detail-notes {
-  margin: 0;
-  white-space: pre-wrap;
-  overflow-wrap: break-word;
 }
 
 .prospect-conversion {

@@ -1098,7 +1098,6 @@ const prospectFieldSchemas = {
   source: prospectSourceSchema.optional(),
   status: prospectStatusSchema.optional(),
   assignedUserId: prospectOptionalUserIdSchema,
-  notes: optionalText(5_000),
   tagIds: z
     .array(z.coerce.number().int().positive())
     .max(20, 'Un prospecto no puede tener más de 20 etiquetas.')
@@ -1168,12 +1167,19 @@ export const prospectConvertLinkSchema = z.object({
     .positive('El identificador del cliente no es válido.'),
 });
 
+/** Color de la etiqueta en hex `#RRGGBB`. Se guarda así porque es lo que devuelve el selector. */
+export const tagColorSchema = z
+  .string()
+  .trim()
+  .regex(/^#[0-9a-fA-F]{6}$/, 'El color debe ser hexadecimal, por ejemplo #2563EB.');
+
 export const createTagSchema = z.object({
   name: z
     .string()
     .trim()
     .min(1, 'Escribe el nombre de la etiqueta.')
     .max(100, 'El nombre de la etiqueta no puede superar los 100 caracteres.'),
+  color: tagColorSchema.nullish(),
   active: z.boolean().default(true),
 });
 
@@ -1185,6 +1191,7 @@ export const updateTagSchema = z
       .min(1, 'Escribe el nombre de la etiqueta.')
       .max(100, 'El nombre de la etiqueta no puede superar los 100 caracteres.')
       .optional(),
+    color: tagColorSchema.nullish(),
     active: z.boolean().optional(),
   })
   .refine((data) => Object.keys(data).length > 0, 'Debes enviar al menos un cambio.');

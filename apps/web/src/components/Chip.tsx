@@ -1,6 +1,7 @@
-import { Chip as HeroUIChip, type ChipProps as HeroUIChipProps } from '@heroui/react';
+import type { ComponentProps } from 'react';
+import { Chip as HeroUIChip } from '@heroui/react';
 
-export type ChipProps = Omit<HeroUIChipProps, 'size' | 'variant'>;
+export type ChipProps = Omit<ComponentProps<typeof HeroUIChip>, 'size' | 'variant'>;
 
 /**
  * Shared application chip. Keep status and category chips visually consistent

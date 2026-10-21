@@ -83,7 +83,6 @@ const prospectFields = [
   'source',
   'status',
   'assignedUserId',
-  'notes',
 ] as const;
 
 type ProspectInputValues = {
@@ -107,7 +106,6 @@ type ProspectInputValues = {
   source?: ProspectSource;
   status?: ProspectStatus;
   assignedUserId?: string | null;
-  notes?: string | null;
 };
 
 function pickProspectValues(source: Record<string, unknown>): ProspectInputValues {
@@ -265,7 +263,6 @@ function serializeProspect(prospect: ProspectWithRelations) {
     addressLine2: prospect.addressLine2,
     source: prospect.source,
     status: prospect.status,
-    notes: prospect.notes,
     agreement: prospect.agreement,
     assignedUser: prospect.assignedUser,
     createdBy: prospect.createdBy,
@@ -423,7 +420,9 @@ export class ProspectsService {
     const { tagIds, ...rest } = input;
     validateLocation(rest);
     await this.validateReferences({ ...rest, tagIds });
-    const values = this.normalize(rest);
+    // Todo prospecto nace como persona: el canal de WhatsApp y cualquier otro punto de entrada no
+    // envían el tipo, y la ficha se decide editando el prospecto cuando ya hay más datos.
+    const values = this.normalize({ ...rest, personType: rest.personType ?? 'PERSON' });
     const prospect = await this.repository.create(
       {
         ...(values as Prisma.ProspectUncheckedCreateInput),
@@ -527,7 +526,7 @@ export class ProspectsService {
 
   async createTag(input: CreateTagInput) {
     try {
-      return await this.repository.createTag(input.name, input.active);
+      return await this.repository.createTag(input.name, input.active, input.color ?? null);
     } catch (error) {
       if (isUniqueConstraintError(error)) {
         throw prospectError(
