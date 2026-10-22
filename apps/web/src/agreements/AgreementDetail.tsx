@@ -40,9 +40,15 @@ export function AgreementDetail({
   return (
     <div className="customer-detail agreement-detail">
       <section className="customer-detail-identity">
-        <Avatar size="md" className="customer-detail-avatar agreement-detail-avatar">
-          <Avatar.Fallback>{agreement.companyName.slice(0, 2).toUpperCase()}</Avatar.Fallback>
-        </Avatar>
+        {agreement.logoUrl ? (
+          <span className="agreement-detail-logo" aria-hidden="true">
+            <img src={agreement.logoUrl} alt="" />
+          </span>
+        ) : (
+          <Avatar size="md" className="customer-detail-avatar agreement-detail-avatar">
+            <Avatar.Fallback>{agreement.companyName.slice(0, 2).toUpperCase()}</Avatar.Fallback>
+          </Avatar>
+        )}
         <div>
           <strong>{agreement.companyName}</strong>
           <span>{agreement.nit ? `NIT ${agreement.nit}` : 'Sin NIT registrado'}</span>

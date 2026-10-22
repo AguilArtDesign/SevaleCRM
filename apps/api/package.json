@@ -25,6 +25,7 @@
     "@sevale/permissions": "*",
     "@sevale/shared": "*",
     "@sevale/validation": "*",
+    "aws4fetch": "^1.0.20",
     "better-auth": "1.7.2",
     "dotenv": "17.4.2",
     "libphonenumber-js": "^1.13.13",

@@ -86,6 +86,32 @@ El botón **Vincular producto**, visible solo para administradores, consulta `GE
 
 `POST /api/products` vuelve a ejecutar esas comprobaciones antes de insertar el producto. Bloquea datos incompletos, respuestas con otro SKU, productos ausentes, coincidencias en ambas tiendas y duplicados. La operación escribe únicamente en la base de datos del CRM; las integraciones externas continúan siendo de solo lectura, salvo la autenticación requerida para renovar el token de Siigo.
 
+## Logos de convenios
+
+Cada convenio puede llevar un logo que se muestra en la tabla, junto al nombre de la empresa, y en la ficha del convenio. El binario se guarda en **Cloudflare R2** y la base de datos solo conserva su URL pública en `agreements.logo_url`: así la fila no se infla y el archivo se sirve desde el CDN de Cloudflare en lugar de la API.
+
+La subida es una acción de edición y exige `agreements.update`, no `agreements.read`. Se aceptan **SVG y WebP** hasta **500 KB**; el tipo y el tamaño se validan en el backend, no solo en el formulario. Como la API no usa multipart, el navegador envía el archivo en base64 dentro del JSON (un logo de 500 KB ocupa 667 KB codificado, por debajo del `bodyLimit` de 1 MB).
+
+Un SVG es texto y puede contener `<script>`, manejadores `on*`, `<foreignObject>` o referencias externas. El CRM lo pinta dentro de un `<img>` —donde el navegador no ejecuta scripts—, pero la URL del bucket es pública y alguien puede abrirla directamente, así que esos casos se rechazan antes de subir.
+
+El archivo **se sube al guardar el convenio, no al elegirlo**. Mientras se edita, la previsualización usa un blob local, de modo que cancelar el formulario no crea ningún objeto en el bucket. Si la subida tiene éxito pero el guardado falla (por ejemplo, un NIT repetido), el objeto recién subido se descarta.
+
+Cada subida usa una clave nueva (`agreements/<uuid>.svg|webp`): reutilizar el nombre haría que el CDN sirviera el logo anterior. Al reemplazar o quitar un logo, el objeto anterior se borra del bucket sin bloquear el guardado si R2 falla.
+
+`DELETE /api/agreements/logo` existe para descartar una subida que quedó sin dueño. Solo borra objetos bajo el prefijo del bucket configurado —rechaza otros dominios y rutas con `..`— y devuelve `409 LOGO_IN_USE` si algún convenio usa esa URL, para que no quede una referencia rota.
+
+La integración se configura con variables de entorno y es **opcional**: si falta alguna, la subida queda deshabilitada, el formulario lo explica y el convenio se sigue guardando sin logo.
+
+| Variable               | Descripción                               |
+| ---------------------- | ----------------------------------------- |
+| `R2_ACCOUNT_ID`        | Identificador de la cuenta de Cloudflare  |
+| `R2_ACCESS_KEY_ID`     | Clave de acceso del token de R2           |
+| `R2_SECRET_ACCESS_KEY` | Secreto del token                         |
+| `R2_BUCKET`            | Nombre del bucket                         |
+| `R2_PUBLIC_URL`        | Dominio público del bucket, sin `/` final |
+
+El token necesita permiso de lectura y escritura sobre el bucket. La URL pública (`R2_PUBLIC_URL`) debe corresponder a un dominio conectado al bucket o a su subdominio `r2.dev`; sin ella las imágenes no se podrían mostrar aunque la subida funcione.
+
 ## Importación de productos
 
 La importación de inventario está detrás de `PRODUCT_IMPORT_ENABLED`, una variable independiente de la de prospectos para poder apagar una sin la otra. Con el valor `false` los tres endpoints (`GET /api/products/import/status`, `POST /api/products/import/preview` y `POST /api/products/import`) responden `404` con el código `PRODUCT_IMPORT_DISABLED`, y el botón **Importar CSV** desaparece del panel.

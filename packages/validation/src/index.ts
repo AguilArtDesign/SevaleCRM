@@ -923,6 +923,20 @@ const agreementFieldsSchema = z.object({
   contactPosition: optionalText(191),
   contactEmail: agreementEmailSchema,
   contactPhone: optionalText(32),
+  // La URL pública del logo en R2. Solo se acepta https: un logo se pinta en un <img> y no debe
+  // poder apuntar a http ni a esquemas como javascript:.
+  logoUrl: z
+    .union([
+      z
+        .url({ protocol: /^https$/, error: 'La URL del logo debe empezar por https://' })
+        .max(2_000, 'La URL del logo es demasiado larga.')
+        .refine((value) => !value.endsWith('/'), { message: 'no debe terminar en /' }),
+      z.literal(''),
+      z.null(),
+      z.undefined(),
+    ])
+    .optional()
+    .transform((value) => value || null),
   description: optionalText(5_000),
   // Sin default aquí: un `active` con valor por defecto haría que un PATCH vacío activara el
   // convenio sin que nadie lo pidiera. El valor inicial se define solo en el alta.
@@ -936,6 +950,30 @@ export const createAgreementSchema = agreementFieldsSchema.extend({
 export const updateAgreementSchema = agreementFieldsSchema
   .partial()
   .refine((data) => Object.keys(data).length > 0, 'Debes enviar al menos un cambio.');
+
+/**
+ * El archivo viaja en base64 dentro del JSON porque la API no tiene multipart y un logo de 500 KB
+ * ocupa 667 KB codificado, por debajo del `bodyLimit` de 1 MB. Se declara el límite del base64 un
+ * poco por encima del real para que el error de tamaño lo dé la validación del binario, con un
+ * mensaje claro en lugar de un 413 del servidor.
+ */
+export const agreementLogoUploadSchema = z.object({
+  contentType: z.enum(['image/svg+xml', 'image/webp'], {
+    error: 'El logo debe ser SVG o WebP.',
+  }),
+  data: z
+    .string()
+    .min(1, 'El archivo está vacío.')
+    .max(900_000, 'El logo supera el máximo de 500 KB.'),
+});
+
+/**
+ * Descarta una subida que no llegó a guardarse. Solo se aceptan URLs http(s) y el servicio comprueba
+ * que el objeto esté bajo el prefijo del bucket y que ningún convenio lo esté usando.
+ */
+export const agreementLogoDiscardSchema = z.object({
+  url: z.url({ protocol: /^https$/, error: 'La URL del logo no es válida.' }).max(2_000),
+});
 
 export const agreementListQuerySchema = z.object({
   search: z.string().trim().max(191, 'La búsqueda es demasiado larga.').default(''),

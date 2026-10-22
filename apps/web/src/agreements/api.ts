@@ -29,6 +29,8 @@ export type AgreementRecord = {
   contactPosition: string | null;
   contactEmail: string | null;
   contactPhone: string | null;
+  /** URL pública del logo en R2; null si el convenio no tiene logo. */
+  logoUrl: string | null;
   description: string | null;
   active: boolean;
   /** Calculado por la API sobre las tareas pendientes: no se guarda en la tabla. */
@@ -142,6 +144,18 @@ export const agreementsApi = {
     request<AgreementRecord>(`/api/agreements/${id}`, {
       method: 'PATCH',
       body: JSON.stringify(input),
+    }),
+  logoStatus: () => request<{ enabled: boolean; maxBytes: number }>('/api/agreements/logo/status'),
+  uploadLogo: (contentType: string, data: string) =>
+    request<{ url: string; key: string }>('/api/agreements/logo', {
+      method: 'POST',
+      body: JSON.stringify({ contentType, data }),
+    }),
+  /** Borra una subida que no llegó a guardarse; el backend rechaza los logos en uso. */
+  discardLogo: (url: string) =>
+    request<{ success: true }>('/api/agreements/logo', {
+      method: 'DELETE',
+      body: JSON.stringify({ url }),
     }),
   comments: (agreementId: number, page = 1, pageSize = 50) =>
     request<AgreementCommentsResponse>(

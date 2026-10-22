@@ -86,6 +86,15 @@ export class AgreementsRepository {
     return this.prisma.agreement.findFirst({ where: { nit }, select: { id: true } });
   }
 
+  /** Indica si algún convenio usa esa URL. Protege el borrado de un logo en uso. */
+  async logoInUse(url: string): Promise<boolean> {
+    const found = await this.prisma.agreement.findFirst({
+      where: { logoUrl: url },
+      select: { id: true },
+    });
+    return found !== null;
+  }
+
   create(data: CreateAgreementInput, createdByUserId: string) {
     return this.prisma.agreement.create({
       data: { ...data, createdByUserId },

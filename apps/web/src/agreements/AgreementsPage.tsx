@@ -22,6 +22,7 @@ import { CustomerAutocomplete } from '../customers/CustomerAutocomplete';
 import { useCurrentUser } from '../users/useCurrentUser';
 import { agreementsApi, type AgreementActiveFilter, type AgreementRecord } from './api';
 import { AgreementForm } from './AgreementForm';
+import { AgreementLogo } from './AgreementLogo';
 import { AgreementStatusChip, dateOnly, messageFrom } from './presentation';
 
 type Filters = {
@@ -127,6 +128,7 @@ export function AgreementsPage() {
     contactPosition: string;
     contactEmail: string;
     contactPhone: string;
+    logoUrl: string;
     description: string;
     active: boolean;
   }) => {
@@ -142,6 +144,7 @@ export function AgreementsPage() {
       contactPosition: value.contactPosition,
       contactEmail: value.contactEmail,
       contactPhone: value.contactPhone,
+      logoUrl: value.logoUrl,
       description: value.description,
       active: value.active,
     } satisfies CreateAgreementInput);
@@ -305,13 +308,16 @@ export function AgreementsPage() {
                 {rows.map((agreement) => (
                   <Table.Row key={agreement.id} id={agreement.id}>
                     <Table.Cell>
-                      <button
-                        type="button"
-                        className="agreement-name-cell"
-                        onClick={() => openDetail(agreement)}
-                      >
-                        <strong>{agreement.companyName}</strong>
-                      </button>
+                      <div className="agreement-company-cell">
+                        <AgreementLogo src={agreement.logoUrl} name={agreement.companyName} />
+                        <button
+                          type="button"
+                          className="agreement-name-cell"
+                          onClick={() => openDetail(agreement)}
+                        >
+                          <strong>{agreement.companyName}</strong>
+                        </button>
+                      </div>
                     </Table.Cell>
                     <Table.Cell>{agreement.nit ?? '--'}</Table.Cell>
                     <Table.Cell>

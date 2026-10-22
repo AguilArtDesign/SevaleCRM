@@ -33,6 +33,17 @@ const baseEnvironmentSchema = z.object({
   N8N_API_KEY: z.string().optional(),
   PRODUCT_IMPORT_ENABLED: z.enum(['true', 'false']).default('false'),
   PROSPECT_IMPORT_ENABLED: z.enum(['true', 'false']).default('false'),
+  // Cloudflare R2 (API compatible con S3). Opcional: si falta alguna, la subida de logos queda
+  // deshabilitada y el formulario lo indica, en lugar de fallar al guardar el convenio.
+  R2_ACCOUNT_ID: z.string().trim().optional(),
+  R2_ACCESS_KEY_ID: z.string().trim().optional(),
+  R2_SECRET_ACCESS_KEY: z.string().trim().optional(),
+  R2_BUCKET: z.string().trim().optional(),
+  /** Dominio público del bucket, por ejemplo `https://logos.example.com`. Sin `/` final. */
+  R2_PUBLIC_URL: z
+    .url()
+    .refine((value) => !value.endsWith('/'), { message: 'no debe terminar en /' })
+    .optional(),
   SMTP_PORT: z.preprocess(
     (value) => (value === '' ? undefined : value),
     z.coerce.number().int().min(1).max(65535).optional(),

@@ -5,7 +5,8 @@ import { getCustomerColombiaCities, getCustomerColombiaStates } from '@sevale/sh
 import { createAgreementSchema } from '@sevale/validation';
 import { Input } from '../components/Input';
 import { CustomerAutocomplete } from '../customers/CustomerAutocomplete';
-import { AgreementRequestError, type AgreementRecord } from './api';
+import { AgreementRequestError, agreementsApi, type AgreementRecord } from './api';
+import { AgreementLogoField } from './AgreementLogoField';
 import { messageFrom } from './presentation';
 
 type FormValue = {
@@ -20,6 +21,7 @@ type FormValue = {
   contactPosition: string;
   contactEmail: string;
   contactPhone: string;
+  logoUrl: string;
   description: string;
   active: boolean;
 };
@@ -36,6 +38,7 @@ const emptyValue: FormValue = {
   contactPosition: '',
   contactEmail: '',
   contactPhone: '',
+  logoUrl: '',
   description: '',
   active: true,
 };
@@ -54,6 +57,7 @@ function initialValue(agreement: AgreementRecord | null): FormValue {
     contactPosition: agreement.contactPosition ?? '',
     contactEmail: agreement.contactEmail ?? '',
     contactPhone: agreement.contactPhone ?? '',
+    logoUrl: agreement.logoUrl ?? '',
     description: agreement.description ?? '',
     active: agreement.active,
   };
@@ -64,6 +68,26 @@ const colombiaStates = getCustomerColombiaStates().map((state) => ({
   id: state.code,
   name: state.name,
 }));
+
+/**
+ * La API no acepta multipart, así que la imagen viaja en base64 dentro del JSON. La conversión se
+ * hace aquí, en el momento de guardar, no al elegir el archivo.
+ */
+function toBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result;
+      if (typeof result !== 'string') {
+        reject(new Error('No pudimos leer el archivo.'));
+        return;
+      }
+      resolve(result.slice(result.indexOf(',') + 1));
+    };
+    reader.onerror = () => reject(new Error('No pudimos leer el archivo.'));
+    reader.readAsDataURL(file);
+  });
+}
 
 export function AgreementForm({
   isOpen,
@@ -81,6 +105,9 @@ export function AgreementForm({
   const [value, setValue] = useState<FormValue>(() => initialValue(agreement));
   const [errors, setErrors] = useState<Partial<Record<keyof FormValue, string>>>({});
   const [error, setError] = useState('');
+  // Archivo elegido pero aún no subido. Se sube al guardar, así cancelar no deja nada en el bucket.
+  const [logoFile, setLogoFile] = useState<File | null>(null);
+  const [logoError, setLogoError] = useState('');
   const isEdit = agreement !== null;
 
   useEffect(() => {
@@ -88,6 +115,8 @@ export function AgreementForm({
     setValue(initialValue(agreement));
     setErrors({});
     setError('');
+    setLogoFile(null);
+    setLogoError('');
   }, [agreement, isOpen]);
 
   const cities = value.region
@@ -102,6 +131,21 @@ export function AgreementForm({
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setError('');
+    setLogoError('');
+
+    // La imagen se sube ahora, no al elegirla: si el usuario cancela, no hay objeto que borrar.
+    let logoUrl = value.logoUrl;
+    if (logoFile) {
+      try {
+        logoUrl = (await agreementsApi.uploadLogo(logoFile.type, await toBase64(logoFile))).url;
+      } catch (uploadError) {
+        setLogoError(
+          uploadError instanceof Error ? uploadError.message : 'No pudimos subir el logo.',
+        );
+        return;
+      }
+    }
+
     const parsed = createAgreementSchema.safeParse({
       companyName: value.companyName,
       nit: value.nit,
@@ -114,10 +158,13 @@ export function AgreementForm({
       contactPosition: value.contactPosition,
       contactEmail: value.contactEmail,
       contactPhone: value.contactPhone,
+      logoUrl,
       description: value.description,
       active: value.active,
     });
     if (!parsed.success) {
+      // Se subió una imagen para nada: se descarta para no dejarla huérfana.
+      if (logoUrl !== value.logoUrl) void agreementsApi.discardLogo(logoUrl).catch(() => undefined);
       const fieldErrors: Partial<Record<keyof FormValue, string>> = {};
       for (const issue of parsed.error.issues) {
         const field = issue.path[0];
@@ -131,8 +178,10 @@ export function AgreementForm({
       return;
     }
     try {
-      await onSubmit(value);
+      await onSubmit({ ...value, logoUrl });
     } catch (submitError) {
+      // La subida ya ocurrió y el convenio no se guardó: el objeto quedaría sin referencia.
+      if (logoUrl !== value.logoUrl) void agreementsApi.discardLogo(logoUrl).catch(() => undefined);
       // El NIT repetido llega con su propio código: decirlo evita que el usuario busque el campo.
       setError(
         submitError instanceof AgreementRequestError && submitError.code === 'AGREEMENT_NIT_TAKEN'
@@ -171,6 +220,17 @@ export function AgreementForm({
 
               <section className="customer-form-section">
                 <h3>Empresa</h3>
+                <AgreementLogoField
+                  url={value.logoUrl}
+                  file={logoFile}
+                  onSelect={setLogoFile}
+                  onClear={() => {
+                    setLogoFile(null);
+                    setValue((current) => ({ ...current, logoUrl: '' }));
+                  }}
+                  error={logoError}
+                  disabled={isSubmitting}
+                />
                 <div className="customer-form-grid">
                   <TextField className="customer-field-full">
                     <Label>Empresa *</Label>

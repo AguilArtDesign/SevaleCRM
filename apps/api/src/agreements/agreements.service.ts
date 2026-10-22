@@ -19,6 +19,7 @@ import { normalizeCustomerPhone } from '../customers/customer-data-sanitizer.js'
 import { RealtimeGateway } from '../realtime/realtime.gateway.js';
 import type { AgreementTaskStatus } from '../generated/prisma/client.js';
 import { AgreementsRepository } from './agreements.repository.js';
+import { AgreementLogoService } from './agreement-logo.service.js';
 
 function agreementError(
   Exception: typeof BadRequestException | typeof ConflictException | typeof NotFoundException,
@@ -95,6 +96,7 @@ function serializeAgreement(agreement: AgreementRow) {
     contactPosition: agreement.contactPosition,
     contactEmail: agreement.contactEmail,
     contactPhone: agreement.contactPhone,
+    logoUrl: agreement.logoUrl,
     description: agreement.description,
     active: agreement.active,
     pendingTasks: agreement._count.tasks,
@@ -156,6 +158,7 @@ export class AgreementsService {
   constructor(
     private readonly repository: AgreementsRepository,
     private readonly realtime: RealtimeGateway,
+    private readonly logos: AgreementLogoService,
   ) {}
 
   async list(query: AgreementListQuery) {
@@ -177,6 +180,11 @@ export class AgreementsService {
       throw agreementError(NotFoundException, 'AGREEMENT_NOT_FOUND', 'El convenio no existe.');
     }
     return serializeAgreement(agreement);
+  }
+
+  /** Un logo asignado a un convenio no debe poder descartarse: dejaría una URL rota. */
+  isLogoInUse(url: string) {
+    return this.repository.logoInUse(url);
   }
 
   /** Lista mínima de usuarios para el selector de asignación de tareas. */
@@ -243,6 +251,11 @@ export class AgreementsService {
           ? { contactPhone: normalizeContactPhone(input.contactPhone) }
           : {}),
       });
+      // El logo anterior queda huérfano en el bucket si nadie lo borra. Se intenta sin bloquear el
+      // guardado: un fallo de R2 no debe impedir actualizar el convenio.
+      if (input.logoUrl !== undefined && current.logoUrl && current.logoUrl !== agreement.logoUrl) {
+        void this.logos.remove(current.logoUrl).catch(() => undefined);
+      }
       this.realtime.emitAgreementUpdated(agreement);
       return serializeAgreement(agreement);
     } catch (error) {

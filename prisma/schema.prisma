@@ -619,6 +619,9 @@ model Agreement {
   contactPosition String?  @map("contact_position") @db.VarChar(191)
   contactEmail    String?  @map("contact_email") @db.VarChar(191)
   contactPhone    String?  @map("contact_phone") @db.VarChar(32)
+  /// Logo del convenio. Guarda la URL pública del objeto en R2, no el archivo: el binario vive en el
+  /// bucket y aquí solo se referencia, para no inflar la fila ni la base.
+  logoUrl         String?  @map("logo_url") @db.Text
   description     String?  @db.Text
   active          Boolean  @default(true)
   // Nullable con SetNull para que eliminar un usuario no bloquee ni borre el convenio.
