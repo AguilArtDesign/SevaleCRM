@@ -1,18 +1,20 @@
-import { useCallback, useEffect, useState } from 'react';
+import { Fragment, useCallback, useEffect, useState, type ReactNode } from 'react';
 import { Avatar, Button, Spinner, Typography } from '@heroui/react';
 import {
   ArrowRightFromSquare,
-  Boxes3,
+  Box,
   Briefcase,
   Gear,
+  Gem,
   LayoutSideContentLeft,
   Persons,
+  PersonsLock,
   PersonMagnifier,
   ShoppingCart,
   Ticket,
   Xmark,
 } from '@gravity-ui/icons';
-import { hasPermission } from '@sevale/permissions';
+import { hasPermission, type Permission } from '@sevale/permissions';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { authClient } from '../auth/auth-client';
 import { ThemeToggle } from '../theme/ThemeToggle';
@@ -31,6 +33,16 @@ const roleLabels = {
   COMMERCIAL: 'Comercial',
   LOGISTICS: 'Logística',
 } as const;
+
+type SidebarItem = {
+  to: string;
+  label: string;
+  icon: ReactNode;
+  /** Se oculta en lugar de mostrarse deshabilitado cuando el rol no alcanza el módulo. */
+  when?: boolean;
+};
+
+type SidebarSection = { label: string; items: SidebarItem[] };
 
 const SIDEBAR_COLLAPSED_STORAGE_KEY = 'sevale-crm.sidebar-collapsed';
 
@@ -135,6 +147,61 @@ export function AppShell() {
     );
   }
 
+  const can = (permission: Permission) => Boolean(user && hasPermission(user.role, permission));
+
+  // El menú se agrupa por área de trabajo: el orden va del día a día comercial a la
+  // administración. Una sección sin entradas visibles desaparece con su encabezado.
+  const sidebarSections: SidebarSection[] = [
+    {
+      label: 'Comercial',
+      items: [
+        {
+          to: '/prospects',
+          label: 'Prospectos',
+          icon: <PersonMagnifier />,
+          when: can('prospects.read'),
+        },
+        {
+          to: '/customers',
+          label: 'Clientes',
+          icon: <Persons />,
+          when: can('customers.read'),
+        },
+        { to: '/orders', label: 'Pedidos', icon: <ShoppingCart /> },
+        { to: '/coupons', label: 'Cupones', icon: <Ticket />, when: can('coupons.read') },
+      ],
+    },
+    {
+      label: 'Convenios / Fidelización',
+      items: [
+        {
+          to: '/agreements',
+          label: 'Convenios',
+          icon: <Briefcase />,
+          when: can('agreements.read'),
+        },
+        {
+          to: '/points-colombia',
+          label: 'Puntos Colombia',
+          icon: <Gem />,
+          when: can('loyalty.read'),
+        },
+      ],
+    },
+    {
+      label: 'Operación',
+      items: [{ to: '/inventory', label: 'Inventario', icon: <Box /> }],
+    },
+    {
+      label: 'Administración',
+      items: [
+        { to: '/users', label: 'Usuarios', icon: <PersonsLock />, when: user?.role === 'ADMIN' },
+      ],
+    },
+  ]
+    .map((section) => ({ ...section, items: section.items.filter((item) => item.when ?? true) }))
+    .filter((section) => section.items.length > 0);
+
   return (
     <div className={`crm-shell${isSidebarCollapsed ? ' crm-shell-sidebar-collapsed' : ''}`}>
       <aside className={`crm-sidebar${isSidebarOpen ? ' crm-sidebar-open' : ''}`}>
@@ -164,89 +231,29 @@ export function AppShell() {
         </div>
 
         <nav className="sidebar-nav" aria-label="Navegación principal">
-          <NavLink
-            to="/inventory"
-            className={({ isActive }) => `sidebar-link${isActive ? ' sidebar-link-active' : ''}`}
-          >
-            <span className="sidebar-menu-icon" aria-hidden="true">
-              <Boxes3 />
-            </span>
-            <span>Inventario</span>
-          </NavLink>
-
-          <NavLink
-            to="/orders"
-            className={({ isActive }) => `sidebar-link${isActive ? ' sidebar-link-active' : ''}`}
-          >
-            <span className="sidebar-menu-icon" aria-hidden="true">
-              <ShoppingCart />
-            </span>
-            <span>Pedidos</span>
-          </NavLink>
-
-          {user && hasPermission(user.role, 'coupons.read') && (
-            <NavLink
-              to="/coupons"
-              className={({ isActive }) => `sidebar-link${isActive ? ' sidebar-link-active' : ''}`}
-            >
-              <span className="sidebar-menu-icon" aria-hidden="true">
-                <Ticket />
-              </span>
-              <span>Cupones</span>
-            </NavLink>
-          )}
-
-          {user && hasPermission(user.role, 'agreements.read') && (
-            <NavLink
-              to="/agreements"
-              className={({ isActive }) => `sidebar-link${isActive ? ' sidebar-link-active' : ''}`}
-            >
-              <span className="sidebar-menu-icon" aria-hidden="true">
-                <Briefcase />
-              </span>
-              <span>Convenios</span>
-            </NavLink>
-          )}
-
-          {user && hasPermission(user.role, 'prospects.read') && (
-            <NavLink
-              to="/prospects"
-              className={({ isActive }) => `sidebar-link${isActive ? ' sidebar-link-active' : ''}`}
-            >
-              <span className="sidebar-menu-icon" aria-hidden="true">
-                <PersonMagnifier />
-              </span>
-              <span>Prospectos</span>
-            </NavLink>
-          )}
-
-          {(user?.role === 'ADMIN' || user?.role === 'COMMERCIAL') && (
-            <NavLink
-              to="/customers"
-              className={({ isActive }) => `sidebar-link${isActive ? ' sidebar-link-active' : ''}`}
-            >
-              <span className="sidebar-menu-icon" aria-hidden="true">
-                <PersonMagnifier />
-              </span>
-              <span>Clientes</span>
-            </NavLink>
-          )}
-
-          {user?.role === 'ADMIN' && (
-            <>
-              <NavLink
-                to="/users"
-                className={({ isActive }) =>
-                  `sidebar-link${isActive ? ' sidebar-link-active' : ''}`
-                }
+          {sidebarSections.map((section, index) => (
+            <Fragment key={section.label}>
+              <span
+                className={`sidebar-section-label${index > 0 ? ' sidebar-section-spaced' : ''}`}
               >
-                <span className="sidebar-menu-icon" aria-hidden="true">
-                  <Persons />
-                </span>
-                <span>Usuarios</span>
-              </NavLink>
-            </>
-          )}
+                {section.label}
+              </span>
+              {section.items.map((item) => (
+                <NavLink
+                  key={item.to}
+                  to={item.to}
+                  className={({ isActive }) =>
+                    `sidebar-link${isActive ? ' sidebar-link-active' : ''}`
+                  }
+                >
+                  <span className="sidebar-menu-icon" aria-hidden="true">
+                    {item.icon}
+                  </span>
+                  <span>{item.label}</span>
+                </NavLink>
+              ))}
+            </Fragment>
+          ))}
         </nav>
 
         <div className="sidebar-footer">

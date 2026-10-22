@@ -41,6 +41,7 @@ export const permissions = [
   'prospects.delete',
   'prospects.convert',
   'tags.manage',
+  'loyalty.read',
 ] as const;
 
 export type Role = (typeof roles)[number];
@@ -74,6 +75,7 @@ export const rolePermissions = {
     'prospects.create',
     'prospects.update',
     'prospects.convert',
+    'loyalty.read',
   ],
   LOGISTICS: ['inventory.read', 'orders.read', 'orders.shipping.update'],
 } as const satisfies Record<Role, readonly Permission[]>;
