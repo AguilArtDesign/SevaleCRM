@@ -105,6 +105,22 @@ export function resolveCustomerCountry(countryCode: string): CustomerWooCountry 
   return exactEntry(wooCatalog, countryCode)?.[1] ?? null;
 }
 
+/**
+ * Resuelve un país por su nombre, que es lo que una persona escribe en un CSV. Compara sin acentos
+ * ni mayúsculas contra el mismo catálogo que alimenta el selector de país, así que no hay una lista
+ * paralela que se pueda desincronizar.
+ */
+export function resolveCustomerCountryByName(countryName: string): CustomerCountryOption | null {
+  const wanted = normalizedSearch(countryName);
+  if (!wanted) return null;
+  for (const [code, country] of Object.entries(wooCatalog)) {
+    if (normalizedSearch(country.name) === wanted) {
+      return { code, name: country.name, flag: country.flag };
+    }
+  }
+  return null;
+}
+
 export function customerCountryFlagPath(countryCode: string): string {
   return (
     resolveCustomerCountry(countryCode)?.flag ?? `/img/flags/${normalizedCode(countryCode)}.webp`

@@ -114,6 +114,35 @@ export class ProspectsRepository {
     return this.prisma.prospect.delete({ where: { id }, include: prospectInclude });
   }
 
+  /**
+   * Prospectos que ya usan alguno de los documentos o correos del archivo. Se consulta antes de
+   * insertar para poder avisar: un prospecto repetido se omite, no se duplica. El teléfono queda
+   * fuera a propósito, porque no identifica a una persona.
+   */
+  findImportDuplicates({ documents, emails }: { documents: string[]; emails: string[] }) {
+    const filters: Prisma.ProspectWhereInput[] = [];
+    if (documents.length) filters.push({ documentNumber: { in: documents } });
+    if (emails.length) filters.push({ email: { in: emails } });
+    if (!filters.length) return Promise.resolve([]);
+    return this.prisma.prospect.findMany({
+      where: { OR: filters },
+      select: { documentNumber: true, email: true },
+    });
+  }
+
+  /** Catálogo de convenios para resolver la columna `convenio` del CSV por nombre. */
+  agreementsCatalog() {
+    return this.prisma.agreement.findMany({
+      select: { id: true, companyName: true },
+      orderBy: { companyName: 'asc' },
+    });
+  }
+
+  /** Inserción masiva de la importación: no toca etiquetas ni relaciones. */
+  createMany(data: Prisma.ProspectUncheckedCreateInput[]) {
+    return this.prisma.prospect.createMany({ data });
+  }
+
   userExists(userId: string) {
     return this.prisma.user.findUnique({ where: { id: userId }, select: { id: true } });
   }

@@ -68,6 +68,7 @@ export {
   resolveCustomerColombiaCity,
   resolveCustomerColombiaState,
   resolveCustomerCountry,
+  resolveCustomerCountryByName,
   resolveCustomerCountryName,
   resolveCustomerRegionName,
   resolveCustomerSiigoCity,

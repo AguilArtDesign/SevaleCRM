@@ -435,6 +435,17 @@ export class ProspectsService {
     return serializeProspect(prospect);
   }
 
+  /**
+   * Normaliza una fila de CSV con las mismas reglas que el alta manual. La importación no puede
+   * crear un prospecto que el formulario rechazaría, así que la lógica se reutiliza en lugar de
+   * replicarse en el servicio de importación.
+   */
+  prepareImportedProspect(input: CreateProspectInput) {
+    validateLocation(input);
+    const values = this.normalize({ ...input, personType: input.personType ?? 'PERSON' });
+    return { ...values, displayName: buildDisplayName(values) };
+  }
+
   async update(id: number, input: UpdateProspectInput) {
     const current = await this.ensureEditable(id);
     const { tagIds, ...rest } = input;

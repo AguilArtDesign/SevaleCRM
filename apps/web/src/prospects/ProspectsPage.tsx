@@ -27,6 +27,7 @@ import {
 } from '@heroui/react';
 import {
   EllipsisVertical,
+  ArrowUpFromLine,
   Eye,
   Funnel,
   Pencil,
@@ -56,6 +57,7 @@ import {
 } from './api';
 import { ProspectDetail } from './ProspectDetail';
 import { ProspectForm, type ProspectFormValue } from './ProspectForm';
+import { ProspectImportModal } from './ProspectImportModal';
 import { TagChip, TagColorDot } from './TagChip';
 import { TagsDialog } from './TagsDialog';
 import {
@@ -156,6 +158,7 @@ export function ProspectsPage() {
   const [convertTarget, setConvertTarget] = useState<ProspectRecord | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ProspectRecord | null>(null);
   const [tagsOpen, setTagsOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
   // Los filtros viven siempre en el panel: así pueden crecer sin rehacer la barra.
   const [filtersOpen, setFiltersOpen] = useState(false);
   // Selección de filas para las acciones masivas que vendrán después. Se guarda por página, igual
@@ -183,6 +186,15 @@ export function ProspectsPage() {
   const agreementsQuery = useQuery({
     queryKey: ['agreements', 'active-options'],
     queryFn: fetchActiveAgreements,
+  });
+
+  // La importación se apaga con `PROSPECT_IMPORT_ENABLED`: el botón solo existe si la API la
+  // habilita, y solo para quien puede crear prospectos.
+  const importStatusQuery = useQuery({
+    queryKey: ['prospect-import-status'],
+    queryFn: prospectsApi.importStatus,
+    enabled: canCreate,
+    staleTime: 60_000,
   });
 
   const detailQuery = useQuery({
@@ -575,6 +587,12 @@ export function ProspectsPage() {
             <Button variant="secondary" onPress={() => setTagsOpen(true)}>
               <TagIcon width={17} height={17} />
               Etiquetas
+            </Button>
+          )}
+          {canCreate && importStatusQuery.data?.enabled && (
+            <Button variant="secondary" onPress={() => setImportOpen(true)}>
+              <ArrowUpFromLine width={17} height={17} />
+              Importar CSV
             </Button>
           )}
           {canCreate && (
@@ -991,6 +1009,10 @@ export function ProspectsPage() {
       )}
 
       <TagsDialog isOpen={tagsOpen} onClose={() => setTagsOpen(false)} />
+
+      {importStatusQuery.data?.enabled && (
+        <ProspectImportModal isOpen={importOpen} onOpenChange={setImportOpen} />
+      )}
 
       {canDelete && (
         <AlertDialog

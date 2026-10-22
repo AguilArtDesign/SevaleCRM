@@ -4,18 +4,23 @@ import {
   prospectConvertLinkSchema,
   prospectConvertSchema,
   prospectIdSchema,
+  prospectImportCsvSchema,
   prospectListQuerySchema,
   updateProspectSchema,
 } from '@sevale/validation';
 import type { AuthenticatedRequest } from '../auth/auth.guard.js';
 import { RequirePermissions } from '../permissions/require-permissions.decorator.js';
 import { parseInput } from './parse-input.js';
+import { ProspectImportService } from './prospect-import.service.js';
 import { ProspectsService } from './prospects.service.js';
 
 @Controller('prospects')
 @RequirePermissions('prospects.read')
 export class ProspectsController {
-  constructor(private readonly prospects: ProspectsService) {}
+  constructor(
+    private readonly prospects: ProspectsService,
+    private readonly prospectImport: ProspectImportService,
+  ) {}
 
   @Get()
   list(@Query() query: unknown) {
@@ -26,6 +31,27 @@ export class ProspectsController {
   @Get('assignees')
   assignees() {
     return this.prospects.assignableUsers();
+  }
+
+  // Igual que en Inventario, la importación es una acción de alta y por eso exige `prospects.create`.
+  @Get('import/status')
+  @RequirePermissions('prospects.create')
+  importStatus() {
+    return this.prospectImport.status();
+  }
+
+  @Post('import/preview')
+  @RequirePermissions('prospects.create')
+  importPreview(@Body() body: unknown) {
+    const { csv } = parseInput(prospectImportCsvSchema, body);
+    return this.prospectImport.preview(csv);
+  }
+
+  @Post('import')
+  @RequirePermissions('prospects.create')
+  importProspects(@Body() body: unknown) {
+    const { csv } = parseInput(prospectImportCsvSchema, body);
+    return this.prospectImport.import(csv);
   }
 
   @Get(':id')

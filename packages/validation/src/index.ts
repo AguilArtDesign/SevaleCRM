@@ -86,6 +86,43 @@ export const customerDocumentTypes = [
 
 export type CustomerDocumentType = (typeof customerDocumentTypes)[number]['value'];
 
+/**
+ * Compara sin acentos, sin mayúsculas y sin puntuación, para que «Cédula de ciudadanía» y
+ * «cedula de ciudadania» sean el mismo valor. No añade vocabulario: solo tolera cómo se escribe.
+ */
+function normalizeDocumentTypeLabel(value: string): string {
+  return value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, ' ')
+    .trim();
+}
+
+/**
+ * Traduce lo que trae el archivo al código que guarda el CRM. Se acepta la etiqueta tal como aparece
+ * en el selector de tipo de documento y el propio código; ambos son parte de `customerDocumentTypes`,
+ * así que no hay una segunda tabla que mantener sincronizada. Devuelve `null` si no lo reconoce, para
+ * que quien llama pueda avisar en lugar de guardar un tipo que rompería la sincronización.
+ */
+export function resolveCustomerDocumentType(value: string): CustomerDocumentType | null {
+  const normalized = normalizeDocumentTypeLabel(value);
+  if (!normalized) return null;
+  for (const { value: code, label } of customerDocumentTypes) {
+    if (
+      normalizeDocumentTypeLabel(code) === normalized ||
+      normalizeDocumentTypeLabel(label) === normalized
+    ) {
+      return code;
+    }
+  }
+  return null;
+}
+
+/** Texto para el mensaje de error: no enumera tipos, remite al selector que los define. */
+export const customerDocumentTypeHints =
+  'el nombre tal como aparece en el selector de tipo de documento';
+
 export const customerDocumentRules: Record<
   CustomerDocumentType,
   { format: 'numeric' | 'alphanumeric'; minimum: number; maximum: number }
@@ -1160,6 +1197,14 @@ export const prospectListQuerySchema = z.object({
 // conversión cambia con él y no hay dos validaciones que se desincronicen.
 export const prospectConvertSchema = createCustomerSchema;
 
+/** La importación comparte el límite con la de productos: 800 KB de texto caben en un POST. */
+export const prospectImportCsvSchema = z.object({
+  csv: z
+    .string()
+    .min(1, 'El archivo CSV está vacío.')
+    .max(800_000, 'El archivo CSV supera el tamaño máximo permitido.'),
+});
+
 export const prospectConvertLinkSchema = z.object({
   customerId: z.coerce
     .number()
@@ -1210,6 +1255,7 @@ export type UpdateProspectInput = z.infer<typeof updateProspectSchema>;
 export type ProspectListQuery = z.infer<typeof prospectListQuerySchema>;
 export type ProspectConvertInput = z.infer<typeof prospectConvertSchema>;
 export type ProspectConvertLinkInput = z.infer<typeof prospectConvertLinkSchema>;
+export type ProspectImportCsvInput = z.infer<typeof prospectImportCsvSchema>;
 export type CreateTagInput = z.infer<typeof createTagSchema>;
 export type UpdateTagInput = z.infer<typeof updateTagSchema>;
 export type TagListQuery = z.infer<typeof tagListQuerySchema>;

@@ -86,6 +86,35 @@ El botón **Vincular producto**, visible solo para administradores, consulta `GE
 
 `POST /api/products` vuelve a ejecutar esas comprobaciones antes de insertar el producto. Bloquea datos incompletos, respuestas con otro SKU, productos ausentes, coincidencias en ambas tiendas y duplicados. La operación escribe únicamente en la base de datos del CRM; las integraciones externas continúan siendo de solo lectura, salvo la autenticación requerida para renovar el token de Siigo.
 
+## Importación de productos
+
+La importación de inventario está detrás de `PRODUCT_IMPORT_ENABLED`, una variable independiente de la de prospectos para poder apagar una sin la otra. Con el valor `false` los tres endpoints (`GET /api/products/import/status`, `POST /api/products/import/preview` y `POST /api/products/import`) responden `404` con el código `PRODUCT_IMPORT_DISABLED`, y el botón **Importar CSV** desaparece del panel.
+
+El archivo exige catorce columnas con un orden fijo, porque refleja la unión de Siigo y WooCommerce y no lo escribe una persona.
+
+## Importación de prospectos
+
+La importación de prospectos se controla con `PROSPECT_IMPORT_ENABLED`, separada de `PRODUCT_IMPORT_ENABLED` para poder retirar una sin tocar la otra. Cuando vale `false`, los endpoints `/api/prospects/import/*` responden `404` con `PROSPECT_IMPORT_DISABLED` y el botón **Importar CSV** no se renderiza. La comprobación se hace en el backend: ocultar el botón es una consecuencia, no la protección.
+
+A diferencia de Inventario, el CSV de prospectos lo arma una persona en Excel, así que los encabezados se reconocen **por nombre y en cualquier orden**. Se aceptan alias razonables (`correo`/`email`, `celular`/`telefono`/`movil`, `documento`/`cedula`/`nit`, `pais`/`country`, `convenio`/`programa`) y las columnas desconocidas se ignoran. Las columnas admitidas son `nombre`, `apellido`, `empresa`, `tipo_documento`, `documento`, `correo`, `telefono`, `pais` y `convenio`; el modal ofrece descargar una plantilla con ese formato, servida por la API para que el archivo descargado y el que se valida no puedan desincronizarse.
+
+Las columnas `pais` y `convenio` existen para no tener que completar miles de fichas una por una después de importar. Ambas se resuelven **por nombre** contra su catálogo, sin una segunda lista que mantener y sin distinguir mayúsculas ni tildes:
+
+- `pais` usa el mismo catálogo que alimenta el selector de país de los formularios y guarda el código resultante (`Colombia` → `CO`). `resolveCustomerCountryByName` vive en `@sevale/shared`, junto a los demás resolutores de ubicación.
+- `convenio` usa el catálogo de Convenios y guarda el `agreementId`.
+
+Si alguno de los dos nombres no existe, la importación se rechaza y se indica cuál falta, en lugar de dejar los prospectos sin la clasificación que les da sentido. El aviso se emite **una sola vez por nombre**, aunque afecte a todas las filas. Una celda vacía deja el campo sin definir, que es el caso de la plantilla.
+
+### Archivos grandes
+
+Una base de convenio puede traer cientos de miles de filas: 194.000 rondan los 22 MB, muy por encima del cuerpo que acepta la API. El modal divide el archivo en lotes de tamaño adaptativo (según la longitud media de las filas) y los envía en secuencia, mostrando el avance lote a lote. La validación recorre todos los lotes **antes** de insertar nada, de modo que un error en cualquier fila impide la importación completa; en el servidor, las consultas de duplicados y los `INSERT` también se parten en trozos para no superar `max_allowed_packet`.
+
+El flujo es de dos pasos: `POST /api/prospects/import/preview` devuelve el resumen (filas, nuevas, ya existentes, errores por fila) y `POST /api/prospects/import` inserta. Cada fila se valida con el **mismo** `createProspectSchema` que el alta manual y se normaliza con `prepareImportedProspect`, que reutiliza las reglas de teléfono, correo, nombre visible y ubicación. Un archivo con errores se rechaza completo con `422 PROSPECT_IMPORT_INVALID`; no hay importación parcial silenciosa.
+
+El tipo de documento es el único campo que no se guarda tal como llega: el CRM almacena el **código de Siigo** (`13` para cédula, `31` para NIT, `41` para pasaporte) porque es lo que exige la sincronización con Siigo y WooCommerce. En el archivo se escribe el **nombre tal como aparece en el selector de tipo de documento** (`Cédula de ciudadanía`, `NIT`, `Pasaporte`…), y `resolveCustomerDocumentType` lo traduce al código usando la misma tabla que alimenta ese selector, sin una segunda lista que mantener. Un valor que no está en el catálogo se rechaza en la vista previa indicando la columna, en lugar de guardar un tipo que rompería la conversión a Cliente.
+
+Los duplicados se detectan por **documento** o, cuando la fila no trae documento, por **correo**. El teléfono queda fuera a propósito: no identifica a una persona y una base de convenio repite números con frecuencia, así que usarlo como clave descartaría registros legítimos. La comparación se hace contra la base y dentro del propio archivo, y las filas repetidas se **omiten** en lugar de bloquear: el resumen indica cuántas se agregarán y cuántas ya existen. Volver a subir el mismo archivo no crea filas repetidas.
+
 ## Integraciones de lectura
 
 La API encapsula consultas externas de solo lectura a Siigo, WooCommerce Seratus y WooCommerce Pali. Todas las credenciales permanecen en variables de entorno del backend; React nunca consulta directamente a los proveedores ni recibe sus credenciales.
@@ -270,6 +299,8 @@ npm run test:products
 npm run test:integrations
 npm run test:siigo-token
 npm run test:product-link
+npm run test:product-import
+npm run test:prospects:import
 npm run test:n8n
 npm run test:realtime
 npm run test:notifications

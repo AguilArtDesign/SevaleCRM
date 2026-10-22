@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { Store, SyncStatus, type Prisma } from '../generated/prisma/client.js';
 import { PrismaService } from '../database/prisma.service.js';
+import { parseCsv } from '../common/csv.js';
 
 const EXPECTED_HEADERS = [
   'siigo_id',
@@ -52,48 +53,6 @@ export type ProductImportPreview = {
   conflicts: ImportIssue[];
   canImport: boolean;
 };
-
-function parseCsv(csv: string): string[][] {
-  const rows: string[][] = [];
-  let row: string[] = [];
-  let field = '';
-  let quoted = false;
-
-  for (let index = 0; index < csv.length; index += 1) {
-    const character = csv[index];
-    if (quoted) {
-      if (character === '"') {
-        if (csv[index + 1] === '"') {
-          field += '"';
-          index += 1;
-        } else {
-          quoted = false;
-        }
-      } else {
-        field += character;
-      }
-      continue;
-    }
-
-    if (character === '"' && field.length === 0) quoted = true;
-    else if (character === ',') {
-      row.push(field);
-      field = '';
-    } else if (character === '\n') {
-      row.push(field.endsWith('\r') ? field.slice(0, -1) : field);
-      rows.push(row);
-      row = [];
-      field = '';
-    } else field += character;
-  }
-
-  if (quoted) throw new Error('Hay un campo entre comillas que no fue cerrado.');
-  if (field.length > 0 || row.length > 0) {
-    row.push(field.endsWith('\r') ? field.slice(0, -1) : field);
-    rows.push(row);
-  }
-  return rows;
-}
 
 function numberValue(value: string, field: string, integer = false): number {
   if (!value.trim()) throw new Error(`${field} es obligatorio.`);

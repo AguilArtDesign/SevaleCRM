@@ -69,6 +69,25 @@ export type ProspectRecord = {
 
 export type Pagination = { page: number; pageSize: number; total: number; totalPages: number };
 
+export type ProspectImportIssue = { row: number; field: string; message: string };
+
+export type ProspectImportPreview = {
+  totalRows: number;
+  validRows: number;
+  newProspects: number;
+  duplicates: number;
+  errorCount: number;
+  errors: ProspectImportIssue[];
+  canImport: boolean;
+};
+
+export type ProspectImportResult = {
+  success: true;
+  totalRows: number;
+  imported: number;
+  duplicates: number;
+};
+
 export type ProspectListResponse = { data: ProspectRecord[]; pagination: Pagination };
 
 /** `all` excluye los convertidos: son historial y no trabajo diario. */
@@ -168,6 +187,18 @@ export const prospectsApi = {
     }),
   /** Usuarios asignables; el comercial no puede listar el panel de Usuarios. */
   assignees: () => request<ProspectUser[]>('/api/prospects/assignees'),
+  importStatus: () =>
+    request<{ enabled: boolean; template: string }>('/api/prospects/import/status'),
+  previewImport: (csv: string) =>
+    request<ProspectImportPreview>('/api/prospects/import/preview', {
+      method: 'POST',
+      body: JSON.stringify({ csv }),
+    }),
+  importProspects: (csv: string) =>
+    request<ProspectImportResult>('/api/prospects/import', {
+      method: 'POST',
+      body: JSON.stringify({ csv }),
+    }),
   tags: () => request<TagRecord[]>('/api/tags'),
   createTag: (input: CreateTagInput) =>
     request<TagRecord>('/api/tags', { method: 'POST', body: JSON.stringify(input) }),
