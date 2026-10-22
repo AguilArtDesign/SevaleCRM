@@ -39,16 +39,21 @@ type AgreementBody = {
   id: number;
   companyName: string;
   nit: string | null;
+  country: string;
+  countryName: string | null;
   region: string | null;
   regionName: string | null;
   cityCode: string | null;
   cityName: string | null;
+  validUntil: string | null;
   contactName: string | null;
   contactPosition: string | null;
   contactPhone: string | null;
   contactEmail: string | null;
   active: boolean;
   pendingTasks: number;
+  completedTasks: number;
+  cancelledTasks: number;
   commentsCount: number;
   createdBy: { id: string; name: string } | null;
 };
@@ -110,10 +115,15 @@ async function json<T>(response: Response, context: string, status = 200): Promi
   return (await response.json()) as T;
 }
 
-async function expectError(response: Response, status: number, code: string, context: string) {
+async function expectError(
+  response: Response,
+  status: number,
+  code: string | null,
+  context: string,
+) {
   expectStatus(response, status, context);
   const body = (await response.json()) as { error?: { code?: string } };
-  if (body.error?.code !== code) {
+  if (code !== null && body.error?.code !== code) {
     throw new Error(`${context}: se esperaba el código ${code} y llegó ${body.error?.code}.`);
   }
 }
@@ -185,6 +195,9 @@ try {
   if (minimal.nit !== null || minimal.pendingTasks !== 0 || minimal.active !== true) {
     throw new Error('El alta mínima no dejó los valores por defecto esperados.');
   }
+  if (minimal.country !== 'CO' || minimal.countryName !== 'Colombia') {
+    throw new Error('Un alta sin país no quedó como convenio colombiano.');
+  }
   if (minimal.createdBy?.id !== commercialId) {
     throw new Error('El convenio no registró al comercial como creador.');
   }
@@ -205,6 +218,7 @@ try {
         contactPosition: 'Coordinadora de Bienestar',
         contactEmail: 'LAURA@Example.INVALID',
         contactPhone: '3001234567',
+        validUntil: '2030-12-31',
         description: 'Convenio de prueba',
       }),
     }),
@@ -214,11 +228,44 @@ try {
   if (full.regionName !== 'Antioquia' || full.cityName !== 'Medellín') {
     throw new Error('El listado no resolvió los nombres de la ubicación colombiana.');
   }
+  // La vigencia se guarda como fecha sin hora: debe volver el mismo día que se envió.
+  if (full.validUntil !== '2030-12-31') {
+    throw new Error('La fecha de vigencia no se guardó como fecha sin hora.');
+  }
   if (full.contactPhone !== '+573001234567' || full.contactEmail !== 'laura@example.invalid') {
     throw new Error('El teléfono o el correo del contacto no se normalizaron.');
   }
   if (full.createdBy?.id !== adminId) {
     throw new Error('El convenio no registró al administrador como creador.');
+  }
+
+  // --- Convenio internacional: región de catálogo y ciudad de texto libre ------------------
+  const abroad = await json<AgreementBody>(
+    await api('/api/agreements', adminCookie, {
+      method: 'POST',
+      body: JSON.stringify({
+        companyName: `${companyName} MX`,
+        country: 'MX',
+        region: 'DF',
+        cityName: 'Ciudad de México',
+        contactPhone: '5512345678',
+      }),
+    }),
+    'Alta internacional',
+    201,
+  );
+  if (
+    abroad.country !== 'MX' ||
+    abroad.regionName !== 'Ciudad de México' ||
+    abroad.cityName !== 'Ciudad de México'
+  ) {
+    throw new Error('El convenio internacional no resolvió su ubicación.');
+  }
+  if (abroad.cityCode !== null) {
+    throw new Error('Un convenio internacional guardó un código de ciudad colombiano.');
+  }
+  if (abroad.contactPhone !== '+525512345678') {
+    throw new Error('El teléfono internacional no se normalizó contra su país.');
   }
 
   // --- NIT único cuando existe ------------------------------------------------------------
@@ -284,6 +331,33 @@ try {
     400,
     'AGREEMENT_PHONE_INVALID',
     'Teléfono inválido',
+  );
+  await expectError(
+    await api('/api/agreements', adminCookie, {
+      method: 'POST',
+      body: JSON.stringify({ companyName: 'País malo', country: 'ZZ' }),
+    }),
+    400,
+    'AGREEMENT_COUNTRY_INVALID',
+    'País fuera del catálogo',
+  );
+  await expectError(
+    await api('/api/agreements', adminCookie, {
+      method: 'POST',
+      body: JSON.stringify({ companyName: 'Región de otro país', country: 'MX', region: 'CO-ANT' }),
+    }),
+    400,
+    'AGREEMENT_REGION_INVALID',
+    'Región que no pertenece al país',
+  );
+  await expectError(
+    await api('/api/agreements', adminCookie, {
+      method: 'POST',
+      body: JSON.stringify({ companyName: 'Vigencia mala', validUntil: '31/12/2030' }),
+    }),
+    400,
+    null,
+    'Vigencia con formato inválido',
   );
   await expectError(
     await api(`/api/agreements/${full.id}`, adminCookie, {
@@ -538,6 +612,39 @@ try {
     throw new Error(
       `Los contadores de la ficha no cuadran: pendientes=${detail.pendingTasks}, comentarios=${detail.commentsCount}.`,
     );
+  }
+
+  // Los tres estados se cuentan por separado: el listado muestra pendientes, completadas y
+  // canceladas, así que un contador que solo sume pendientes dejaría dos columnas siempre en cero.
+  const withCounters = await json<{
+    data: { id: number; pendingTasks: number; completedTasks: number; cancelledTasks: number }[];
+  }>(await api('/api/agreements?pageSize=100', adminCookie), 'Listado con contadores');
+  const fullRow = withCounters.data.find((row) => row.id === full.id);
+  if (!fullRow) throw new Error('El convenio no aparece en el listado con contadores.');
+  const taskStatuses = await prisma.agreementTask.groupBy({
+    by: ['status'],
+    where: { agreementId: full.id },
+    _count: { _all: true },
+  });
+  const expected = { PENDING: 0, COMPLETED: 0, CANCELLED: 0 };
+  for (const group of taskStatuses) expected[group.status] = group._count._all;
+  if (
+    fullRow.pendingTasks !== expected.PENDING ||
+    fullRow.completedTasks !== expected.COMPLETED ||
+    fullRow.cancelledTasks !== expected.CANCELLED
+  ) {
+    throw new Error(
+      `El listado no cuenta los tres estados: pendientes=${fullRow.pendingTasks}/${expected.PENDING}, ` +
+        `completadas=${fullRow.completedTasks}/${expected.COMPLETED}, canceladas=${fullRow.cancelledTasks}/${expected.CANCELLED}.`,
+    );
+  }
+  // Un convenio sin tareas debe devolver ceros, no `undefined`, para que la tabla no muestre huecos.
+  const bare = await json<AgreementBody>(
+    await api(`/api/agreements/${minimal.id}`, adminCookie),
+    'Detalle sin tareas',
+  );
+  if (bare.completedTasks !== 0 || bare.cancelledTasks !== 0) {
+    throw new Error('Un convenio sin tareas debe contar cero completadas y cero canceladas.');
   }
 
   // --- Borrado de usuario: el historial sobrevive y el autor queda vacío -------------------

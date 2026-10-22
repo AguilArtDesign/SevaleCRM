@@ -493,6 +493,13 @@ select {
   height: 1rem;
 }
 
+/* Logo de marca dentro del menú: mismo tamaño que los íconos de la librería. */
+.sidebar-menu-icon > .sidebar-brand-icon {
+  width: 1rem;
+  height: 1rem;
+  object-fit: contain;
+}
+
 .sidebar-footer {
   display: grid;
   gap: 0.125rem;
@@ -5236,31 +5243,74 @@ select {
   min-width: 72rem;
 }
 
+/* El nombre de la empresa no navega: la ficha se abre desde el menú de acciones. */
 .agreement-name-cell {
-  padding: 0;
-  background: none;
-  border: 0;
-  color: inherit;
-  font: inherit;
-  text-align: start;
-  cursor: pointer;
+  color: var(--foreground);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  line-height: 1.25;
 }
 
-/* El nombre de la empresa es el enlace natural a la ficha; el subrayado solo aparece al pasar. */
-.agreement-name-cell:hover strong {
-  text-decoration: underline;
-  text-underline-offset: 3px;
+/* La columna de acciones no lleva encabezado y el botón se pega al borde derecho. */
+.agreement-actions-column {
+  width: 3.5rem;
+  text-align: end;
+}
+
+.agreement-actions-cell {
+  text-align: end;
+}
+
+.agreement-country-cell {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: var(--foreground);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  line-height: 1.25;
+}
+
+.agreement-country-cell img {
+  width: 1.3rem;
+  height: 0.9rem;
+  border-radius: 0.2rem;
+  object-fit: cover;
+}
+
+/* Días restantes de contrato. Un convenio vencido se distingue por color, no por un 0. */
+.agreement-validity {
+  color: var(--foreground);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  line-height: 1.25;
+  white-space: nowrap;
+}
+
+.agreement-validity--expired {
+  color: var(--danger);
+}
+
+.agreement-validity-date {
+  color: var(--muted);
+  font-size: 0.75rem;
 }
 
 .agreement-contact-cell {
   display: grid;
-  gap: 0.1rem;
   min-width: 0;
+}
+.agreement-contact-cell strong {
+  color: var(--foreground);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  line-height: 1.25;
 }
 
 .agreement-contact-cell span {
   color: var(--muted);
   font-size: 0.75rem;
+  line-height: 1.25;
 }
 
 /* Activo e inactivo comparten forma; sólo cambia el color, porque un inactivo sigue siendo válido. */
@@ -5426,8 +5476,21 @@ select {
   font-size: 0.75rem;
 }
 
+/* Contadores de tareas por estado: pendiente (warning), completada (success) y cancelada (danger).
+   Cada chip lleva su propio color, así que la celda solo necesita separarlos. */
+.agreement-task-counters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.3rem;
+}
+
 .agreement-form-body {
-  gap: 1.25rem;
+  gap: 1.25rem; /* El `overflow: visible` global de `.modal__body` deja el contenido fuera de la ventana cuando la
+     ficha no cabe. Aquí el cuerpo scrollea y el pie permanece visible. */
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 /* El formulario envuelve cuerpo y pie para que Enter envíe: tiene que continuar el flex del

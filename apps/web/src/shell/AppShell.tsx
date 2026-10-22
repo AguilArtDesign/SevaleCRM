@@ -5,7 +5,6 @@ import {
   Box,
   Briefcase,
   Gear,
-  Gem,
   LayoutSideContentLeft,
   Persons,
   PersonsLock,
@@ -183,7 +182,9 @@ export function AppShell() {
         {
           to: '/points-colombia',
           label: 'Puntos Colombia',
-          icon: <Gem />,
+          // Logo de marca servido desde `public/img`: no es un ícono de la librería y sus colores
+          // son los de la marca, así que no se recolorea con el tema.
+          icon: <img className="sidebar-brand-icon" src="/img/puntos-colombia.svg" alt="" />,
           when: can('loyalty.read'),
         },
       ],

@@ -857,9 +857,10 @@ export const notificationIdSchema = z.coerce
   .positive('El identificador de la notificación no es válido.');
 
 // --- Convenios -------------------------------------------------------------------------------
-// Los convenios son solo de Colombia: no hay país ni nombre de ciudad. El departamento se guarda
-// con su wooCode (CO-ANT) y la ciudad con el código del catálogo (05001); los nombres se resuelven
-// al leer contra el mismo catálogo que usa Clientes.
+// Un convenio puede ser de cualquier país del catálogo de Clientes. El departamento se guarda con
+// su wooCode (CO-ANT) y la ciudad con el código del catálogo (05001) cuando el país lo tiene; fuera
+// de Colombia la ciudad es texto libre y se guarda en `cityName`. Los nombres se resuelven al leer
+// contra el mismo catálogo que usa Clientes.
 
 export const agreementIdSchema = z.coerce
   .number()
@@ -907,6 +908,30 @@ const agreementOptionalUserIdSchema = z
   .optional()
   .transform((value) => value || null);
 
+const agreementCountrySchema = z
+  .string()
+  .trim()
+  .toUpperCase()
+  .regex(/^[A-Z]{2}$/, 'Selecciona un país válido.');
+
+/**
+ * La vigencia es una fecha sin hora (`YYYY-MM-DD`): se compara por día de calendario, no por
+ * instante. Llega del formulario como texto y la API la convierte a fecha antes de guardarla, para
+ * que el tipo que viaja por el cliente siga siendo el que el formulario maneja.
+ */
+const agreementValidUntilSchema = z
+  .union([
+    z
+      .string()
+      .trim()
+      .regex(/^\d{4}-\d{2}-\d{2}$/, 'Selecciona una fecha de vigencia válida.'),
+    z.literal(''),
+    z.null(),
+    z.undefined(),
+  ])
+  .optional()
+  .transform((value) => value || null);
+
 const agreementFieldsSchema = z.object({
   companyName: z
     .string()
@@ -914,8 +939,10 @@ const agreementFieldsSchema = z.object({
     .min(1, 'Ingresa el nombre de la empresa.')
     .max(255, 'El nombre de la empresa no puede superar los 255 caracteres.'),
   nit: agreementNitSchema,
+  country: agreementCountrySchema.optional(),
   region: optionalText(32),
   cityCode: optionalText(32),
+  cityName: optionalText(191),
   postalCode: optionalText(32),
   addressLine1: optionalText(255),
   addressLine2: optionalText(255),
@@ -923,6 +950,7 @@ const agreementFieldsSchema = z.object({
   contactPosition: optionalText(191),
   contactEmail: agreementEmailSchema,
   contactPhone: optionalText(32),
+  validUntil: agreementValidUntilSchema,
   // La URL pública del logo en R2. Solo se acepta https: un logo se pinta en un <img> y no debe
   // poder apuntar a http ni a esquemas como javascript:.
   logoUrl: z
@@ -944,6 +972,8 @@ const agreementFieldsSchema = z.object({
 });
 
 export const createAgreementSchema = agreementFieldsSchema.extend({
+  // Un alta sin país sigue siendo un convenio colombiano, como antes de existir el campo.
+  country: agreementCountrySchema.default('CO'),
   active: z.boolean().default(true),
 });
 

@@ -1,10 +1,11 @@
 import { Alert, Avatar, Button } from '@heroui/react';
 import { Pencil } from '@gravity-ui/icons';
+import { customerCountryFlagPath } from '@sevale/shared';
 import { Chip } from '../components/Chip';
 import type { AgreementCommentRecord, AgreementRecord, AgreementTaskRecord } from './api';
 import { AgreementComments } from './AgreementComments';
 import { AgreementTasks } from './AgreementTasks';
-import { AgreementStatusChip, formatAddress, messageFrom } from './presentation';
+import { AgreementStatusChip, formatAddress, messageFrom, validityLabel } from './presentation';
 
 type SectionState<T> = {
   data: T | undefined;
@@ -37,6 +38,7 @@ export function AgreementDetail({
   onChanged: () => void;
 }) {
   const address = formatAddress(agreement);
+  const validity = validityLabel(agreement.validUntil);
   return (
     <div className="customer-detail agreement-detail">
       <section className="customer-detail-identity">
@@ -74,9 +76,35 @@ export function AgreementDetail({
             <dd>{agreement.nit ?? '--'}</dd>
           </div>
           <div>
+            <dt>País</dt>
+            <dd>
+              <strong className="agreement-country-cell">
+                <img src={customerCountryFlagPath(agreement.country)} alt="" />
+                {agreement.countryName ?? agreement.country}
+              </strong>
+            </dd>
+          </div>
+          <div>
             <dt>Estado</dt>
             <dd>
               <AgreementStatusChip active={agreement.active} />
+            </dd>
+          </div>
+          <div>
+            <dt>Vigencia</dt>
+            <dd>
+              {validity.expired ? (
+                <span className="agreement-validity agreement-validity--expired">
+                  {validity.label}
+                </span>
+              ) : (
+                <>
+                  {validity.label}
+                  {agreement.validUntil && (
+                    <span className="agreement-validity-date"> · hasta {agreement.validUntil}</span>
+                  )}
+                </>
+              )}
             </dd>
           </div>
           <div className="customer-detail-address">

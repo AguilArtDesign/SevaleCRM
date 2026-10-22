@@ -608,10 +608,15 @@ model Agreement {
   id              Int      @id @default(autoincrement())
   companyName     String   @map("company_name") @db.VarChar(255)
   nit             String?  @unique @db.VarChar(32)
-  // Solo Colombia: el departamento se guarda con su woocode (CO-ANT) y la ciudad con el código del
-  // catálogo (05001). Los nombres se resuelven al leer, igual que en customers.
+  /// País con el código ISO 3166-1 alfa-2 del catálogo de Clientes. Los convenios nacieron solo de
+  /// Colombia, así que el default conserva ese caso en las filas anteriores y en los alta sin país.
+  country         String   @default("CO") @db.VarChar(2)
+  // El departamento se guarda con su woocode (CO-ANT) y la ciudad con el código del catálogo
+  // (05001) cuando el país tiene catálogo. Fuera de Colombia la ciudad es texto libre y vive en
+  // cityName. Los nombres se resuelven al leer, igual que en customers.
   region          String?  @db.VarChar(32)
   cityCode        String?  @map("city_code") @db.VarChar(32)
+  cityName        String?  @map("city_name") @db.VarChar(191)
   postalCode      String?  @map("postal_code") @db.VarChar(32)
   addressLine1    String?  @map("address_line_1") @db.VarChar(255)
   addressLine2    String?  @map("address_line_2") @db.VarChar(255)
@@ -622,6 +627,9 @@ model Agreement {
   /// Logo del convenio. Guarda la URL pública del objeto en R2, no el archivo: el binario vive en el
   /// bucket y aquí solo se referencia, para no inflar la fila ni la base.
   logoUrl         String?  @map("logo_url") @db.Text
+  /// Fecha hasta la que el contrato ampara el convenio. Solo fecha, sin hora: se compara por día.
+  /// Nula mientras no se conozca la vigencia pactada.
+  validUntil      DateTime? @map("valid_until") @db.Date
   description     String?  @db.Text
   active          Boolean  @default(true)
   // Nullable con SetNull para que eliminar un usuario no bloquee ni borre el convenio.
@@ -636,8 +644,10 @@ model Agreement {
 
   @@index([companyName])
   @@index([active])
+  @@index([country])
   @@index([region])
   @@index([cityCode])
+  @@index([validUntil])
   @@index([createdAt])
   @@map("agreements")
 }

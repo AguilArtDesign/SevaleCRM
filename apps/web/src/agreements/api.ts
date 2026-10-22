@@ -16,11 +16,19 @@ export type AgreementRecord = {
   id: number;
   companyName: string;
   nit: string | null;
+  /** Código ISO del país (`CO`, `MX`…). */
+  country: string;
+  /** Nombre del país resuelto por la API contra el catálogo de Clientes. */
+  countryName: string | null;
   /** Código del departamento (`CO-ANT`); el nombre lo resuelve la API al leer. */
   region: string | null;
   regionName: string | null;
-  /** Código de la ciudad (`05001`). */
+  /** Código de la ciudad (`05001`), solo en países con catálogo. */
   cityCode: string | null;
+  /**
+   * Nombre de la ciudad resuelto por la API. Fuera de Colombia es el texto libre que se guardó, así
+   * que el formulario lo usa tal cual al editar.
+   */
   cityName: string | null;
   postalCode: string | null;
   addressLine1: string | null;
@@ -29,12 +37,16 @@ export type AgreementRecord = {
   contactPosition: string | null;
   contactEmail: string | null;
   contactPhone: string | null;
+  /** Fecha de vigencia del contrato (`YYYY-MM-DD`); null si no se pactó o no se conoce. */
+  validUntil: string | null;
   /** URL pública del logo en R2; null si el convenio no tiene logo. */
   logoUrl: string | null;
   description: string | null;
   active: boolean;
-  /** Calculado por la API sobre las tareas pendientes: no se guarda en la tabla. */
+  /** Tareas por estado. Se cuentan en la API, no se guardan en la tabla. */
   pendingTasks: number;
+  completedTasks: number;
+  cancelledTasks: number;
   commentsCount: number;
   createdBy: AgreementAuthor | null;
   createdAt: string;
@@ -84,8 +96,9 @@ export type AgreementListInput = {
   cityCode?: string;
   page: number;
   pageSize: number;
-  sort: AgreementSort;
-  order: 'asc' | 'desc';
+  /** El panel no ofrece ordenar: se listan los más recientes primero. */
+  sort?: AgreementSort;
+  order?: 'asc' | 'desc';
 };
 
 type ApiErrorBody = { message?: string; error?: { code?: string; message?: string } };
@@ -127,8 +140,8 @@ export const agreementsApi = {
       active: input.active,
       page: String(input.page),
       pageSize: String(input.pageSize),
-      sort: input.sort,
-      order: input.order,
+      sort: input.sort ?? 'createdAt',
+      order: input.order ?? 'desc',
     });
     if (input.region) query.set('region', input.region);
     if (input.cityCode) query.set('cityCode', input.cityCode);

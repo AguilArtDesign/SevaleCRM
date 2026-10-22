@@ -44,6 +44,31 @@ export function scheduledLabel(value: string): string {
   return dateTimeFormatter.format(date);
 }
 
+/**
+ * Días que le quedan al convenio, contados por día de calendario y no por horas. El día de la
+ * vigencia todavía cuenta como un día; al día siguiente quedan 0 y el convenio está vencido.
+ */
+export function validityDays(validUntil: string | null, today = new Date()): number | null {
+  if (!validUntil) return null;
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(validUntil);
+  if (!match) return null;
+  const end = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+  if (Number.isNaN(end.getTime())) return null;
+  const start = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  return Math.round((end.getTime() - start.getTime()) / 86_400_000);
+}
+
+/** «325 días», «1 día» o «Vencido»: un 0 no se muestra como número porque ya no hay vigencia. */
+export function validityLabel(
+  validUntil: string | null,
+  today = new Date(),
+): { label: string; expired: boolean } {
+  const days = validityDays(validUntil, today);
+  if (days === null) return { label: '--', expired: false };
+  if (days <= 0) return { label: 'Vencido', expired: true };
+  return { label: days === 1 ? '1 día' : `${days} días`, expired: false };
+}
+
 /** «Hoy», «Mañana» o la fecha: una tarea atrasada se reconoce de un vistazo. */
 export function scheduledHint(value: string): string {
   const date = new Date(value);

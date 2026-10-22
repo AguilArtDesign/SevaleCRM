@@ -1,9 +1,15 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { Alert, Button, Label, Modal, Switch, TextField } from '@heroui/react';
 import { FloppyDisk, Xmark } from '@gravity-ui/icons';
-import { getCustomerColombiaCities, getCustomerColombiaStates } from '@sevale/shared';
+import {
+  getCustomerColombiaCities,
+  getCustomerColombiaStates,
+  getCustomerCountries,
+  getCustomerWooStates,
+} from '@sevale/shared';
 import { createAgreementSchema } from '@sevale/validation';
 import { Input } from '../components/Input';
+import { PhoneInput } from '../components/PhoneInput';
 import { CustomerAutocomplete } from '../customers/CustomerAutocomplete';
 import { AgreementRequestError, agreementsApi, type AgreementRecord } from './api';
 import { AgreementLogoField } from './AgreementLogoField';
@@ -12,8 +18,10 @@ import { messageFrom } from './presentation';
 type FormValue = {
   companyName: string;
   nit: string;
+  country: string;
   region: string;
   cityCode: string;
+  cityName: string;
   postalCode: string;
   addressLine1: string;
   addressLine2: string;
@@ -21,6 +29,7 @@ type FormValue = {
   contactPosition: string;
   contactEmail: string;
   contactPhone: string;
+  validUntil: string;
   logoUrl: string;
   description: string;
   active: boolean;
@@ -29,8 +38,10 @@ type FormValue = {
 const emptyValue: FormValue = {
   companyName: '',
   nit: '',
+  country: 'CO',
   region: '',
   cityCode: '',
+  cityName: '',
   postalCode: '',
   addressLine1: '',
   addressLine2: '',
@@ -38,6 +49,7 @@ const emptyValue: FormValue = {
   contactPosition: '',
   contactEmail: '',
   contactPhone: '',
+  validUntil: '',
   logoUrl: '',
   description: '',
   active: true,
@@ -48,8 +60,11 @@ function initialValue(agreement: AgreementRecord | null): FormValue {
   return {
     companyName: agreement.companyName,
     nit: agreement.nit ?? '',
+    country: agreement.country || 'CO',
     region: agreement.region ?? '',
     cityCode: agreement.cityCode ?? '',
+    // Fuera de Colombia la API devuelve el texto guardado sin resolverlo, así que sirve tal cual.
+    cityName: agreement.cityName ?? '',
     postalCode: agreement.postalCode ?? '',
     addressLine1: agreement.addressLine1 ?? '',
     addressLine2: agreement.addressLine2 ?? '',
@@ -57,13 +72,15 @@ function initialValue(agreement: AgreementRecord | null): FormValue {
     contactPosition: agreement.contactPosition ?? '',
     contactEmail: agreement.contactEmail ?? '',
     contactPhone: agreement.contactPhone ?? '',
+    validUntil: agreement.validUntil ?? '',
     logoUrl: agreement.logoUrl ?? '',
     description: agreement.description ?? '',
     active: agreement.active,
   };
 }
 
-// Los convenios son solo de Colombia, así que el país no se pregunta: el catálogo ya es el de CO.
+// Los convenios son de cualquier país del catálogo de Clientes; Colombia solo decide qué catálogo
+// de regiones y ciudades se usa.
 const colombiaStates = getCustomerColombiaStates().map((state) => ({
   id: state.code,
   name: state.name,
@@ -119,9 +136,33 @@ export function AgreementForm({
     setLogoError('');
   }, [agreement, isOpen]);
 
-  const cities = value.region
-    ? getCustomerColombiaCities(value.region).map((city) => ({ id: city.code, name: city.name }))
-    : [];
+  const countries = useMemo(
+    () => getCustomerCountries().map((country) => ({ id: country.code, name: country.name })),
+    [],
+  );
+  const isColombia = value.country === 'CO';
+  const states = useMemo(
+    () =>
+      isColombia
+        ? colombiaStates
+        : getCustomerWooStates(value.country).map((state) => ({
+            id: state.code,
+            name: state.name,
+          })),
+    [isColombia, value.country],
+  );
+  // Hay países sin catálogo de regiones: allí la región y la ciudad se escriben a mano.
+  const hasRegionCatalog = isColombia || states.length > 0;
+  const cities = useMemo(
+    () =>
+      isColombia && value.region
+        ? getCustomerColombiaCities(value.region).map((city) => ({
+            id: city.code,
+            name: city.name,
+          }))
+        : [],
+    [isColombia, value.region],
+  );
 
   const text = (key: keyof FormValue) => (event: React.ChangeEvent<HTMLInputElement>) => {
     setValue((current) => ({ ...current, [key]: event.target.value }));
@@ -149,8 +190,10 @@ export function AgreementForm({
     const parsed = createAgreementSchema.safeParse({
       companyName: value.companyName,
       nit: value.nit,
+      country: value.country,
       region: value.region,
       cityCode: value.cityCode,
+      cityName: value.cityName,
       postalCode: value.postalCode,
       addressLine1: value.addressLine1,
       addressLine2: value.addressLine2,
@@ -158,6 +201,7 @@ export function AgreementForm({
       contactPosition: value.contactPosition,
       contactEmail: value.contactEmail,
       contactPhone: value.contactPhone,
+      validUntil: value.validUntil,
       logoUrl,
       description: value.description,
       active: value.active,
@@ -254,6 +298,18 @@ export function AgreementForm({
                     />
                     {errors.nit && <span className="agreement-field-error">{errors.nit}</span>}
                   </TextField>
+                  <TextField>
+                    <Label>Fecha de vigencia</Label>
+                    <Input
+                      type="date"
+                      variant="secondary"
+                      value={value.validUntil}
+                      onChange={text('validUntil')}
+                    />
+                    {errors.validUntil && (
+                      <span className="agreement-field-error">{errors.validUntil}</span>
+                    )}
+                  </TextField>
                   <div className="customer-vat-control">
                     <div>
                       <strong>Activo</strong>
@@ -289,26 +345,68 @@ export function AgreementForm({
                 <h3>Ubicación</h3>
                 <div className="customer-form-grid">
                   <CustomerAutocomplete
-                    ariaLabel="Departamento"
-                    label="Departamento"
+                    ariaLabel="País"
+                    label="País"
                     placeholder="Seleccionar"
-                    value={value.region}
-                    options={colombiaStates}
-                    onChange={(region) =>
-                      // Cambiar de departamento invalida la ciudad elegida.
-                      setValue((current) => ({ ...current, region, cityCode: '' }))
+                    value={value.country}
+                    options={countries}
+                    onChange={(country) =>
+                      // Cambiar de país invalida la ubicación elegida: los catálogos no coinciden.
+                      setValue((current) => ({
+                        ...current,
+                        country: country || 'CO',
+                        region: '',
+                        cityCode: '',
+                        cityName: '',
+                      }))
                     }
                   />
-                  <CustomerAutocomplete
-                    key={`agreement-city:${value.region}`}
-                    ariaLabel="Ciudad"
-                    label="Ciudad"
-                    placeholder="Seleccionar"
-                    value={value.cityCode}
-                    options={cities}
-                    isDisabled={!value.region}
-                    onChange={(cityCode) => setValue((current) => ({ ...current, cityCode }))}
-                  />
+                  {hasRegionCatalog ? (
+                    <CustomerAutocomplete
+                      key={`agreement-region:${value.country}`}
+                      ariaLabel={isColombia ? 'Departamento' : 'Región o provincia'}
+                      label={isColombia ? 'Departamento' : 'Región / Provincia'}
+                      placeholder="Seleccionar"
+                      value={value.region}
+                      options={states}
+                      onChange={(region) =>
+                        // Cambiar de región invalida la ciudad elegida.
+                        setValue((current) => ({ ...current, region, cityCode: '' }))
+                      }
+                    />
+                  ) : (
+                    <TextField>
+                      <Label>Región / Provincia</Label>
+                      <Input
+                        variant="secondary"
+                        placeholder="Escribe la región o provincia"
+                        value={value.region}
+                        onChange={text('region')}
+                      />
+                    </TextField>
+                  )}
+                  {isColombia ? (
+                    <CustomerAutocomplete
+                      key={`agreement-city:${value.region}`}
+                      ariaLabel="Ciudad"
+                      label="Ciudad"
+                      placeholder="Seleccionar"
+                      value={value.cityCode}
+                      options={cities}
+                      isDisabled={!value.region}
+                      onChange={(cityCode) => setValue((current) => ({ ...current, cityCode }))}
+                    />
+                  ) : (
+                    <TextField>
+                      <Label>Ciudad</Label>
+                      <Input
+                        variant="secondary"
+                        placeholder="Escribe la ciudad"
+                        value={value.cityName}
+                        onChange={text('cityName')}
+                      />
+                    </TextField>
+                  )}
                   <TextField>
                     <Label>Código postal</Label>
                     <Input
@@ -372,18 +470,20 @@ export function AgreementForm({
                       <span className="agreement-field-error">{errors.contactEmail}</span>
                     )}
                   </TextField>
-                  <TextField>
+                  <div className="customer-field">
                     <Label>Teléfono</Label>
-                    <Input
-                      variant="secondary"
-                      placeholder="300 1234567"
+                    <PhoneInput
+                      country={value.country}
                       value={value.contactPhone}
-                      onChange={text('contactPhone')}
+                      onChange={(phone) => {
+                        setValue((current) => ({ ...current, contactPhone: phone }));
+                        setErrors((current) => ({ ...current, contactPhone: undefined }));
+                      }}
                     />
                     {errors.contactPhone && (
                       <span className="agreement-field-error">{errors.contactPhone}</span>
                     )}
-                  </TextField>
+                  </div>
                 </div>
               </section>
             </Modal.Body>

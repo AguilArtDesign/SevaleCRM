@@ -11,17 +11,19 @@ import type {
 import { PrismaService } from '../database/prisma.service.js';
 import type { Prisma } from '../generated/prisma/client.js';
 
-// El convenio viaja con su creador y con dos contadores. "Tareas pendientes" se calcula sobre las
-// tareas reales: no se guarda un contador redundante en agreements.
+// El convenio viaja con su creador y el número de comentarios. Las tareas se cuentan aparte, por
+// estado, con una sola consulta agrupada: `_count` de Prisma solo admite un filtro por relación y
+// aquí hacen falta los tres estados.
 const agreementInclude = {
   createdBy: { select: { id: true, name: true, email: true } },
   _count: {
     select: {
       comments: true,
-      tasks: { where: { status: 'PENDING' as const } },
     },
   },
 } as const;
+
+export type AgreementTaskCounts = { pending: number; completed: number; cancelled: number };
 
 const commentInclude = {
   user: { select: { id: true, name: true, email: true } },
@@ -31,6 +33,16 @@ const taskInclude = {
   assignedUser: { select: { id: true, name: true, email: true } },
   createdBy: { select: { id: true, name: true, email: true } },
 } as const;
+
+/**
+ * La vigencia viaja como fecha sin hora (`YYYY-MM-DD`) y la columna es DATE. Se ancla a medianoche
+ * UTC para que el valor no se desplace un día según el huso del servidor.
+ */
+function agreementData<T extends { validUntil?: string | null }>(data: T) {
+  if (data.validUntil === undefined) return data;
+  const { validUntil, ...rest } = data;
+  return { ...rest, validUntil: validUntil ? new Date(`${validUntil}T00:00:00.000Z`) : null };
+}
 
 function agreementWhere({
   search,
@@ -82,6 +94,30 @@ export class AgreementsRepository {
     return this.prisma.agreement.findUnique({ where: { id }, include: agreementInclude });
   }
 
+  /**
+   * Cuenta las tareas de cada convenio agrupadas por estado. Una sola consulta para toda la página:
+   * hacer tres conteos por fila multiplicaría las consultas del listado.
+   */
+  async taskCounts(agreementIds: number[]): Promise<Map<number, AgreementTaskCounts>> {
+    const counts = new Map<number, AgreementTaskCounts>();
+    if (!agreementIds.length) return counts;
+
+    const grouped = await this.prisma.agreementTask.groupBy({
+      by: ['agreementId', 'status'],
+      where: { agreementId: { in: agreementIds } },
+      _count: { _all: true },
+    });
+
+    for (const row of grouped) {
+      const current = counts.get(row.agreementId) ?? { pending: 0, completed: 0, cancelled: 0 };
+      if (row.status === 'PENDING') current.pending += row._count._all;
+      else if (row.status === 'COMPLETED') current.completed += row._count._all;
+      else current.cancelled += row._count._all;
+      counts.set(row.agreementId, current);
+    }
+    return counts;
+  }
+
   findByNit(nit: string) {
     return this.prisma.agreement.findFirst({ where: { nit }, select: { id: true } });
   }
@@ -97,7 +133,7 @@ export class AgreementsRepository {
 
   create(data: CreateAgreementInput, createdByUserId: string) {
     return this.prisma.agreement.create({
-      data: { ...data, createdByUserId },
+      data: { ...agreementData(data), createdByUserId },
       include: agreementInclude,
     });
   }
@@ -105,7 +141,7 @@ export class AgreementsRepository {
   update(id: number, data: UpdateAgreementInput) {
     return this.prisma.agreement.update({
       where: { id },
-      data,
+      data: agreementData(data),
       include: agreementInclude,
     });
   }
