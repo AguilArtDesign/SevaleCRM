@@ -1,6 +1,7 @@
 import type {
   CreateCustomerInput,
   CustomerSiigoLocationInput,
+  CustomerSyncStatusFilter,
   UpdateCustomerInput,
 } from '@sevale/validation';
 import { apiUrl } from '../config/api-url';
@@ -111,6 +112,8 @@ export type CustomerResolveResponse =
 type CustomerListInput = {
   search: string;
   country: string;
+  /** `all` no filtra; el resto se resuelve en el backend sobre las tres integraciones. */
+  status?: CustomerSyncStatusFilter;
   page: number;
   pageSize: number;
   sort: string;
@@ -135,10 +138,27 @@ async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
   return response.json() as Promise<T>;
 }
 
+/** Igual que en Inventario: el nombre del archivo lo decide la API con `content-disposition`. */
+async function download(path: string, init: RequestInit) {
+  const response = await fetch(`${apiUrl}${path}`, {
+    ...init,
+    credentials: 'include',
+    headers: { 'content-type': 'application/json', ...init.headers },
+  });
+  if (!response.ok) {
+    const body = (await response.json().catch(() => ({}))) as ApiErrorBody;
+    throw new Error(body.error?.message || body.message || 'No pudimos exportar los clientes.');
+  }
+  const disposition = response.headers.get('content-disposition') || '';
+  const filename = disposition.match(/filename="?([^";]+)"?/i)?.[1] || 'clientes.xlsx';
+  return { blob: await response.blob(), filename };
+}
+
 export const customersApi = {
   list: (input: CustomerListInput) => {
     const query = new URLSearchParams({
       search: input.search,
+      status: input.status ?? 'all',
       page: String(input.page),
       pageSize: String(input.pageSize),
       sort: input.sort,
@@ -148,6 +168,8 @@ export const customersApi = {
     return apiRequest<CustomerListResponse>(`/api/customers?${query}`);
   },
   detail: (id: number) => apiRequest<CustomerRecord>(`/api/customers/${id}`),
+  exportCustomers: (ids: number[]) =>
+    download('/api/customers/export', { method: 'POST', body: JSON.stringify({ ids }) }),
   resolve: (identification: string, documentType: string) =>
     apiRequest<CustomerResolveResponse>(
       `/api/customers/resolve?${new URLSearchParams({ identification, documentType })}`,

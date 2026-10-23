@@ -1513,7 +1513,10 @@ select {
   min-height: 3.75rem;
 }
 
-.inventory-bulk-actions {
+/* Barra flotante de acciones en lote. Inventario y Clientes la comparten para que el número de
+   seleccionados, los botones y la posición sean idénticos en los dos paneles. */
+.inventory-bulk-actions,
+.customers-bulk-actions {
   position: fixed;
   bottom: 50px;
   left: calc(50% + 8rem);
@@ -1531,12 +1534,14 @@ select {
   transform: translateX(-50%);
 }
 
-.crm-shell-sidebar-collapsed .inventory-bulk-actions {
+.crm-shell-sidebar-collapsed .inventory-bulk-actions,
+.crm-shell-sidebar-collapsed .customers-bulk-actions {
   left: 50%;
   max-width: calc(100vw - 2rem);
 }
 
-.inventory-bulk-count {
+.inventory-bulk-count,
+.customers-bulk-count {
   display: grid;
   min-width: 2rem;
   height: 2rem;

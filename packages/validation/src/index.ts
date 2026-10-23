@@ -287,9 +287,20 @@ export const updateCustomerSchema = customerFieldsSchema
   .partial()
   .refine((data) => Object.keys(data).length > 0, 'Debes enviar al menos un cambio.');
 
+// Estado de sincronización tal como lo ve el panel. `OUT_OF_SYNC` no existe en la base: se deriva
+// de una integración pendiente que ya se había sincronizado antes.
+export const customerSyncStatusFilterSchema = z.enum([
+  'all',
+  'SYNCED',
+  'PENDING',
+  'OUT_OF_SYNC',
+  'ERROR',
+]);
+
 export const customerListQuerySchema = z.object({
   search: z.string().trim().max(191, 'La búsqueda es demasiado larga.').default(''),
   country: z.string().trim().toUpperCase().length(2).optional(),
+  status: customerSyncStatusFilterSchema.default('all'),
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(20),
   sort: z
@@ -302,6 +313,16 @@ export const customerIdSchema = z.coerce
   .number()
   .int('El identificador del cliente no es válido.')
   .positive('El identificador del cliente no es válido.');
+
+// Exportar es leer lo que ya se ve en el panel, pero en lote: el tope evita que una selección
+// accidental intente generar un libro con toda la base.
+export const customerExportSchema = z.object({
+  ids: z
+    .array(customerIdSchema)
+    .min(1, 'Selecciona al menos un cliente.')
+    .max(10_000, 'No puedes exportar más de 10.000 clientes a la vez.')
+    .transform((ids) => [...new Set(ids)]),
+});
 
 export const customerSiigoLookupSchema = z.object({
   identification: z
@@ -1073,6 +1094,7 @@ export type UserListQuery = z.infer<typeof userListQuerySchema>;
 export type CreateCustomerInput = z.infer<typeof createCustomerSchema>;
 export type UpdateCustomerInput = z.infer<typeof updateCustomerSchema>;
 export type CustomerListQuery = z.infer<typeof customerListQuerySchema>;
+export type CustomerSyncStatusFilter = z.infer<typeof customerSyncStatusFilterSchema>;
 export type CustomerSiigoLookupQuery = z.infer<typeof customerSiigoLookupSchema>;
 export type CustomerResolveQuery = z.infer<typeof customerResolveQuerySchema>;
 export type CustomerSyncInput = z.infer<typeof customerSyncSchema>;

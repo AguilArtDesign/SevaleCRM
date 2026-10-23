@@ -20,6 +20,7 @@ import {
   toast,
 } from '@heroui/react';
 import {
+  ArrowDownToLine,
   ArrowRotateRight,
   EllipsisVertical,
   Eye,
@@ -43,6 +44,7 @@ import {
   customerDocumentTypes,
   type CreateCustomerInput,
   type CustomerSiigoLocationInput,
+  type CustomerSyncStatusFilter,
 } from '@sevale/validation';
 import { Chip } from '../components/Chip';
 import { getPaginationItems, Pagination } from '../components/Pagination';
@@ -60,19 +62,18 @@ import type { CustomerOrderRecord } from '../orders/api';
 type Filters = {
   search: string;
   country: string;
+  /** Estado de sincronización con las integraciones, tal como lo resume la tabla. */
+  status: CustomerSyncStatusFilter;
   page: number;
   pageSize: number;
-  sort: 'displayName' | 'documentNumber' | 'email' | 'country' | 'createdAt';
-  order: 'asc' | 'desc';
 };
 
 const initialFilters: Filters = {
   search: '',
   country: '',
+  status: 'all',
   page: 1,
   pageSize: 20,
-  sort: 'createdAt',
-  order: 'desc',
 };
 
 const documentLabels = new Map(
@@ -400,7 +401,9 @@ export function CustomersPage() {
 
   const customersQuery = useQuery({
     queryKey: ['customers', filters],
-    queryFn: () => customersApi.list(filters),
+    // Sin selector de orden: la tabla se mantiene por «más recientes», que es el orden útil del
+    // día a día. El backend sigue aceptando `sort`, solo que el panel no lo cambia.
+    queryFn: () => customersApi.list({ ...filters, sort: 'createdAt', order: 'desc' }),
     placeholderData: keepPreviousData,
   });
   const detailQuery = useQuery({
@@ -433,6 +436,25 @@ export function CustomersPage() {
       await queryClient.invalidateQueries({ queryKey: ['customers'] });
     },
   });
+  const exportSelectedCustomers = useMutation({
+    mutationFn: customersApi.exportCustomers,
+    onSuccess: ({ blob, filename }, ids) => {
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = filename;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 0);
+      toast.success(
+        `${ids.length} ${ids.length === 1 ? 'cliente exportado' : 'clientes exportados'} en formato Excel.`,
+      );
+    },
+    onError: (error) => {
+      toast.danger('No pudimos exportar los clientes', { description: messageFrom(error) });
+    },
+  });
   const deleteCustomer = useMutation({
     mutationFn: (customer: CustomerRecord) => customersApi.delete(customer.id),
     onSuccess: async (customer) => {
@@ -450,6 +472,7 @@ export function CustomersPage() {
 
   const result = customersQuery.data;
   const selectedIdSet = selectedKeys === 'all' ? new Set<number>() : selectedKeys;
+  const selectedIds = [...selectedIdSet].map(Number).filter(Number.isInteger);
   const currentPageIds = new Set((result?.data ?? []).map((customer) => customer.id));
   const currentPageSelection = new Set(
     [...selectedIdSet].filter((key) => currentPageIds.has(Number(key))),
@@ -671,9 +694,7 @@ export function CustomersPage() {
     }
   };
   const hasFilters =
-    Boolean(filters.search || filters.country) ||
-    filters.sort !== initialFilters.sort ||
-    filters.order !== initialFilters.order;
+    Boolean(filters.search || filters.country) || filters.status !== initialFilters.status;
 
   return (
     <section className="customers-layout">
@@ -712,16 +733,16 @@ export function CustomersPage() {
             }
           />
           <Select
-            aria-label="Ordenar clientes"
-            value={`${filters.sort}:${filters.order}`}
+            aria-label="Filtrar por estado de sincronización"
+            value={filters.status}
             variant="secondary"
-            onChange={(selected) => {
-              const [sort, order] = String(selected).split(':') as [
-                Filters['sort'],
-                Filters['order'],
-              ];
-              setFilters((current) => ({ ...current, sort, order, page: 1 }));
-            }}
+            onChange={(selected) =>
+              setFilters((current) => ({
+                ...current,
+                status: String(selected) as CustomerSyncStatusFilter,
+                page: 1,
+              }))
+            }
           >
             <Select.Trigger>
               <Select.Value />
@@ -729,10 +750,21 @@ export function CustomersPage() {
             </Select.Trigger>
             <Select.Popover>
               <ListBox>
-                <ListBox.Item id="createdAt:desc">Más recientes</ListBox.Item>
-                <ListBox.Item id="displayName:asc">Nombre A–Z</ListBox.Item>
-                <ListBox.Item id="displayName:desc">Nombre Z–A</ListBox.Item>
-                <ListBox.Item id="documentNumber:asc">Documento ascendente</ListBox.Item>
+                <ListBox.Item id="all" textValue="Todos los estados">
+                  Todos los estados
+                </ListBox.Item>
+                <ListBox.Item id="SYNCED" textValue={integrationMeta.SYNCED.label}>
+                  {integrationMeta.SYNCED.label}
+                </ListBox.Item>
+                <ListBox.Item id="PENDING" textValue={integrationMeta.PENDING.label}>
+                  {integrationMeta.PENDING.label}
+                </ListBox.Item>
+                <ListBox.Item id="OUT_OF_SYNC" textValue={integrationMeta.OUT_OF_SYNC.label}>
+                  {integrationMeta.OUT_OF_SYNC.label}
+                </ListBox.Item>
+                <ListBox.Item id="ERROR" textValue={integrationMeta.ERROR.label}>
+                  {integrationMeta.ERROR.label}
+                </ListBox.Item>
               </ListBox>
             </Select.Popover>
           </Select>
@@ -762,6 +794,31 @@ export function CustomersPage() {
           </SearchField>
         </div>
       </div>
+
+      {isAdmin && selectedIds.length > 0 && (
+        <div className="customers-bulk-actions" role="toolbar" aria-label="Acciones en lote">
+          <span className="customers-bulk-count">{selectedIds.length}</span>
+          <Button
+            size="sm"
+            variant="ghost"
+            isPending={exportSelectedCustomers.isPending}
+            isDisabled={exportSelectedCustomers.isPending}
+            onPress={() => exportSelectedCustomers.mutate(selectedIds)}
+          >
+            <ArrowDownToLine width={16} height={16} />
+            Exportar
+          </Button>
+          <Button
+            isIconOnly
+            size="sm"
+            variant="ghost"
+            aria-label="Limpiar selección"
+            onPress={() => setSelectedKeys(new Set())}
+          >
+            <Xmark width={16} height={16} />
+          </Button>
+        </div>
+      )}
 
       {customersQuery.isError ? (
         <Alert status="danger">
@@ -813,7 +870,7 @@ export function CustomersPage() {
                     <EmptyState className="customers-empty">
                       <PersonMagnifier width={28} height={28} />
                       <strong>No encontramos clientes</strong>
-                      <span>Prueba con otra búsqueda o cambia el país.</span>
+                      <span>Prueba con otra búsqueda o cambia los filtros.</span>
                     </EmptyState>
                   )
                 }

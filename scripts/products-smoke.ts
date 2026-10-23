@@ -229,6 +229,15 @@ try {
   ) {
     throw new Error('El archivo XLSX no contiene exclusivamente los productos seleccionados.');
   }
+  // El encabezado se comparte con la exportación de clientes: negro y con el alto por defecto,
+  // no el azul de marca con fila más alta que tenía antes.
+  if (
+    !exportContents.includes('<fgColor rgb="FF000000"/>') ||
+    exportContents.includes('FF087CEB') ||
+    /<row r="1"[^>]*customHeight/.test(exportContents)
+  ) {
+    throw new Error('El encabezado del XLSX no usa el formato compartido.');
+  }
 
   expectStatus(await api('/api/products?store=INVALID', cookie), 400, 'Filtro inválido');
   expectStatus(await api('/api/products?stockSort=INVALID', cookie), 400, 'Orden inválido');

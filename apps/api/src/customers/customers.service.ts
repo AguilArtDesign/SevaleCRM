@@ -37,6 +37,7 @@ import {
   sanitizeSiigoAddress,
 } from './customer-data-sanitizer.js';
 import { CustomersRepository } from './customers.repository.js';
+import { createCustomersWorkbook } from './customer-export.js';
 import { CustomerIntegrationService } from './customer-integration.service.js';
 import { CustomerDraftResolverService } from './customer-draft-resolver.service.js';
 import { documentTypeToWoo } from './customer-document-type.mapping.js';
@@ -288,6 +289,23 @@ export class CustomersService {
     const customer = await this.customers.findById(id);
     if (!customer) throw new NotFoundException('El cliente no existe.');
     return serializeCustomer(customer, includeIntegrationErrors);
+  }
+
+  /** Exporta los clientes seleccionados a un `.xlsx` legible, con nombres en vez de códigos. */
+  async export(ids: number[]) {
+    const customers = await this.customers.findByIds(ids);
+    if (customers.length !== ids.length) {
+      throw new NotFoundException({
+        success: false,
+        error: {
+          code: 'CUSTOMERS_NOT_FOUND',
+          message: 'Uno o más clientes seleccionados ya no existen.',
+        },
+      });
+    }
+    const buffer = createCustomersWorkbook(customers);
+    const date = new Date().toISOString().slice(0, 10);
+    return { buffer, filename: `clientes-seleccionados-${date}.xlsx` };
   }
 
   resolve(identification: string, documentType: CreateCustomerInput['documentType']) {

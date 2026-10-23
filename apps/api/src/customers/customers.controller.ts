@@ -4,14 +4,18 @@ import {
   Controller,
   Delete,
   Get,
+  HttpCode,
+  HttpStatus,
   Param,
   Patch,
   Post,
   Query,
   Req,
+  StreamableFile,
 } from '@nestjs/common';
 import {
   createCustomerSchema,
+  customerExportSchema,
   customerIdSchema,
   customerListQuerySchema,
   customerResolveQuerySchema,
@@ -101,6 +105,19 @@ export class CustomersController {
       parseInput(customerIdSchema, id),
       canViewIntegrationErrors(request),
     );
+  }
+
+  @Post('export')
+  @HttpCode(HttpStatus.OK)
+  @RequirePermissions('customers.read')
+  async export(@Body() body: unknown) {
+    const { ids } = parseInput(customerExportSchema, body);
+    const exported = await this.customers.export(ids);
+    return new StreamableFile(exported.buffer, {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      disposition: `attachment; filename="${exported.filename}"`,
+      length: exported.buffer.length,
+    });
   }
 
   @Post(':id/sync')

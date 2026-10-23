@@ -1,5 +1,9 @@
 import { Injectable } from '@nestjs/common';
-import type { CustomerListQuery, N8nCustomerIntegrationInput } from '@sevale/validation';
+import type {
+  CustomerListQuery,
+  CustomerSyncStatusFilter,
+  N8nCustomerIntegrationInput,
+} from '@sevale/validation';
 import type { CustomerCityMatch } from '@sevale/shared';
 import { PrismaService } from '../database/prisma.service.js';
 import type { Prisma } from '../generated/prisma/client.js';
@@ -12,17 +16,47 @@ export type CustomerWithIntegrations = Prisma.CustomerGetPayload<{
   include: typeof customerInclude;
 }>;
 
+/**
+ * Filtro por estado de sincronización. El estado es una deducción de las tres integraciones, con la
+ * misma prioridad que muestra el panel (error > sincronizado > desactualizado > pendiente), así que
+ * se resuelve en SQL: filtrar en memoria rompería la paginación y el contador.
+ */
+function customerStatusWhere(status: CustomerSyncStatusFilter): Prisma.CustomerWhereInput {
+  if (status === 'all') return {};
+
+  const hasError: Prisma.CustomerWhereInput = { integrations: { some: { status: 'ERROR' } } };
+  // «Todas sincronizadas» exige al menos una: `every` sola también es cierta sin integraciones.
+  const allSynced: Prisma.CustomerWhereInput = {
+    integrations: { some: { status: 'SYNCED' }, every: { status: 'SYNCED' } },
+  };
+  // Pendiente que ya estuvo sincronizado: el CRM tiene cambios sin enviar.
+  const stalePending: Prisma.CustomerWhereInput['integrations'] = {
+    some: { status: 'PENDING', lastSyncedAt: { not: null } },
+  };
+
+  if (status === 'ERROR') return hasError;
+  if (status === 'SYNCED') return allSynced;
+  if (status === 'OUT_OF_SYNC') {
+    return { NOT: [hasError, allSynced], integrations: stalePending };
+  }
+  return {
+    NOT: [hasError, allSynced],
+    integrations: { none: { status: 'PENDING', lastSyncedAt: { not: null } } },
+  };
+}
+
 @Injectable()
 export class CustomersRepository {
   constructor(private readonly prisma: PrismaService) {}
 
   list(
-    { search, country, page, pageSize, sort, order }: CustomerListQuery,
+    { search, country, status, page, pageSize, sort, order }: CustomerListQuery,
     cityMatches: CustomerCityMatch[],
   ) {
     const where: Prisma.CustomerWhereInput = {
       deletedAt: null,
       ...(country ? { country } : {}),
+      ...customerStatusWhere(status),
       ...(search
         ? {
             OR: [
@@ -59,6 +93,15 @@ export class CustomersRepository {
     return this.prisma.customer.findFirst({
       where: { id, deletedAt: null },
       include: customerInclude,
+    });
+  }
+
+  /** Exportación: mismo `include` que el detalle, para resolver país, región y ciudad al leer. */
+  findByIds(ids: number[]) {
+    return this.prisma.customer.findMany({
+      where: { id: { in: ids }, deletedAt: null },
+      include: customerInclude,
+      orderBy: [{ displayName: 'asc' }, { id: 'asc' }],
     });
   }
 
