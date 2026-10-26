@@ -10,6 +10,8 @@ import type { Prisma } from '../generated/prisma/client.js';
 
 export const customerInclude = {
   integrations: { orderBy: { provider: 'asc' as const } },
+  // Solo lo justo para mostrar el convenio: el panel necesita el nombre, no la ficha completa.
+  agreement: { select: { id: true, companyName: true } },
 } as const;
 
 export type CustomerWithIntegrations = Prisma.CustomerGetPayload<{
@@ -158,11 +160,11 @@ export class CustomersRepository {
     });
   }
 
-  create(data: Prisma.CustomerCreateInput) {
+  create(data: Prisma.CustomerUncheckedCreateInput) {
     return this.prisma.customer.create({ data, include: customerInclude });
   }
 
-  update(id: number, data: Prisma.CustomerUpdateInput) {
+  update(id: number, data: Prisma.CustomerUncheckedUpdateInput) {
     return this.prisma.$transaction(async (transaction) => {
       await transaction.customer.update({ where: { id }, data });
       await transaction.customerIntegration.updateMany({
@@ -191,6 +193,25 @@ export class CustomersRepository {
    */
   blockingOperations(customerId: number) {
     return this.prisma.orderOperation.count({ where: { customerId, deletedAt: null } });
+  }
+
+  /**
+   * El convenio debe existir; el panel solo ofrece los activos, pero un convenio archivado sigue
+   * siendo válido para los clientes que ya lo tenían y editar su ficha no debe romperse.
+   */
+  agreementExists(agreementId: number) {
+    return this.prisma.agreement.findUnique({
+      where: { id: agreementId },
+      select: { id: true },
+    });
+  }
+
+  /**
+   * Solo cambia el vínculo con el convenio. No pasa por `update` porque no hay cambios de ficha que
+   * re-sincronizar: marcar las integraciones como pendientes por esto sería un efecto no deseado.
+   */
+  setAgreement(id: number, agreementId: number | null) {
+    return this.prisma.customer.update({ where: { id }, data: { agreementId } });
   }
 
   delete(id: number) {

@@ -695,6 +695,71 @@ try {
   expectStatus(await api('/api/customers/not-a-number', adminCookie), 400, 'ID inválido');
   expectStatus(await api('/api/customers/2147483647', adminCookie), 404, 'Cliente inexistente');
 
+  // --- Convenio del cliente ----------------------------------------------------------------
+  // El convenio es lo que permite que la ficha del convenio liste a sus clientes. Se comprueba el
+  // vínculo, el rechazo de un id inexistente y que se pueda quitar.
+  const agreement = await prisma.agreement.create({
+    data: { companyName: `Convenio smoke ${runId}` },
+  });
+  try {
+    const linked = await api(`/api/customers/${created.id}`, adminCookie, {
+      method: 'PATCH',
+      body: JSON.stringify({ agreementId: agreement.id }),
+    });
+    expectStatus(linked, 200, 'Vincular convenio');
+    const linkedBody = (await linked.json()) as {
+      agreementId: number | null;
+      agreement: { id: number; companyName: string } | null;
+    };
+    if (
+      linkedBody.agreementId !== agreement.id ||
+      linkedBody.agreement?.companyName !== agreement.companyName
+    ) {
+      throw new Error('El cliente no quedó vinculado al convenio.');
+    }
+
+    const listed = await api(`/api/customers/${created.id}`, commercialCookie);
+    expectStatus(listed, 200, 'Detalle con convenio');
+    const listedBody = (await listed.json()) as { agreement: { id: number } | null };
+    if (listedBody.agreement?.id !== agreement.id) {
+      throw new Error('El detalle no resolvió el convenio del cliente.');
+    }
+
+    const invalid = await api(`/api/customers/${created.id}`, adminCookie, {
+      method: 'PATCH',
+      body: JSON.stringify({ agreementId: 2147483647 }),
+    });
+    expectStatus(invalid, 400, 'Convenio inexistente');
+    const invalidBody = (await invalid.json()) as { error?: { code?: string } };
+    if (invalidBody.error?.code !== 'CUSTOMER_AGREEMENT_NOT_FOUND') {
+      throw new Error('Un convenio inexistente no devolvió CUSTOMER_AGREEMENT_NOT_FOUND.');
+    }
+
+    // Un PATCH que no menciona el convenio no debe desvincularlo: la edición de cualquier otro
+    // campo de la ficha no puede borrar el vínculo por omisión.
+    const untouched = await api(`/api/customers/${created.id}`, adminCookie, {
+      method: 'PATCH',
+      body: JSON.stringify({ email: `lista-${runId}@example.invalid` }),
+    });
+    expectStatus(untouched, 200, 'Edición sin tocar el convenio');
+    const untouchedBody = (await untouched.json()) as { agreement: { id: number } | null };
+    if (untouchedBody.agreement?.id !== agreement.id) {
+      throw new Error('Editar otro campo del cliente perdió el convenio vinculado.');
+    }
+
+    const unlinked = await api(`/api/customers/${created.id}`, adminCookie, {
+      method: 'PATCH',
+      body: JSON.stringify({ agreementId: null }),
+    });
+    expectStatus(unlinked, 200, 'Quitar convenio');
+    const unlinkedBody = (await unlinked.json()) as { agreement: { id: number } | null };
+    if (unlinkedBody.agreement !== null) {
+      throw new Error('El cliente no se desvinculó del convenio.');
+    }
+  } finally {
+    await prisma.agreement.delete({ where: { id: agreement.id } });
+  }
+
   expectStatus(
     await api(`/api/customers/${created.id}`, commercialCookie, { method: 'DELETE' }),
     403,
@@ -761,7 +826,7 @@ try {
   }
 
   process.stdout.write(
-    'Customers smoke: safe Siigo lookup, physical deletion, valid-operation protection, legacy cleanup, same-document recreation, RBAC, duplicates, geography, search, pagination, detail, update and notification isolation checks passed.\n',
+    'Customers smoke: safe Siigo lookup, physical deletion, valid-operation protection, legacy cleanup, same-document recreation, RBAC, duplicates, geography, search, pagination, detail, update, agreement link and notification isolation checks passed.\n',
   );
 } finally {
   if (customerIds.length > 0) {

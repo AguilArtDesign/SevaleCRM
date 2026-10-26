@@ -997,6 +997,9 @@ export function ProspectsPage() {
             postalCode: convertTarget.postalCode,
             addressLine1: convertTarget.addressLine1,
             addressLine2: convertTarget.addressLine2,
+            // El convenio del prospecto viaja al cliente: es el vínculo que el convenio usa para
+            // listar a sus clientes, y sin él se perdería justo al convertir.
+            agreementId: convertTarget.agreement?.id ?? null,
             vatResponsible: false,
             fiscalResponsibilities: ['R-99-PN'],
           }}

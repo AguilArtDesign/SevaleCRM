@@ -1,4 +1,15 @@
-import { Body, Controller, Get, HttpCode, Param, Patch, Post, Query, Req } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  Param,
+  Patch,
+  Post,
+  Query,
+  Req,
+} from '@nestjs/common';
 import {
   agreementIdSchema,
   agreementTasksQuerySchema,
@@ -11,8 +22,9 @@ import { RequirePermissions } from '../permissions/require-permissions.decorator
 import { AgreementsService } from './agreements.service.js';
 import { parseInput } from './parse-input.js';
 
-// Las tareas no se borran: se completan o se cancelan, y ambas quedan en el historial. Reabrir
-// deshace la cancelación cuando se hizo por error.
+// Las tareas se completan o se cancelan, y ambas quedan en el historial; reabrir deshace la
+// cancelación cuando se hizo por error. El borrado existe solo para que el administrador limpie
+// tareas de prueba mientras el módulo se define.
 @Controller('agreements/:agreementId/tasks')
 @RequirePermissions('agreements.read')
 export class AgreementTasksController {
@@ -84,6 +96,15 @@ export class AgreementTasksController {
       parseInput(agreementIdSchema, agreementId),
       parseInput(agreementTaskIdSchema, taskId),
       'PENDING',
+    );
+  }
+
+  @Delete(':taskId')
+  @RequirePermissions('agreements.tasks.delete')
+  remove(@Param('agreementId') agreementId: string, @Param('taskId') taskId: string) {
+    return this.agreements.removeTask(
+      parseInput(agreementIdSchema, agreementId),
+      parseInput(agreementTaskIdSchema, taskId),
     );
   }
 }

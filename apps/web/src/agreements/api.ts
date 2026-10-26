@@ -86,6 +86,31 @@ export type AgreementCommentsResponse = {
 };
 export type AgreementTasksResponse = { data: AgreementTaskRecord[]; pagination: Pagination };
 
+/**
+ * Quién pertenece al convenio. `PROSPECT` es el pipeline —todavía no es cliente— y `CUSTOMER` es un
+ * cliente que ya guarda el convenio en su ficha. Nunca se repite la misma persona: al convertirse,
+ * el prospecto deja de listarse y aparece como cliente.
+ */
+export type AgreementCustomerRecord = {
+  id: number;
+  kind: 'PROSPECT' | 'CUSTOMER';
+  displayName: string;
+  company: string | null;
+  documentType: string | null;
+  documentNumber: string | null;
+  email: string | null;
+  phone: string | null;
+  /** Estado del prospecto; `null` en un cliente, que ya no tiene estado de pipeline. */
+  status: string | null;
+  source: string | null;
+  createdAt: string;
+};
+
+export type AgreementCustomersResponse = {
+  data: AgreementCustomerRecord[];
+  pagination: Pagination;
+};
+
 export type AgreementActiveFilter = 'all' | 'active' | 'inactive';
 export type AgreementSort = 'companyName' | 'nit' | 'createdAt' | 'updatedAt';
 
@@ -179,6 +204,16 @@ export const agreementsApi = {
       method: 'POST',
       body: JSON.stringify(input),
     }),
+  /** Solo el administrador: borra un comentario suelto para limpiar contenido de prueba. */
+  deleteComment: (agreementId: number, commentId: number) =>
+    request<{ success: true; id: number }>(`/api/agreements/${agreementId}/comments/${commentId}`, {
+      method: 'DELETE',
+    }),
+  /** Solo el administrador: vacía el seguimiento entero del convenio. */
+  clearComments: (agreementId: number) =>
+    request<{ success: true; removed: number }>(`/api/agreements/${agreementId}/comments`, {
+      method: 'DELETE',
+    }),
   tasks: (agreementId: number, status?: AgreementTaskStatus, page = 1, pageSize = 50) => {
     const query = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
     if (status) query.set('status', status);
@@ -199,7 +234,16 @@ export const agreementsApi = {
     request<AgreementTaskRecord>(`/api/agreements/${agreementId}/tasks/${taskId}/${action}`, {
       method: 'POST',
     }),
+  /** Solo el administrador: borra una tarea de prueba. Una tarea real se cancela. */
+  deleteTask: (agreementId: number, taskId: number) =>
+    request<{ success: true; id: number }>(`/api/agreements/${agreementId}/tasks/${taskId}`, {
+      method: 'DELETE',
+    }),
   /** Usuarios a los que se puede asignar una tarea; el comercial no puede listar Usuarios. */
   assignees: () =>
     request<Array<{ id: string; name: string; email: string }>>('/api/agreements/assignees'),
+  customers: (agreementId: number, page = 1, pageSize = 50) =>
+    request<AgreementCustomersResponse>(
+      `/api/agreements/${agreementId}/customers?page=${page}&pageSize=${pageSize}`,
+    ),
 };

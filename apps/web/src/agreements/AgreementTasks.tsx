@@ -1,6 +1,25 @@
 import { useState } from 'react';
-import { Alert, Button, Label, ListBox, Modal, Spinner, TextField, toast } from '@heroui/react';
-import { ArrowRotateRight, Check, PaperPlane, Pencil, Plus, Xmark } from '@gravity-ui/icons';
+import {
+  Alert,
+  AlertDialog,
+  Button,
+  Label,
+  ListBox,
+  Modal,
+  Spinner,
+  Table,
+  TextField,
+  toast,
+} from '@heroui/react';
+import {
+  ArrowRotateRight,
+  Check,
+  PaperPlane,
+  Pencil,
+  Plus,
+  TrashBin,
+  Xmark,
+} from '@gravity-ui/icons';
 import { Input } from '../components/Input';
 import { Select } from '../components/Select';
 import { Chip } from '../components/Chip';
@@ -51,6 +70,7 @@ export function AgreementTasks({
   error,
   assignees,
   canUpdate,
+  canDelete,
   onChanged,
 }: {
   agreementId: number;
@@ -60,6 +80,8 @@ export function AgreementTasks({
   error: unknown;
   assignees: Array<{ id: string; name: string }>;
   canUpdate: boolean;
+  /** Solo el administrador puede borrar: sirve para limpiar tareas de prueba. */
+  canDelete: boolean;
   onChanged: () => void;
 }) {
   const [statusFilter, setStatusFilter] = useState<AgreementTaskStatus | 'ALL'>('ALL');
@@ -69,6 +91,8 @@ export function AgreementTasks({
   const [formError, setFormError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [busyId, setBusyId] = useState<number | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<AgreementTaskRecord | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const visibleTasks =
     statusFilter === 'ALL' ? tasks : tasks.filter((task) => task.status === statusFilter);
@@ -154,38 +178,52 @@ export function AgreementTasks({
     }
   };
 
+  const confirmDelete = async () => {
+    if (!deleteTarget || isDeleting) return;
+    setIsDeleting(true);
+    try {
+      await agreementsApi.deleteTask(agreementId, deleteTarget.id);
+      setDeleteTarget(null);
+      onChanged();
+      toast.success('Tarea eliminada.');
+    } catch (deleteError) {
+      toast.danger('No pudimos eliminar la tarea.', {
+        description: messageFrom(deleteError),
+      });
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
   return (
-    <section className="customer-detail-section agreement-section">
-      <div className="agreement-section-heading">
-        <h3>Tareas</h3>
-        <div className="agreement-task-tools">
-          <Select
-            aria-label="Filtrar tareas por estado"
-            variant="secondary"
-            selectedKey={statusFilter}
-            onSelectionChange={(key) => setStatusFilter(String(key) as AgreementTaskStatus | 'ALL')}
-          >
-            <Select.Trigger>
-              <Select.Value />
-              <Select.Indicator />
-            </Select.Trigger>
-            <Select.Popover>
-              <ListBox>
-                {statusFilters.map((filter) => (
-                  <ListBox.Item key={filter.id} id={filter.id} textValue={filter.label}>
-                    {filter.label}
-                  </ListBox.Item>
-                ))}
-              </ListBox>
-            </Select.Popover>
-          </Select>
-          {canUpdate && (
-            <Button size="sm" variant="secondary" onPress={openCreate}>
-              <Plus width={14} height={14} />
-              Nueva tarea
-            </Button>
-          )}
-        </div>
+    <div className="agreement-tab-body">
+      <div className="agreement-task-toolbar">
+        <Select
+          aria-label="Filtrar tareas por estado"
+          variant="secondary"
+          selectedKey={statusFilter}
+          onSelectionChange={(key) => setStatusFilter(String(key) as AgreementTaskStatus | 'ALL')}
+        >
+          <Select.Trigger>
+            <Select.Value />
+            <Select.Indicator />
+          </Select.Trigger>
+          <Select.Popover>
+            <ListBox>
+              {statusFilters.map((filter) => (
+                <ListBox.Item key={filter.id} id={filter.id} textValue={filter.label}>
+                  {filter.label}
+                </ListBox.Item>
+              ))}
+            </ListBox>
+          </Select.Popover>
+        </Select>
+        {canUpdate && (
+          <Button size="sm" variant="secondary" onPress={openCreate}>
+            <Plus width={14} height={14} />
+            Nueva tarea
+          </Button>
+        )}
       </div>
 
       {isPending ? (
@@ -199,90 +237,126 @@ export function AgreementTasks({
             <Alert.Description>{messageFrom(error)}</Alert.Description>
           </Alert.Content>
         </Alert>
-      ) : visibleTasks.length === 0 ? (
-        <p className="agreement-empty">
-          {tasks.length === 0
-            ? 'Este convenio todavía no tiene tareas.'
-            : 'No hay tareas con ese estado.'}
-        </p>
       ) : (
-        <ul className="agreement-tasks">
-          {visibleTasks.map((task) => (
-            <li
-              key={task.id}
-              className={task.status === 'PENDING' ? 'agreement-task' : 'agreement-task is-done'}
-            >
-              <div className="agreement-task-main">
-                <div className="agreement-task-title">
-                  <strong>{task.title}</strong>
-                  <Chip color={taskStatusMeta[task.status].color}>
-                    {taskStatusMeta[task.status].label}
-                  </Chip>
-                </div>
-                {task.description && <p>{task.description}</p>}
-                <span className="agreement-task-meta">
-                  {scheduledLabel(task.scheduledAt)}
-                  {scheduledHint(task.scheduledAt) && ` · ${scheduledHint(task.scheduledAt)}`}
-                  {' · '}
-                  {task.assignedUser ? task.assignedUser.name : 'Sin asignar'}
-                </span>
-              </div>
-              {canUpdate && (
-                <div className="agreement-task-actions">
-                  {task.status === 'PENDING' && (
-                    <>
-                      <Button
-                        size="sm"
-                        variant="secondary"
-                        isIconOnly
-                        isDisabled={busyId !== null}
-                        aria-label={`Editar ${task.title}`}
-                        onPress={() => openEdit(task)}
-                      >
-                        <Pencil width={14} height={14} />
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="secondary"
-                        isIconOnly
-                        isPending={busyId === task.id}
-                        isDisabled={busyId !== null}
-                        aria-label={`Completar ${task.title}`}
-                        onPress={() => void changeStatus(task, 'complete')}
-                      >
-                        <Check width={14} height={14} />
-                      </Button>
-                    </>
-                  )}
-                  {task.status !== 'CANCELLED' && (
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      isIconOnly
-                      isDisabled={busyId !== null}
-                      aria-label={`Cancelar ${task.title}`}
-                      onPress={() => void changeStatus(task, 'cancel')}
-                    >
-                      <Xmark width={14} height={14} />
-                    </Button>
-                  )}
-                  {task.status !== 'PENDING' && (
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      isIconOnly
-                      isDisabled={busyId !== null}
-                      aria-label={`Reabrir ${task.title}`}
-                      onPress={() => void changeStatus(task, 'reopen')}
-                    >
-                      <ArrowRotateRight width={14} height={14} />
-                    </Button>
-                  )}
-                </div>
-              )}
-            </li>
-          ))}
-        </ul>
+        <Table className="agreement-tasks-table">
+          <Table.ScrollContainer>
+            <Table.Content aria-label="Tareas del convenio">
+              <Table.Header>
+                <Table.Column isRowHeader>Tarea</Table.Column>
+                <Table.Column>Estado</Table.Column>
+                <Table.Column>Programada</Table.Column>
+                <Table.Column>Asignada a</Table.Column>
+                {/* Sin encabezado: la columna solo aloja los botones de cada fila. */}
+                {(canUpdate || canDelete) && (
+                  <Table.Column className="agreement-tasks-actions-column" />
+                )}
+              </Table.Header>
+              <Table.Body
+                renderEmptyState={() => (
+                  <div className="agreement-empty">
+                    {tasks.length === 0
+                      ? 'Este convenio todavía no tiene tareas.'
+                      : 'No hay tareas con ese estado.'}
+                  </div>
+                )}
+              >
+                {visibleTasks.map((task) => (
+                  <Table.Row key={task.id} id={task.id}>
+                    <Table.Cell>
+                      <div className="agreement-task-cell">
+                        <strong>{task.title}</strong>
+                        {task.description && <span>{task.description}</span>}
+                      </div>
+                    </Table.Cell>
+                    <Table.Cell>
+                      <Chip color={taskStatusMeta[task.status].color}>
+                        {taskStatusMeta[task.status].label}
+                      </Chip>
+                    </Table.Cell>
+                    <Table.Cell>
+                      <div className="agreement-task-cell">
+                        <span>{scheduledLabel(task.scheduledAt)}</span>
+                        {scheduledHint(task.scheduledAt) && (
+                          <span>{scheduledHint(task.scheduledAt)}</span>
+                        )}
+                      </div>
+                    </Table.Cell>
+                    <Table.Cell>
+                      {task.assignedUser ? task.assignedUser.name : 'Sin asignar'}
+                    </Table.Cell>
+                    {canUpdate && (
+                      <Table.Cell className="agreement-tasks-actions-cell">
+                        <div className="agreement-task-actions">
+                          {task.status === 'PENDING' && (
+                            <>
+                              <Button
+                                size="sm"
+                                variant="secondary"
+                                isIconOnly
+                                isDisabled={busyId !== null}
+                                aria-label={`Editar ${task.title}`}
+                                onPress={() => openEdit(task)}
+                              >
+                                <Pencil width={14} height={14} />
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="secondary"
+                                isIconOnly
+                                isPending={busyId === task.id}
+                                isDisabled={busyId !== null}
+                                aria-label={`Completar ${task.title}`}
+                                onPress={() => void changeStatus(task, 'complete')}
+                              >
+                                <Check width={14} height={14} />
+                              </Button>
+                            </>
+                          )}
+                          {task.status !== 'CANCELLED' && (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              isIconOnly
+                              isDisabled={busyId !== null}
+                              aria-label={`Cancelar ${task.title}`}
+                              onPress={() => void changeStatus(task, 'cancel')}
+                            >
+                              <Xmark width={14} height={14} />
+                            </Button>
+                          )}
+                          {task.status !== 'PENDING' && (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              isIconOnly
+                              isDisabled={busyId !== null}
+                              aria-label={`Reabrir ${task.title}`}
+                              onPress={() => void changeStatus(task, 'reopen')}
+                            >
+                              <ArrowRotateRight width={14} height={14} />
+                            </Button>
+                          )}
+                          {canDelete && (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              isIconOnly
+                              isDisabled={busyId !== null || isDeleting}
+                              aria-label={`Eliminar ${task.title}`}
+                              onPress={() => setDeleteTarget(task)}
+                            >
+                              <TrashBin width={14} height={14} />
+                            </Button>
+                          )}
+                        </div>
+                      </Table.Cell>
+                    )}
+                  </Table.Row>
+                ))}
+              </Table.Body>
+            </Table.Content>
+          </Table.ScrollContainer>
+        </Table>
       )}
 
       <Modal.Backdrop
@@ -384,6 +458,49 @@ export function AgreementTasks({
           </Modal.Dialog>
         </Modal.Container>
       </Modal.Backdrop>
-    </section>
+
+      <AlertDialog
+        isOpen={deleteTarget !== null}
+        onOpenChange={(open) => {
+          if (!open && !isDeleting) setDeleteTarget(null);
+        }}
+      >
+        <AlertDialog.Backdrop>
+          <AlertDialog.Container size="sm">
+            <AlertDialog.Dialog>
+              <AlertDialog.Header>
+                <AlertDialog.Icon status="danger">
+                  <TrashBin width={20} height={20} />
+                </AlertDialog.Icon>
+                <AlertDialog.Heading>¿Eliminar la tarea?</AlertDialog.Heading>
+              </AlertDialog.Header>
+              <AlertDialog.Body>
+                <p>
+                  Se borrará <strong>{deleteTarget?.title}</strong> y no se podrá recuperar. Para
+                  conservar el rastro de que existió, cancélala en lugar de eliminarla.
+                </p>
+              </AlertDialog.Body>
+              <AlertDialog.Footer>
+                <Button
+                  variant="ghost"
+                  isDisabled={isDeleting}
+                  onPress={() => setDeleteTarget(null)}
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  variant="danger"
+                  isPending={isDeleting}
+                  isDisabled={isDeleting}
+                  onPress={() => void confirmDelete()}
+                >
+                  Eliminar
+                </Button>
+              </AlertDialog.Footer>
+            </AlertDialog.Dialog>
+          </AlertDialog.Container>
+        </AlertDialog.Backdrop>
+      </AlertDialog>
+    </div>
   );
 }

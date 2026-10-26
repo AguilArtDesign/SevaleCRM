@@ -178,18 +178,24 @@ model Customer {
   postalCode             String?               @map("postal_code") @db.VarChar(32)
   addressLine1           String?               @map("address_line_1") @db.VarChar(255)
   addressLine2           String?               @map("address_line_2") @db.VarChar(255)
+  /// Convenio al que pertenece el cliente. No reemplaza al `agreementId` del prospecto: aquel dice
+  /// por qué convenio llegó el prospecto, este a qué convenio sirve el cliente ya creado. Nulo
+  /// mientras no se vincule, y `SetNull` para que borrar un convenio no arrastre al cliente.
+  agreementId            Int?                  @map("agreement_id")
   vatResponsible         Boolean               @default(false) @map("vat_responsible")
   fiscalResponsibilities Json                  @map("fiscal_responsibilities")
   active                 Boolean               @default(true)
   createdAt              DateTime              @default(now()) @map("created_at")
   updatedAt              DateTime              @updatedAt @map("updated_at")
   deletedAt              DateTime?             @map("deleted_at")
+  agreement              Agreement?            @relation(fields: [agreementId], references: [id], onDelete: SetNull)
   integrations           CustomerIntegration[]
   notifications          Notification[]
   orderOperations        OrderOperation[]
   convertedProspects     Prospect[]            @relation("ProspectConvertedCustomer")
 
   @@unique([documentType, documentNumber])
+  @@index([agreementId])
   @@index([documentNumber])
   @@index([email])
   @@index([displayName])
@@ -605,42 +611,43 @@ enum AgreementTaskStatus {
 /// Convenio comercial con una empresa. Es una entidad maestra independiente: no es un cliente, no
 /// tiene integraciones y nunca se borra. Su ciclo de vida es active = true / false.
 model Agreement {
-  id              Int      @id @default(autoincrement())
-  companyName     String   @map("company_name") @db.VarChar(255)
-  nit             String?  @unique @db.VarChar(32)
+  id              Int       @id @default(autoincrement())
+  companyName     String    @map("company_name") @db.VarChar(255)
+  nit             String?   @unique @db.VarChar(32)
   /// País con el código ISO 3166-1 alfa-2 del catálogo de Clientes. Los convenios nacieron solo de
   /// Colombia, así que el default conserva ese caso en las filas anteriores y en los alta sin país.
-  country         String   @default("CO") @db.VarChar(2)
+  country         String    @default("CO") @db.VarChar(2)
   // El departamento se guarda con su woocode (CO-ANT) y la ciudad con el código del catálogo
   // (05001) cuando el país tiene catálogo. Fuera de Colombia la ciudad es texto libre y vive en
   // cityName. Los nombres se resuelven al leer, igual que en customers.
-  region          String?  @db.VarChar(32)
-  cityCode        String?  @map("city_code") @db.VarChar(32)
-  cityName        String?  @map("city_name") @db.VarChar(191)
-  postalCode      String?  @map("postal_code") @db.VarChar(32)
-  addressLine1    String?  @map("address_line_1") @db.VarChar(255)
-  addressLine2    String?  @map("address_line_2") @db.VarChar(255)
-  contactName     String?  @map("contact_name") @db.VarChar(191)
-  contactPosition String?  @map("contact_position") @db.VarChar(191)
-  contactEmail    String?  @map("contact_email") @db.VarChar(191)
-  contactPhone    String?  @map("contact_phone") @db.VarChar(32)
+  region          String?   @db.VarChar(32)
+  cityCode        String?   @map("city_code") @db.VarChar(32)
+  cityName        String?   @map("city_name") @db.VarChar(191)
+  postalCode      String?   @map("postal_code") @db.VarChar(32)
+  addressLine1    String?   @map("address_line_1") @db.VarChar(255)
+  addressLine2    String?   @map("address_line_2") @db.VarChar(255)
+  contactName     String?   @map("contact_name") @db.VarChar(191)
+  contactPosition String?   @map("contact_position") @db.VarChar(191)
+  contactEmail    String?   @map("contact_email") @db.VarChar(191)
+  contactPhone    String?   @map("contact_phone") @db.VarChar(32)
   /// Logo del convenio. Guarda la URL pública del objeto en R2, no el archivo: el binario vive en el
   /// bucket y aquí solo se referencia, para no inflar la fila ni la base.
-  logoUrl         String?  @map("logo_url") @db.Text
+  logoUrl         String?   @map("logo_url") @db.Text
   /// Fecha hasta la que el contrato ampara el convenio. Solo fecha, sin hora: se compara por día.
   /// Nula mientras no se conozca la vigencia pactada.
   validUntil      DateTime? @map("valid_until") @db.Date
-  description     String?  @db.Text
-  active          Boolean  @default(true)
+  description     String?   @db.Text
+  active          Boolean   @default(true)
   // Nullable con SetNull para que eliminar un usuario no bloquee ni borre el convenio.
-  createdByUserId String?  @map("created_by_user_id") @db.VarChar(36)
-  createdAt       DateTime @default(now()) @map("created_at")
-  updatedAt       DateTime @updatedAt @map("updated_at")
+  createdByUserId String?   @map("created_by_user_id") @db.VarChar(36)
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
 
   createdBy User?              @relation("AgreementCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
   comments  AgreementComment[]
   tasks     AgreementTask[]
   prospects Prospect[]
+  customers Customer[]
 
   @@index([companyName])
   @@index([active])

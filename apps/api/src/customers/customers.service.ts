@@ -327,6 +327,7 @@ export class CustomersService {
   async create(input: CreateCustomerInput, includeIntegrationErrors = false) {
     const sanitized = sanitizeCustomerInput(input);
     validateLocation(sanitized);
+    await this.validateAgreement(sanitized.agreementId);
     if (await this.customers.findByDocumentNumber(sanitized.documentNumber)) {
       throw new ConflictException('Ya existe un cliente con ese número de documento.');
     }
@@ -419,6 +420,7 @@ export class CustomersService {
       postalCode: input.postalCode === undefined ? current.postalCode : input.postalCode,
       addressLine1: input.addressLine1 === undefined ? current.addressLine1 : input.addressLine1,
       addressLine2: input.addressLine2 === undefined ? current.addressLine2 : input.addressLine2,
+      agreementId: input.agreementId === undefined ? current.agreementId : input.agreementId,
       vatResponsible: input.vatResponsible ?? current.vatResponsible,
       fiscalResponsibilities:
         input.fiscalResponsibilities ?? (current.fiscalResponsibilities as string[]),
@@ -431,8 +433,9 @@ export class CustomersService {
     }
     const sanitized = sanitizeCustomerInput(merged.data);
     validateLocation(sanitized);
+    await this.validateAgreement(sanitized.agreementId);
 
-    const data: Prisma.CustomerUpdateInput = {
+    const data: Prisma.CustomerUncheckedUpdateInput = {
       ...sanitized,
       fiscalResponsibilities: sanitized.fiscalResponsibilities,
     };
@@ -600,6 +603,23 @@ export class CustomersService {
     } catch {
       this.logger.warn(`No se pudo registrar la notificación de ${context} del cliente.`);
     }
+  }
+
+  /** El convenio se elige en el formulario, así que un id inexistente se rechaza antes de guardar. */
+  private async validateAgreement(agreementId: number | null | undefined) {
+    if (!agreementId) return;
+    if (!(await this.customers.agreementExists(agreementId))) {
+      throw customerBadRequest(
+        'CUSTOMER_AGREEMENT_NOT_FOUND',
+        'El convenio seleccionado no existe.',
+      );
+    }
+  }
+
+  /** Hereda el convenio al vincular un prospecto con un cliente existente. */
+  async linkAgreement(customerId: number, agreementId: number) {
+    await this.validateAgreement(agreementId);
+    await this.customers.setAgreement(customerId, agreementId);
   }
 
   private async lookupWooCustomer(

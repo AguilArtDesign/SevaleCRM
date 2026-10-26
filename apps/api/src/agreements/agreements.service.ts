@@ -16,6 +16,7 @@ import {
 } from '@sevale/shared';
 import type {
   AgreementCommentsQuery,
+  AgreementCustomersQuery,
   AgreementListQuery,
   AgreementTasksQuery,
   CreateAgreementCommentInput,
@@ -371,11 +372,73 @@ export class AgreementsService {
     };
   }
 
+  /**
+   * Clientes del convenio: su pipeline de prospectos más los clientes que ya están vinculados. Un
+   * prospecto convertido dejó de aparecer aquí como prospecto y vuelve como cliente, así que nunca
+   * se lista dos veces la misma persona.
+   */
+  async customers(agreementId: number, query: AgreementCustomersQuery) {
+    await this.ensureAgreement(agreementId);
+    const { rows, total } = await this.repository.customers(
+      agreementId,
+      query.page,
+      query.pageSize,
+    );
+    return {
+      data: rows.map((row) => ({
+        id: row.id,
+        kind: row.kind,
+        displayName: row.displayName,
+        company: row.company,
+        documentType: row.documentType,
+        documentNumber: row.documentNumber,
+        email: row.email,
+        phone: row.phone,
+        status: row.status,
+        source: row.source,
+        createdAt: row.createdAt,
+      })),
+      pagination: {
+        page: query.page,
+        pageSize: query.pageSize,
+        total,
+        totalPages: Math.max(1, Math.ceil(total / query.pageSize)),
+      },
+    };
+  }
+
   async addComment(agreementId: number, input: CreateAgreementCommentInput, userId: string) {
     const agreement = await this.ensureAgreement(agreementId);
     const comment = await this.repository.createComment(agreementId, userId, input);
     this.realtime.emitAgreementCommentAdded(agreement, comment);
     return serializeComment(comment);
+  }
+
+  /**
+   * Borrado reservado al administrador para limpiar el seguimiento de prueba. El historial real no
+   * se toca: por eso no hay PATCH y conviene retirar esta acción cuando el módulo esté en uso.
+   */
+  async removeComment(agreementId: number, commentId: number) {
+    const agreement = await this.ensureAgreement(agreementId);
+    const comment = await this.repository.findComment(agreementId, commentId);
+    if (!comment) {
+      throw agreementError(
+        NotFoundException,
+        'AGREEMENT_COMMENT_NOT_FOUND',
+        'El comentario no existe.',
+      );
+    }
+    await this.repository.deleteComment(commentId);
+    this.realtime.emitAgreementCommentDeleted(agreement, comment);
+    return { success: true as const, id: commentId };
+  }
+
+  /** Vacía el seguimiento completo de un convenio. Devuelve cuántos comentarios se borraron. */
+  async clearComments(agreementId: number) {
+    const agreement = await this.ensureAgreement(agreementId);
+    const { count } = await this.repository.clearComments(agreementId);
+    this.realtime.emitAgreementCommentsCleared(agreement, count);
+    return { success: true as const, removed: count };
   }
 
   // --- Tareas ------------------------------------------------------------------------------
@@ -439,5 +502,20 @@ export class AgreementsService {
     const updated = await this.repository.setTaskStatus(taskId, status);
     this.realtime.emitAgreementTaskUpdated(agreement, updated);
     return serializeTask(updated);
+  }
+
+  /**
+   * Borrado físico reservado al administrador para limpiar tareas de prueba. Una tarea real se
+   * cancela, no se borra: la cancelación conserva el rastro de que alguien se comprometió a algo.
+   */
+  async removeTask(agreementId: number, taskId: number) {
+    const agreement = await this.ensureAgreement(agreementId);
+    const task = await this.repository.findTask(agreementId, taskId);
+    if (!task) {
+      throw agreementError(NotFoundException, 'AGREEMENT_TASK_NOT_FOUND', 'La tarea no existe.');
+    }
+    await this.repository.deleteTask(taskId);
+    this.realtime.emitAgreementTaskDeleted(agreement, task);
+    return { success: true as const, id: taskId };
   }
 }

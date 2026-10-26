@@ -50,6 +50,8 @@ export type CustomerRecord = CreateCustomerInput & {
   createdAt: string;
   updatedAt: string;
   deletedAt: string | null;
+  /** Convenio vinculado, ya resuelto por la API. `null` cuando el cliente no pertenece a ninguno. */
+  agreement: { id: number; companyName: string } | null;
   integrations: CustomerIntegration[];
   location: {
     countryName: string | null;

@@ -146,8 +146,77 @@ export class AgreementsRepository {
     });
   }
 
-  // --- Comentarios -------------------------------------------------------------------------
+  // --- Clientes ----------------------------------------------------------------------------
 
+  /**
+   * Quiénes pertenecen al convenio, en dos fuentes: los prospectos vinculados que todavía no se
+   * convirtieron —el pipeline— y los clientes que ya guardan el convenio en su ficha.
+   *
+   * Son tablas distintas, así que la unión y el orden por fecha se arman en memoria. Cada consulta
+   * trae como máximo la última fila de la página pedida (`take`), que es la ventana suficiente para
+   * ordenar y recortar sin traer el convenio entero.
+   */
+  async customers(agreementId: number, page: number, pageSize: number) {
+    const take = page * pageSize;
+    const prospectWhere: Prisma.ProspectWhereInput = {
+      agreementId,
+      status: { not: 'CONVERTED' },
+    };
+    const customerWhere: Prisma.CustomerWhereInput = { agreementId, deletedAt: null };
+    const [prospects, prospectCount, customers, customerCount] = await this.prisma.$transaction([
+      this.prisma.prospect.findMany({
+        where: prospectWhere,
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        take,
+        select: {
+          id: true,
+          displayName: true,
+          company: true,
+          documentType: true,
+          documentNumber: true,
+          email: true,
+          phone: true,
+          status: true,
+          source: true,
+          createdAt: true,
+        },
+      }),
+      this.prisma.prospect.count({ where: prospectWhere }),
+      this.prisma.customer.findMany({
+        where: customerWhere,
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        take,
+        select: {
+          id: true,
+          displayName: true,
+          company: true,
+          documentType: true,
+          documentNumber: true,
+          email: true,
+          phone: true,
+          createdAt: true,
+        },
+      }),
+      this.prisma.customer.count({ where: customerWhere }),
+    ]);
+
+    const rows = [
+      ...prospects.map((prospect) => ({ ...prospect, kind: 'PROSPECT' as const })),
+      ...customers.map((customer) => ({
+        ...customer,
+        kind: 'CUSTOMER' as const,
+        status: null,
+        source: null,
+      })),
+    ].sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime());
+
+    return {
+      rows: rows.slice((page - 1) * pageSize, (page - 1) * pageSize + pageSize),
+      total: prospectCount + customerCount,
+    };
+  }
+
+  // --- Comentarios -------------------------------------------------------------------------
   comments(agreementId: number, page: number, pageSize: number) {
     const where: Prisma.AgreementCommentWhereInput = { agreementId };
     return this.prisma.$transaction([
@@ -168,6 +237,24 @@ export class AgreementsRepository {
       data: { agreementId, userId, comment: data.comment },
       include: commentInclude,
     });
+  }
+
+  findComment(agreementId: number, commentId: number) {
+    return this.prisma.agreementComment.findFirst({
+      where: { id: commentId, agreementId },
+      include: commentInclude,
+    });
+  }
+
+  deleteComment(commentId: number) {
+    return this.prisma.agreementComment.delete({
+      where: { id: commentId },
+      include: commentInclude,
+    });
+  }
+
+  clearComments(agreementId: number) {
+    return this.prisma.agreementComment.deleteMany({ where: { agreementId } });
   }
 
   // --- Tareas ------------------------------------------------------------------------------
@@ -216,6 +303,10 @@ export class AgreementsRepository {
       data,
       include: taskInclude,
     });
+  }
+
+  deleteTask(taskId: number) {
+    return this.prisma.agreementTask.delete({ where: { id: taskId }, include: taskInclude });
   }
 
   // Completar fija la fecha; cancelar la limpia. Reabrir vuelve a pendiente y borra ese rastro.

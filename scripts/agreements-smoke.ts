@@ -29,6 +29,8 @@ const adminId = randomUUID();
 const commercialId = randomUUID();
 const logisticsId = randomUUID();
 const createdUserIds: string[] = [adminId, commercialId, logisticsId];
+const createdCustomerIds: number[] = [];
+const agreementIds: number[] = [];
 
 // El NIT es único, así que cada corrida usa uno derivado del runId.
 const nitSeed = runId.replace(/\D/g, '').slice(0, 9).padEnd(9, '7');
@@ -201,6 +203,7 @@ try {
   if (minimal.createdBy?.id !== commercialId) {
     throw new Error('El convenio no registró al comercial como creador.');
   }
+  agreementIds.push(minimal.id);
 
   // --- Alta completa ---------------------------------------------------------------------
   const full = await json<AgreementBody>(
@@ -238,6 +241,7 @@ try {
   if (full.createdBy?.id !== adminId) {
     throw new Error('El convenio no registró al administrador como creador.');
   }
+  agreementIds.push(full.id);
 
   // --- Convenio internacional: región de catálogo y ciudad de texto libre ------------------
   const abroad = await json<AgreementBody>(
@@ -267,6 +271,7 @@ try {
   if (abroad.contactPhone !== '+525512345678') {
     throw new Error('El teléfono internacional no se normalizó contra su país.');
   }
+  agreementIds.push(abroad.id);
 
   // --- NIT único cuando existe ------------------------------------------------------------
   await expectError(
@@ -294,6 +299,7 @@ try {
   if (withoutNit.some((agreement) => agreement.nit !== null)) {
     throw new Error('Un convenio sin NIT terminó con NIT.');
   }
+  agreementIds.push(...withoutNit.map((agreement) => agreement.id));
 
   // --- Validaciones de ubicación y teléfono ------------------------------------------------
   await expectError(
@@ -496,12 +502,143 @@ try {
     404,
     'PATCH inexistente en comentarios',
   );
+
+  // --- Limpieza de comentarios: solo el administrador y solo para contenido de prueba ------
   expectStatus(
-    await api(`/api/agreements/${full.id}/comments/${firstComment.id}`, adminCookie, {
+    await api(`/api/agreements/${full.id}/comments/${firstComment.id}`, commercialCookie, {
+      method: 'DELETE',
+    }),
+    403,
+    'Borrar comentario como comercial',
+  );
+  expectStatus(
+    await api(`/api/agreements/${full.id}/comments`, commercialCookie, { method: 'DELETE' }),
+    403,
+    'Vaciar seguimiento como comercial',
+  );
+  const throwawayComment = await json<CommentBody>(
+    await api(`/api/agreements/${full.id}/comments`, adminCookie, {
+      method: 'POST',
+      body: JSON.stringify({ comment: 'Comentario de prueba' }),
+    }),
+    'Comentario desechable',
+    201,
+  );
+  const deletedComment = await json<{ success: boolean; id: number }>(
+    await api(`/api/agreements/${full.id}/comments/${throwawayComment.id}`, adminCookie, {
+      method: 'DELETE',
+    }),
+    'Borrar comentario desechable',
+  );
+  if (!deletedComment.success || deletedComment.id !== throwawayComment.id) {
+    throw new Error('El borrado de un comentario no confirmó el id eliminado.');
+  }
+  const afterCommentDelete = await json<{ pagination: { total: number } }>(
+    await api(`/api/agreements/${full.id}/comments`, adminCookie),
+    'Comentarios tras borrar uno',
+  );
+  if (afterCommentDelete.pagination.total !== 2) {
+    throw new Error('El comentario desechable no desapareció del historial.');
+  }
+  await expectError(
+    await api(`/api/agreements/${full.id}/comments/${throwawayComment.id}`, adminCookie, {
       method: 'DELETE',
     }),
     404,
-    'DELETE inexistente en comentarios',
+    'AGREEMENT_COMMENT_NOT_FOUND',
+    'Borrar un comentario ya eliminado',
+  );
+
+  // --- Clientes del convenio: pipeline de prospectos más clientes ya vinculados ------------
+  // Tres casos, uno por cada forma de pertenecer al convenio: un prospecto que sigue en el
+  // pipeline, un prospecto ya convertido —que debe aparecer como su cliente— y un cliente creado
+  // directamente en el formulario de Clientes.
+  const openProspect = await prisma.prospect.create({
+    data: {
+      displayName: `Prospecto del convenio ${runId.slice(0, 6)}`,
+      agreementId: full.id,
+      status: 'NEW',
+      source: 'MANUAL',
+    },
+  });
+  const convertedProspect = await prisma.prospect.create({
+    data: {
+      displayName: `Prospecto convertido ${runId.slice(0, 6)}`,
+      agreementId: full.id,
+      status: 'CONVERTED',
+      source: 'MANUAL',
+      convertedAt: new Date(),
+    },
+  });
+  const convertedCustomer = await prisma.customer.create({
+    data: {
+      personType: 'PERSON',
+      firstName: 'Cliente',
+      lastName: 'Convertido',
+      displayName: `Cliente convertido ${runId.slice(0, 6)}`,
+      documentType: '13',
+      documentNumber: `${nitSeed}1`.slice(0, 20),
+      agreementId: full.id,
+      fiscalResponsibilities: ['R-99-PN'],
+    },
+  });
+  const directCustomer = await prisma.customer.create({
+    data: {
+      personType: 'PERSON',
+      firstName: 'Cliente',
+      lastName: 'Directo',
+      displayName: `Cliente directo ${runId.slice(0, 6)}`,
+      documentType: '13',
+      documentNumber: `${nitSeed}2`.slice(0, 20),
+      agreementId: full.id,
+      fiscalResponsibilities: ['R-99-PN'],
+    },
+  });
+  createdCustomerIds.push(convertedCustomer.id, directCustomer.id);
+  await prisma.prospect.update({
+    where: { id: convertedProspect.id },
+    data: { convertedCustomerId: convertedCustomer.id },
+  });
+
+  const agreementCustomers = await json<{
+    data: Array<{ id: number; kind: string; displayName: string; status: string | null }>;
+    pagination: { total: number };
+  }>(await api(`/api/agreements/${full.id}/customers`, adminCookie), 'Clientes del convenio');
+
+  if (agreementCustomers.pagination.total !== 3) {
+    throw new Error(
+      `La ficha del convenio debía listar 3 registros (1 prospecto y 2 clientes) y listó ${agreementCustomers.pagination.total}.`,
+    );
+  }
+  if (agreementCustomers.data.filter((row) => row.kind === 'PROSPECT').length !== 1) {
+    throw new Error('La ficha no listó exactamente un prospecto del pipeline.');
+  }
+  if (agreementCustomers.data.filter((row) => row.kind === 'CUSTOMER').length !== 2) {
+    throw new Error('La ficha no listó los dos clientes del convenio.');
+  }
+  const prospectRow = agreementCustomers.data.find((row) => row.kind === 'PROSPECT');
+  if (prospectRow?.id !== openProspect.id || prospectRow.status !== 'NEW') {
+    throw new Error('El prospecto del pipeline no se listó con su estado.');
+  }
+  // El convertido deja de aparecer como prospecto: su cliente ya está en la lista, y mostrarlo dos
+  // veces sería contar a la misma persona por duplicado.
+  if (agreementCustomers.data.some((row) => row.id === convertedProspect.id)) {
+    throw new Error('Un prospecto convertido se listó como prospecto en la ficha del convenio.');
+  }
+  const listedCustomerIds = agreementCustomers.data
+    .filter((row) => row.kind === 'CUSTOMER')
+    .map((row) => row.id)
+    .sort();
+  if (listedCustomerIds.join(',') !== [convertedCustomer.id, directCustomer.id].sort().join(',')) {
+    throw new Error('La ficha no listó a los clientes vinculados al convenio.');
+  }
+  if (agreementCustomers.data.some((row) => row.kind === 'CUSTOMER' && row.status !== null)) {
+    throw new Error('Un cliente no debe llevar estado de pipeline en la ficha del convenio.');
+  }
+  expectStatus(
+    await api(`/api/agreements/${full.id}/customers`, logisticsCookie),
+    403,
+    'Clientes del convenio como logística',
   );
 
   // --- Tareas: crear, asignar, completar, cancelar y reabrir ------------------------------
@@ -647,6 +784,50 @@ try {
     throw new Error('Un convenio sin tareas debe contar cero completadas y cero canceladas.');
   }
 
+  // --- Limpieza de tareas: solo el administrador -------------------------------------------
+  const throwawayTask = await json<TaskBody>(
+    await api(`/api/agreements/${full.id}/tasks`, adminCookie, {
+      method: 'POST',
+      body: JSON.stringify({
+        title: 'Tarea de prueba',
+        scheduledAt: new Date(Date.now() + 86_400_000).toISOString(),
+      }),
+    }),
+    'Tarea desechable',
+    201,
+  );
+  expectStatus(
+    await api(`/api/agreements/${full.id}/tasks/${throwawayTask.id}`, commercialCookie, {
+      method: 'DELETE',
+    }),
+    403,
+    'Borrar tarea como comercial',
+  );
+  const deletedTask = await json<{ success: boolean; id: number }>(
+    await api(`/api/agreements/${full.id}/tasks/${throwawayTask.id}`, adminCookie, {
+      method: 'DELETE',
+    }),
+    'Borrar tarea desechable',
+  );
+  if (!deletedTask.success || deletedTask.id !== throwawayTask.id) {
+    throw new Error('El borrado de una tarea no confirmó el id eliminado.');
+  }
+  const remainingTasks = await json<{ data: TaskBody[] }>(
+    await api(`/api/agreements/${full.id}/tasks`, adminCookie),
+    'Tareas tras borrar una',
+  );
+  if (remainingTasks.data.some((row) => row.id === throwawayTask.id)) {
+    throw new Error('La tarea desechable sigue apareciendo después de borrarla.');
+  }
+  await expectError(
+    await api(`/api/agreements/${full.id}/tasks/${throwawayTask.id}`, adminCookie, {
+      method: 'DELETE',
+    }),
+    404,
+    'AGREEMENT_TASK_NOT_FOUND',
+    'Borrar una tarea ya eliminada',
+  );
+
   // --- Borrado de usuario: el historial sobrevive y el autor queda vacío -------------------
   await prisma.user.delete({ where: { id: commercialId } });
   createdUserIds.splice(createdUserIds.indexOf(commercialId), 1);
@@ -665,11 +846,30 @@ try {
     throw new Error('El convenio no sobrevivió al borrado de su creador.');
   }
 
+  // --- Vaciar el seguimiento completo ------------------------------------------------------
+  const cleared = await json<{ success: boolean; removed: number }>(
+    await api(`/api/agreements/${full.id}/comments`, adminCookie, { method: 'DELETE' }),
+    'Vaciar seguimiento',
+  );
+  if (!cleared.success || cleared.removed !== 2) {
+    throw new Error(`Vaciar el seguimiento borró ${cleared.removed} comentarios y se esperaban 2.`);
+  }
+  const emptied = await json<{ data: CommentBody[]; pagination: { total: number } }>(
+    await api(`/api/agreements/${full.id}/comments`, adminCookie),
+    'Seguimiento vacío',
+  );
+  if (emptied.pagination.total !== 0 || emptied.data.length !== 0) {
+    throw new Error('El seguimiento no quedó vacío tras vaciarlo.');
+  }
+
   process.stdout.write(
-    'Agreements smoke: auth, RBAC, minimal and full create, unique NIT, location and phone validation, edit, activate/deactivate, no delete routes, search, filters, pagination, comments (immutable, chronological), tasks (assign, complete, cancel, reopen, edit), computed counters and author survival after user deletion passed.\n',
+    'Agreements smoke: auth, RBAC, minimal and full create, unique NIT, location and phone validation, edit, activate/deactivate, no delete route, search, filters, pagination, comments (chronological, admin-only cleanup), tasks (assign, complete, cancel, reopen, edit, admin-only delete), computed counters and author survival after user deletion passed.\n',
   );
 } finally {
-  // La limpieza es directa en base porque el módulo no expone borrado de convenios.
+  // La limpieza es directa en base porque el módulo no expone borrado de convenios. Los clientes y
+  // prospectos del convenio sobreviven al borrado (FK `SetNull`) y se retiran aparte.
+  await prisma.prospect.deleteMany({ where: { agreementId: { in: agreementIds } } });
+  await prisma.customer.deleteMany({ where: { id: { in: createdCustomerIds } } });
   await prisma.agreement.deleteMany({ where: { companyName: { contains: companyName } } });
   await prisma.user.deleteMany({ where: { id: { in: createdUserIds } } });
   await app.close();

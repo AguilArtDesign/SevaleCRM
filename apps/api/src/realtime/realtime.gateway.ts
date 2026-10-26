@@ -270,6 +270,23 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection {
     });
   }
 
+  emitAgreementCommentDeleted(
+    agreement: { id: number; companyName: string },
+    comment: { id: number },
+  ) {
+    this.agreementAudience().emit('agreement.comment.deleted', {
+      ...this.agreementEvent(agreement),
+      commentId: comment.id,
+    });
+  }
+
+  emitAgreementCommentsCleared(agreement: { id: number; companyName: string }, removed: number) {
+    this.agreementAudience().emit('agreement.comments.cleared', {
+      ...this.agreementEvent(agreement),
+      removed,
+    });
+  }
+
   emitAgreementTaskUpdated(
     agreement: { id: number; companyName: string },
     task: { id: number; title: string; status: string },
@@ -279,6 +296,17 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection {
       taskId: task.id,
       title: task.title,
       status: task.status,
+    });
+  }
+
+  emitAgreementTaskDeleted(
+    agreement: { id: number; companyName: string },
+    task: { id: number; title: string },
+  ) {
+    this.agreementAudience().emit('agreement.task.deleted', {
+      ...this.agreementEvent(agreement),
+      taskId: task.id,
+      title: task.title,
     });
   }
 

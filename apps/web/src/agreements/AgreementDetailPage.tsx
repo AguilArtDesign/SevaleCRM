@@ -21,29 +21,40 @@ export function AgreementDetailPage() {
   const role = user?.role;
   const canUpdate = Boolean(role && hasPermission(role, 'agreements.update'));
   const canComment = Boolean(role && hasPermission(role, 'agreements.comments.create'));
+  // Borrar tareas y seguimiento solo sirve para limpiar contenido de prueba: lo tiene el
+  // administrador y nadie más.
+  const canDeleteComments = Boolean(role && hasPermission(role, 'agreements.comments.delete'));
+  const canDeleteTasks = Boolean(role && hasPermission(role, 'agreements.tasks.delete'));
 
   const agreementId = Number(id);
   const isValidId = Number.isSafeInteger(agreementId) && agreementId > 0;
 
   const [formOpen, setFormOpen] = useState(false);
-  const [refreshToken, setRefreshToken] = useState(0);
 
   const detailQuery = useQuery({
-    queryKey: ['agreements', 'detail', agreementId, refreshToken],
+    queryKey: ['agreements', 'detail', agreementId],
     queryFn: () => agreementsApi.detail(agreementId),
     enabled: isValidId,
   });
 
   const commentsQuery = useQuery({
-    queryKey: ['agreements', 'comments', agreementId, refreshToken],
+    queryKey: ['agreements', 'comments', agreementId],
     queryFn: () => agreementsApi.comments(agreementId),
     enabled: isValidId,
   });
 
   const tasksQuery = useQuery({
-    queryKey: ['agreements', 'tasks', agreementId, refreshToken],
+    queryKey: ['agreements', 'tasks', agreementId],
     queryFn: () => agreementsApi.tasks(agreementId),
     enabled: isValidId,
+  });
+
+  const canReadProspects = Boolean(role && hasPermission(role, 'prospects.read'));
+
+  const customersQuery = useQuery({
+    queryKey: ['agreements', 'customers', agreementId],
+    queryFn: () => agreementsApi.customers(agreementId),
+    enabled: isValidId && canReadProspects,
   });
 
   const assigneesQuery = useQuery({
@@ -54,7 +65,8 @@ export function AgreementDetailPage() {
   });
 
   const refresh = () => {
-    setRefreshToken((current) => current + 1);
+    // Sin token en la queryKey: invalidar refresca manteniendo los datos en pantalla, así que la
+    // ficha no vuelve al estado de carga ni pierde la pestaña en la que estaba el usuario.
     void queryClient.invalidateQueries({ queryKey: ['agreements'] });
   };
 
@@ -113,9 +125,19 @@ export function AgreementDetailPage() {
             isError: tasksQuery.isError,
             error: tasksQuery.error,
           }}
+          customers={{
+            data: customersQuery.data?.data,
+            isPending: customersQuery.isPending,
+            isError: customersQuery.isError,
+            error: customersQuery.error,
+          }}
           assignees={assigneesQuery.data ?? []}
           canUpdate={canUpdate}
           canComment={canComment}
+          canDeleteComments={canDeleteComments}
+          canDeleteTasks={canDeleteTasks}
+          canReadProspects={canReadProspects}
+          currentUserId={user?.id ?? null}
           onEdit={() => setFormOpen(true)}
           onChanged={refresh}
         />

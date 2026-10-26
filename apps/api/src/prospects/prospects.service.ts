@@ -486,7 +486,12 @@ export class ProspectsService {
         'Completa los datos del cliente antes de convertir el prospecto.',
       );
     }
-    const customer = await this.customers.create(input);
+    // El cliente hereda el convenio del prospecto cuando el formulario no eligió otro. Si no, el
+    // vínculo se perdería justo al convertir, que es cuando más importa conservarlo.
+    const customer = await this.customers.create({
+      ...input,
+      agreementId: input.agreementId ?? prospect.agreementId,
+    });
     // `CustomersService.create` no acepta una transacción externa y no se refactoriza por esto.
     // Si el marcado fallara, el cliente ya existe: se informa su id para que el reintento lo
     // vincule en lugar de duplicarlo.
@@ -501,7 +506,13 @@ export class ProspectsService {
     if (!(await this.repository.customerExists(customerId))) {
       throw prospectError(NotFoundException, 'CUSTOMER_NOT_FOUND', 'El cliente no existe.');
     }
-    const customer = await this.customers.detail(customerId);
+    let customer = await this.customers.detail(customerId);
+    // Al vincular con un cliente que ya existía también se hereda el convenio, pero solo si el
+    // cliente no tenía uno: si ya lo tenía, manda el suyo.
+    if (prospect.agreementId && !customer.agreement) {
+      await this.customers.linkAgreement(customerId, prospect.agreementId);
+      customer = await this.customers.detail(customerId);
+    }
     const converted = await this.markConvertedOrReport(prospect.id, customerId);
     return { prospect: serializeProspect(converted), customer };
   }

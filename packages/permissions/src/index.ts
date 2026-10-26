@@ -33,8 +33,13 @@ export const permissions = [
   'agreements.create',
   'agreements.update',
   'agreements.comments.create',
+  // Solo ADMIN y solo para limpiar contenido de prueba: el seguimiento y las tareas son historial
+  // y no deberían borrarse en operación normal. Para retirar la función basta con quitar estas dos
+  // de la lista: ADMIN las pierde y la interfaz esconde los botones sola.
+  'agreements.comments.delete',
   'agreements.tasks.create',
   'agreements.tasks.update',
+  'agreements.tasks.delete',
   'prospects.read',
   'prospects.create',
   'prospects.update',

@@ -113,6 +113,34 @@ export function messageFrom(error: unknown): string {
 }
 
 /** Cuándo se escribió el comentario, con el autor tal como lo muestra la ficha. */
-export function commentStamp(createdAt: string, authorName: string | null): string {
-  return `${dateOnly(createdAt)} · ${authorName ?? 'Usuario eliminado'}`;
+const chatDayFormatter = new Intl.DateTimeFormat('es-CO', {
+  day: 'numeric',
+  month: 'short',
+  year: 'numeric',
+});
+
+const chatTimeFormatter = new Intl.DateTimeFormat('es-CO', {
+  hour: '2-digit',
+  minute: '2-digit',
+});
+
+/** Día del mensaje en el seguimiento; «Hoy» y «Ayer» se reconocen de un vistazo. */
+export function chatDay(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '--';
+  const today = new Date();
+  const days = Math.round(
+    (new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime() -
+      new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime()) /
+      86_400_000,
+  );
+  if (days === 0) return 'Hoy';
+  if (days === 1) return 'Ayer';
+  return chatDayFormatter.format(date);
+}
+
+/** Hora del mensaje, para que la conversación tenga una línea de tiempo real. */
+export function chatTime(value: string): string {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? '' : chatTimeFormatter.format(date);
 }

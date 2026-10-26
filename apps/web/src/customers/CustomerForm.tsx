@@ -1,4 +1,5 @@
 import { useMemo, useState, type FormEvent } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import {
   Alert,
   Button,
@@ -34,6 +35,7 @@ import { Input } from '../components/Input';
 import { PhoneInput } from '../components/PhoneInput';
 import { Select } from '../components/Select';
 import { Chip } from '../components/Chip';
+import { agreementsApi } from '../agreements/api';
 import {
   customersApi,
   type CustomerDraftAddress,
@@ -73,6 +75,7 @@ const emptyCustomer: CustomerFormValue = {
   postalCode: null,
   addressLine1: null,
   addressLine2: null,
+  agreementId: null,
   vatResponsible: false,
   fiscalResponsibilities: ['R-99-PN'],
 };
@@ -100,6 +103,7 @@ function initialValue(
     postalCode: customer.postalCode,
     addressLine1: customer.addressLine1,
     addressLine2: customer.addressLine2,
+    agreementId: customer.agreement?.id ?? null,
     vatResponsible: customer.vatResponsible,
     fiscalResponsibilities: [customer.fiscalResponsibilities[0] ?? 'R-99-PN'],
   };
@@ -210,6 +214,32 @@ export function CustomerForm({
   const [lookupResult, setLookupResult] = useState<CustomerResolveResponse | null>(null);
   const [isLookingUp, setIsLookingUp] = useState(false);
   const countries = useMemo(() => getCustomerCountries(), []);
+  // Los convenios se eligen de la lista de activos. Si el cliente ya está vinculado a uno que se
+  // archivó, se añade igualmente para no romper la edición con un valor que no está en la lista.
+  const agreementsQuery = useQuery({
+    queryKey: ['agreements', 'options', 'active'],
+    queryFn: () =>
+      agreementsApi.list({
+        search: '',
+        active: 'active',
+        page: 1,
+        pageSize: 100,
+        sort: 'companyName',
+        order: 'asc',
+      }),
+    staleTime: 5 * 60_000,
+  });
+  const agreementOptions = useMemo(() => {
+    const options = (agreementsQuery.data?.data ?? []).map((agreement) => ({
+      id: String(agreement.id),
+      name: agreement.companyName,
+    }));
+    const linked = customer?.agreement;
+    if (linked && !options.some((option) => option.id === String(linked.id))) {
+      options.unshift({ id: String(linked.id), name: `${linked.companyName} (inactivo)` });
+    }
+    return options;
+  }, [agreementsQuery.data, customer?.agreement]);
   const isColombia = value.country === 'CO';
   const states = useMemo(
     () =>
@@ -923,6 +953,25 @@ export function CustomerForm({
                           </div>
                         </div>
                       )}
+                  </div>
+                </section>
+
+                <section className="customer-form-section">
+                  <h3>Convenio</h3>
+                  <div className="customer-form-grid">
+                    <CustomerAutocomplete
+                      ariaLabel="Convenio"
+                      label="Convenio"
+                      placeholder="Sin convenio"
+                      value={value.agreementId ? String(value.agreementId) : ''}
+                      options={agreementOptions}
+                      onChange={(selected) =>
+                        setValue((current) => ({
+                          ...current,
+                          agreementId: selected ? Number(selected) : null,
+                        }))
+                      }
+                    />
                   </div>
                 </section>
 

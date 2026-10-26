@@ -5335,68 +5335,17 @@ select {
   color: var(--success, var(--foreground));
 }
 
-.agreement-detail-avatar {
-  background: var(--accent-soft, var(--default));
-  color: var(--accent-soft-foreground, var(--foreground));
-  font-size: 0.85rem;
-}
-
-.agreement-section {
-  display: grid;
-  gap: 0.75rem;
-}
-
-.agreement-section-heading {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
-}
-
-.agreement-section-heading h3 {
-  margin: 0;
-}
-
 .agreement-empty {
   margin: 0;
+  padding: 2rem 1rem;
   color: var(--muted);
   font-size: 0.8125rem;
-}
-
-/* Historial: una línea de fecha y autor, y debajo el texto tal como se escribió. */
-.agreement-comments {
-  display: grid;
-  gap: 0.75rem;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.agreement-comment {
-  display: grid;
-  gap: 0.25rem;
-  padding: 0.6rem 0.75rem;
-  border-radius: var(--field-radius);
-  background: var(--surface-secondary);
-}
-
-.agreement-comment-meta {
-  color: var(--muted);
-  font-size: 0.75rem;
-}
-
-.agreement-comment p {
-  margin: 0;
-  color: var(--foreground);
-  font-size: 0.8125rem;
-  line-height: 1.45;
-  white-space: pre-wrap;
-  overflow-wrap: break-word;
+  text-align: center;
 }
 
 .agreement-comment-form {
   display: flex;
-  align-items: flex-start;
+  align-items: flex-end;
   gap: 0.5rem;
 }
 
@@ -5405,68 +5354,11 @@ select {
   min-width: 0;
 }
 
-.agreement-task-tools {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.agreement-task-tools .select {
-  width: 9.5rem;
-  min-width: 0;
-}
-
-.agreement-tasks {
-  display: grid;
-  gap: 0.5rem;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.agreement-task {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 0.75rem;
-  padding: 0.6rem 0.75rem;
-  border-radius: var(--field-radius);
-  background: var(--surface-secondary);
-}
-
-/* Una tarea completada o cancelada se atenúa pero sigue visible: nunca se borra. */
-.agreement-task.is-done {
-  opacity: 0.72;
-}
-
-.agreement-task-main {
-  display: grid;
-  gap: 0.2rem;
-  min-width: 0;
-}
-
-.agreement-task-title {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  flex-wrap: wrap;
-}
-
-.agreement-task-title strong {
-  font-size: 0.8125rem;
-}
-
-.agreement-task-main p {
-  margin: 0;
-  color: var(--muted);
-  font-size: 0.8125rem;
-  line-height: 1.4;
-  overflow-wrap: break-word;
-}
-
-.agreement-task-meta {
-  color: var(--muted);
-  font-size: 0.75rem;
+/* El alto y el desbordamiento los decide el componente según el contenido; aquí solo se impide el
+   arrastre manual y se fija la altura de línea con la que se mide. */
+.agreement-comment-field textarea {
+  resize: none;
+  line-height: 1.45;
 }
 
 .agreement-task-actions {
@@ -5524,14 +5416,12 @@ select {
   color: var(--foreground);
 }
 
-/* Ficha del convenio como página: la información, los comentarios y las tareas necesitan más ancho
-   que un drawer, así que la lectura se limita a una columna cómoda. */
+/* Ficha del convenio como página propia. Ocupa todo el ancho del contenido: la información va en
+   cards y la actividad en pestañas, así que no hace falta limitar la lectura a una columna. */
 .agreements-detail-page {
   display: grid;
-  gap: 1rem;
   width: 100%;
-  max-width: 60rem;
-  margin-inline: auto;
+  gap: 1.25rem;
   align-content: start;
 }
 
@@ -5541,34 +5431,345 @@ select {
   gap: 0.5rem;
 }
 
-.agreements-detail-page .customer-detail-identity {
-  padding-bottom: 0.5rem;
+.agreement-detail {
+  display: grid;
+  gap: 1.25rem;
 }
 
-.agreements-detail-page .customer-detail-section dl {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+/* --- Cabecera ------------------------------------------------------------------------------- */
+
+.agreement-hero-content {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
 }
 
-.agreements-detail-page .customer-detail-section dl .customer-detail-address,
-.agreements-detail-page .customer-detail-section dl > div:nth-child(3):last-child {
-  grid-column: 1 / -1;
+.agreement-hero-identity {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  min-width: 0;
 }
 
-@media (max-width: 640px) {
-  .agreements-detail-page .customer-detail-section dl {
+.agreement-hero-text {
+  display: grid;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.agreement-hero-text strong {
+  color: var(--foreground);
+  font-size: 1.05rem;
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.agreement-hero-text span {
+  color: var(--muted);
+  font-size: 0.8125rem;
+}
+
+.agreement-hero-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.agreement-hero-country {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: var(--foreground);
+  font-size: 0.8125rem;
+}
+
+.agreement-hero-country img {
+  width: 1.3rem;
+  height: 0.9rem;
+  border-radius: 0.2rem;
+  object-fit: cover;
+}
+
+.agreement-logo--lg {
+  width: 3.25rem;
+  height: 3.25rem;
+  border-radius: 0.85rem;
+  background: var(--accent-soft, var(--default));
+  color: var(--accent-soft-foreground, var(--foreground));
+  font-size: 0.95rem;
+}
+
+/* --- Información y contacto ----------------------------------------------------------------- */
+
+/* Dos columnas: a la izquierda los datos del convenio, a la derecha la actividad. La izquierda es
+   más estrecha porque son pares etiqueta-valor; la derecha necesita el ancho para la tabla. */
+.agreement-detail-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 22rem) minmax(0, 1fr);
+  gap: 1.25rem;
+  align-items: start;
+}
+
+.agreement-detail-column {
+  display: grid;
+  gap: 1.25rem;
+  min-width: 0;
+}
+
+.agreement-detail-column--activity {
+  align-content: start;
+}
+
+/* Las pestañas van fuera del card: se leen como navegación de la ficha, no como contenido. */
+.agreement-tabs {
+  width: 100%;
+}
+
+/* Cada pestaña ocupa solo lo que necesita: ni la barra ni el fondo se estiran al ancho de la
+   columna. */
+.agreement-tabs .tabs__list-container {
+  width: max-content;
+  max-width: 100%;
+}
+
+.agreement-tabs .tabs__list {
+  width: max-content;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.agreement-tabs .tabs__tab {
+  flex: 0 0 auto;
+  width: auto;
+  gap: 0.4rem;
+}
+
+.agreement-tabs .tabs__panel {
+  padding: 0;
+}
+
+/* El seguimiento es una conversación: la card le da un límite propio que la tabla no necesita. */
+.agreement-chat-card {
+  min-width: 0;
+}
+
+.agreement-chat {
+  display: grid;
+  gap: 0.9rem;
+  min-width: 0;
+}
+
+/* Limpiar el seguimiento es una tarea de mantenimiento: se aparta a la derecha y no compite con la
+   conversación. */
+.agreement-chat-toolbar {
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* El borrado vive fuera de la burbuja y se atenúa: es una acción de limpieza, no contenido. */
+.agreement-chat-delete {
+  flex: 0 0 auto;
+  opacity: 0.45;
+  transition: opacity 120ms ease;
+}
+
+.agreement-chat-item:hover .agreement-chat-delete,
+.agreement-chat-item:focus-within .agreement-chat-delete {
+  opacity: 1;
+}
+
+/* Con muchas intervenciones la ficha no debe crecer sin fin: el historial scrollea y la caja de
+   escritura queda siempre a la vista. */
+.agreement-chat-scroll {
+  max-height: 26rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.agreement-chat-list {
+  display: grid;
+  gap: 0.6rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.agreement-chat-item {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.5rem;
+}
+
+/* Los mensajes propios se reflejan: avatar a la derecha y burbuja pegada a ese lado. */
+.agreement-chat-item--own {
+  flex-direction: row-reverse;
+}
+
+.agreement-chat-avatar {
+  flex: 0 0 auto;
+  margin-bottom: 0.15rem;
+}
+
+/* Burbuja de conversación: el ancho se ajusta al texto y solo se limita para que una línea muy
+   larga no cruce toda la columna. */
+.agreement-chat-bubble {
+  display: grid;
+  gap: 0.15rem;
+  min-width: 0;
+  max-width: min(34rem, 82%);
+  padding: 0.5rem 0.7rem 0.4rem;
+  background: var(--surface-secondary);
+  border-radius: 0.9rem 0.9rem 0.9rem 0.25rem;
+}
+
+/* La burbuja propia se tiñe con el acento y redondea la esquina contraria, como en WhatsApp. */
+.agreement-chat-item--own .agreement-chat-bubble {
+  background: var(--accent-soft, var(--default));
+  border-radius: 0.9rem 0.9rem 0.25rem 0.9rem;
+}
+
+.agreement-chat-item--own .agreement-chat-time {
+  color: var(--accent-soft-foreground, var(--muted));
+  opacity: 0.75;
+}
+
+.agreement-chat-author {
+  color: var(--accent, var(--foreground));
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.agreement-chat-bubble p {
+  margin: 0;
+  color: var(--foreground);
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* La hora va dentro de la burbuja, alineada a la derecha, como en un chat. */
+.agreement-chat-time {
+  justify-self: end;
+  color: var(--muted);
+  font-size: 0.68rem;
+  white-space: nowrap;
+}
+
+.agreement-tab-panel {
+  display: grid;
+  gap: 0.9rem;
+}
+
+@media (max-width: 1100px) {
+  .agreement-detail-columns {
     grid-template-columns: minmax(0, 1fr);
   }
 }
 
+.agreement-info-card .card__title {
+  margin: 0;
+  color: var(--foreground);
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+/* HeroUI apila el contenido de la card en columna; aquí las filas se leen mejor en una lista. */
+.agreement-info-card .card__content {
+  flex-direction: column;
+}
+
+.agreement-info-list {
+  display: grid;
+  gap: 0.6rem;
+  margin: 0;
+}
+
+.agreement-info-row {
+  display: grid;
+  grid-template-columns: minmax(7rem, 30%) minmax(0, 1fr);
+  gap: 0.75rem;
+  align-items: baseline;
+}
+
+.agreement-info-row dt {
+  color: var(--muted);
+  font-size: 0.8125rem;
+}
+
+.agreement-info-row dd {
+  margin: 0;
+  color: var(--foreground);
+  font-size: 0.8125rem;
+  overflow-wrap: anywhere;
+}
+
+/* --- Actividad en pestañas ------------------------------------------------------------------ */
+
+.agreement-tab-body {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.agreement-task-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+}
+
+.agreement-task-toolbar .select {
+  width: 12rem;
+}
+
+.agreement-tasks-actions-column {
+  width: 8.5rem;
+  text-align: end;
+}
+
+.agreement-tasks-actions-cell {
+  text-align: end;
+}
+
+.agreement-task-cell {
+  display: grid;
+  gap: 0.1rem;
+  min-width: 0;
+}
+
+.agreement-task-cell strong {
+  color: var(--foreground);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  line-height: 1.25;
+}
+
+.agreement-task-cell span {
+  color: var(--muted);
+  font-size: 0.75rem;
+  line-height: 1.25;
+}
+
+@media (max-width: 720px) {
+  .agreement-info-row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.1rem;
+  }
+
+  .agreement-task-toolbar .select {
+    width: 100%;
+  }
+}
+
 @media (max-width: 640px) {
-  .agreement-section-heading,
   .agreement-comment-form {
     align-items: stretch;
     flex-direction: column;
-  }
-
-  .agreement-task-tools .select {
-    width: 100%;
   }
 }
 

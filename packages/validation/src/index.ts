@@ -206,6 +206,14 @@ const optionalCountry = z
   ])
   .transform((value) => value || null);
 
+// Convenio al que pertenece el cliente. La cadena vacía se normaliza a `null` porque el formulario
+// envía el valor de un selector; la ausencia del campo significa «no tocar» al editar. Es opcional
+// para que los payloads que no lo traen —integraciones y guiones— no tengan que enviarlo.
+const optionalAgreementRef = z
+  .union([z.coerce.number().int().positive(), z.literal(''), z.null()])
+  .transform((value) => (value === '' || value === null ? null : Number(value)))
+  .optional();
+
 const customerFieldsSchema = z.object({
   personType: customerPersonTypeSchema,
   firstName: optionalText(191),
@@ -246,6 +254,7 @@ const customerFieldsSchema = z.object({
   postalCode: optionalText(32),
   addressLine1: optionalText(255),
   addressLine2: optionalText(255),
+  agreementId: optionalAgreementRef,
   vatResponsible: z.boolean().default(false),
   fiscalResponsibilities: z
     .array(fiscalResponsibilitySchema)
@@ -1043,8 +1052,15 @@ export const agreementCommentsQuerySchema = z.object({
   pageSize: z.coerce.number().int().min(1).max(100).default(50),
 });
 
-// Los comentarios son el historial de lo hablado con la empresa: se crean y se leen, nunca se
-// editan ni se eliminan.
+// Los clientes de un convenio vienen de dos sitios: los prospectos vinculados que aún no se
+// convirtieron y los clientes que guardan el convenio en su ficha.
+export const agreementCustomersQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(50),
+});
+
+// Los comentarios son el historial de lo hablado con la empresa: se crean y se leen. Existe una
+// eliminación reservada al administrador, solo para limpiar contenido de prueba.
 export const createAgreementCommentSchema = z.object({
   comment: z
     .string()
@@ -1109,6 +1125,7 @@ export type CreateAgreementInput = z.infer<typeof createAgreementSchema>;
 export type UpdateAgreementInput = z.infer<typeof updateAgreementSchema>;
 export type AgreementListQuery = z.infer<typeof agreementListQuerySchema>;
 export type AgreementCommentsQuery = z.infer<typeof agreementCommentsQuerySchema>;
+export type AgreementCustomersQuery = z.infer<typeof agreementCustomersQuerySchema>;
 export type CreateAgreementCommentInput = z.infer<typeof createAgreementCommentSchema>;
 export type AgreementTasksQuery = z.infer<typeof agreementTasksQuerySchema>;
 export type CreateAgreementTaskInput = z.infer<typeof createAgreementTaskSchema>;
