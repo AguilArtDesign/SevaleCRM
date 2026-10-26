@@ -2,10 +2,12 @@ import { BadRequestException, ConflictException, Injectable } from '@nestjs/comm
 import { randomBytes } from 'node:crypto';
 import type { Store } from '../../generated/prisma/client.js';
 import {
+  integrationDelete,
   integrationGet,
   integrationPost,
   integrationPut,
   integrationUrl,
+  IntegrationResourceMissingException,
   invalidIntegrationResponse,
 } from '../../integrations/integration-http.js';
 import {
@@ -335,6 +337,29 @@ export class WooCustomerService {
     const result = this.confirmResponse(response, body.email, config.label);
     if (result.id !== id) throw invalidIntegrationResponse(config.label);
     return result;
+  }
+
+  /**
+   * Elimina al cliente en la tienda. Un 404 cuenta como éxito: si ya no está allá —porque alguien lo
+   * borró a mano— el objetivo del borrado ya se cumplió, y repetir la operación debe ser seguro.
+   * `force` salta la papelera de WordPress, que dejaría el correo ocupado y al cliente vivo para
+   * efectos prácticos.
+   */
+  async deleteCustomer(store: Store, externalId: string): Promise<void> {
+    const config = wooCommerceConfiguration(store);
+    const id = identifier(externalId.trim());
+    if (!id) throw invalidIntegrationResponse(config.label);
+    const url = integrationUrl(config.apiUrl, `customers/${id}`);
+    url.searchParams.set('force', 'true');
+    try {
+      await integrationDelete(url, wooCommerceAuthorizationHeaders(config), config.label, {
+        timeoutMs: 20_000,
+        retryCount: 1,
+      });
+    } catch (error) {
+      if (error instanceof IntegrationResourceMissingException) return;
+      throw error;
+    }
   }
 
   private async ensureUpdateIdentityAvailable(

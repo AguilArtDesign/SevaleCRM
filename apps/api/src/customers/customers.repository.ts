@@ -184,6 +184,15 @@ export class CustomersRepository {
     return this.prisma.customer.update({ where: { id }, data: { checkDigit } });
   }
 
+  /**
+   * Operaciones que impiden borrar al cliente. Se consulta antes de borrarlo en las tiendas: el
+   * borrado local puede rechazarse por tener pedidos, y en ese caso no debe haberse borrado nada en
+   * remoto.
+   */
+  blockingOperations(customerId: number) {
+    return this.prisma.orderOperation.count({ where: { customerId, deletedAt: null } });
+  }
+
   delete(id: number) {
     return this.prisma.$transaction(async (transaction) => {
       const validOperations = await transaction.orderOperation.count({

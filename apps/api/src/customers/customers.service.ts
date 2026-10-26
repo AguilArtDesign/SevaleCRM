@@ -1,4 +1,5 @@
 import {
+  BadGatewayException,
   BadRequestException,
   ConflictException,
   Injectable,
@@ -47,7 +48,7 @@ import {
   WooCustomerService,
   type WooCustomerReference,
 } from './integrations/woo-customer.service.js';
-
+import type { CustomerWithIntegrations } from './customers.repository.js';
 type WooLookupProvider = 'SERATUS' | 'PALI';
 type WooCustomerData = Omit<WooCustomerReference, 'id'> & { id: number };
 type CustomerSourceLookup = {
@@ -108,6 +109,17 @@ function isForeignKeyConstraintError(error: unknown): boolean {
     'code' in error &&
     (error as { code?: unknown }).code === 'P2003'
   );
+}
+
+/** El cliente tiene pedidos: no se borra, ni aquí ni en las tiendas. */
+function customerHasOrders() {
+  return new ConflictException({
+    success: false,
+    error: {
+      code: 'CUSTOMER_HAS_ORDERS',
+      message: 'El cliente no puede eliminarse porque tiene operaciones asociadas.',
+    },
+  });
 }
 
 function validateLocation(
@@ -470,30 +482,54 @@ export class CustomersService {
   async remove(id: number, includeIntegrationErrors = false) {
     const customer = await this.customers.findById(id);
     if (!customer) throw new NotFoundException('El cliente no existe.');
+    // El bloqueo por pedidos se comprueba antes de tocar las tiendas: si el borrado local va a
+    // rechazarse, no puede haberse borrado ya al cliente en remoto.
+    if ((await this.customers.blockingOperations(id)) > 0) throw customerHasOrders();
+    await this.removeFromStores(customer);
     try {
       const deleted = await this.customers.delete(id);
-      if (!deleted) {
-        throw new ConflictException({
-          success: false,
-          error: {
-            code: 'CUSTOMER_HAS_ORDERS',
-            message: 'El cliente no puede eliminarse porque tiene operaciones asociadas.',
-          },
-        });
-      }
+      if (!deleted) throw customerHasOrders();
       this.realtime.emitCustomerDeleted(deleted);
       return serializeCustomer(deleted, includeIntegrationErrors);
     } catch (error) {
-      if (isForeignKeyConstraintError(error)) {
-        throw new ConflictException({
+      if (isForeignKeyConstraintError(error)) throw customerHasOrders();
+      throw error;
+    }
+  }
+
+  /**
+   * Borra al cliente en Pali y Seratus, en las tiendas donde tenga vínculo. Las tiendas sin
+   * `externalId` o sin configurar se omiten porque no hay nada que borrar allá.
+   *
+   * Se aborta al primer fallo real en lugar de continuar: el cliente ya no existiría en el CRM pero
+   * seguiría vivo en la otra tienda, y ese huérfano no lo ve nadie. Al abortar, la tienda que falló
+   * queda nombrada en el error y el cliente se conserva entero en el CRM.
+   */
+  private async removeFromStores(customer: CustomerWithIntegrations) {
+    const stores: Array<{ provider: 'SERATUS' | 'PALI'; label: string }> = [
+      { provider: 'SERATUS', label: 'Seratus' },
+      { provider: 'PALI', label: 'Pali' },
+    ];
+    for (const { provider, label } of stores) {
+      const integration = customer.integrations.find((item) => item.provider === provider);
+      if (!integration?.externalId) continue;
+      try {
+        await this.wooCustomers.deleteCustomer(provider, integration.externalId);
+      } catch (error) {
+        // Una integración ausente en este entorno no es un fallo del borrado: no hay tienda a la
+        // que pedirle nada.
+        if (integrationErrorCode(error) === 'INTEGRATION_NOT_CONFIGURED') {
+          this.logger.warn(`El borrado en ${label} se omite: la integración no está configurada.`);
+          continue;
+        }
+        throw new BadGatewayException({
           success: false,
           error: {
-            code: 'CUSTOMER_HAS_ORDERS',
-            message: 'El cliente no puede eliminarse porque tiene operaciones asociadas.',
+            code: 'CUSTOMER_REMOTE_DELETE_FAILED',
+            message: `No pudimos eliminar el cliente en ${label}. El cliente se conserva en el CRM.`,
           },
         });
       }
-      throw error;
     }
   }
 

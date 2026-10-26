@@ -671,7 +671,7 @@ export function CustomersPage() {
     const loadingId = toast(
       customerToastContent(
         'Eliminando cliente',
-        `Se está eliminando “${target.displayName}” únicamente del CRM.`,
+        `Se está eliminando “${target.displayName}” del CRM y de las tiendas.`,
         'default',
       ),
       { isLoading: true, timeout: 0 },
@@ -681,8 +681,8 @@ export function CustomersPage() {
       toast.close(loadingId);
       toast.success(
         customerToastContent(
-          'Cliente eliminado del CRM',
-          'No se eliminó ni modificó ningún cliente en Siigo, Seratus o Pali.',
+          'Cliente eliminado',
+          'Se eliminó del CRM, Seratus y Pali. En Siigo no se modificó nada.',
           'success',
         ),
       );
@@ -1231,8 +1231,8 @@ export function CustomersPage() {
                 <AlertDialog.Body>
                   <p>
                     Se eliminará <strong>{deleteTarget?.displayName}</strong>, sus integraciones y
-                    sus notificaciones locales. No se eliminará ni modificará el cliente en Siigo,
-                    Seratus o Pali.
+                    sus notificaciones locales. También se eliminará en Seratus y Pali, donde se
+                    haya sincronizado. El cliente en Siigo no se elimina ni se modifica.
                   </p>
                 </AlertDialog.Body>
                 <AlertDialog.Footer>
