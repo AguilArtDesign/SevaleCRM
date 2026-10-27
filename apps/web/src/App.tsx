@@ -13,7 +13,7 @@ import { CouponsPage } from './coupons/CouponsPage';
 import { AgreementsPage } from './agreements/AgreementsPage';
 import { AgreementDetailPage } from './agreements/AgreementDetailPage';
 import { ProspectsPage } from './prospects/ProspectsPage';
-import { LogsPage } from './logs/LogsPage';
+import { LogsPage } from './integration-logs/LogsPage';
 import { PointsColombiaPage } from './loyalty/PointsColombiaPage';
 import { PermissionRoute } from './auth/PermissionRoute';
 

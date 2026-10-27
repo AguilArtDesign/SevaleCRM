@@ -3,6 +3,7 @@ import { SiigoService } from '../apps/api/src/integrations/siigo/siigo.service.j
 import { ExchangeRateService } from '../apps/api/src/integrations/trm/trm.service.js';
 import { SiigoQuotationService } from '../apps/api/src/orders/siigo-quotation.service.js';
 import { buildQuotation } from '../apps/api/src/orders/siigo-quotation-input.js';
+import type { IntegrationLogsService } from '../apps/api/src/integration-logs/integration-logs.service.js';
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
@@ -380,7 +381,7 @@ try {
     } as never,
     rates,
     // El log de integraciones no puede romper la cotización, así que en el smoke basta un doble.
-    { record: () => Promise.resolve() } as never,
+    { record: () => Promise.resolve() } as unknown as IntegrationLogsService,
   );
   await quotationService.synchronize(1, 'user-id');
   assert(markedError && !markedSynced, 'El error de Siigo no quedó disponible para reintento.');

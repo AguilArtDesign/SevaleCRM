@@ -1,7 +1,7 @@
 import { HttpException, Injectable, NotFoundException } from '@nestjs/common';
 import { SiigoService } from '../integrations/siigo/siigo.service.js';
 import { ExchangeRateService } from '../integrations/trm/trm.service.js';
-import { IntegrationLogsService } from '../logs/integration-logs.service.js';
+import { IntegrationLogsService } from '../integration-logs/integration-logs.service.js';
 import { buildQuotation } from './siigo-quotation-input.js';
 import { OrdersRepository, type QuotationOperation } from './orders.repository.js';
 

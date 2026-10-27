@@ -6,7 +6,7 @@ import { hashPassword } from 'better-auth/crypto';
 import { AppModule } from '../apps/api/src/app.module.js';
 import { PrismaService } from '../apps/api/src/database/prisma.service.js';
 import { Role } from '../apps/api/src/generated/prisma/client.js';
-import { IntegrationLogsService } from '../apps/api/src/logs/integration-logs.service.js';
+import { IntegrationLogsService } from '../apps/api/src/integration-logs/integration-logs.service.js';
 
 process.env.BETTER_AUTH_SECRET ||= 'local-logs-smoke-secret-at-least-32-characters';
 

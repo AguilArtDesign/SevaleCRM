@@ -11,7 +11,7 @@ import { WooOrderOutboundService } from './woo-order-outbound.service.js';
 import { ShipmentSyncService } from './shipment-sync.service.js';
 import { SiigoQuotationService } from './siigo-quotation.service.js';
 import { OrderEventPublisher } from './order-event-publisher.service.js';
-import { LogsModule } from '../logs/logs.module.js';
+import { LogsModule } from '../integration-logs/logs.module.js';
 import { NotificationsModule } from '../notifications/notifications.module.js';
 import { RealtimeModule } from '../realtime/realtime.module.js';
 
