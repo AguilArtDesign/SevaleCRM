@@ -20,14 +20,14 @@
     "@sevale/validation": "*",
     "@tanstack/react-query": "5.102.8",
     "@tanstack/react-table": "9.2.4",
-    "better-auth": "1.7.2",
+    "better-auth": "1.7.14",
     "intl-tel-input": "^29.2.3",
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "react-router-dom": "7.18.3",
     "react-turnstile": "1.1.5",
     "socket.io-client": "4.8.3",
-    "zod": "4.5.4"
+    "zod": "4.6.7"
   },
   "devDependencies": {
     "@tailwindcss/vite": "4.3.3",
@@ -35,6 +35,6 @@
     "@types/react-dom": "19.2.3",
     "@vitejs/plugin-react": "6.1.1",
     "tailwindcss": "4.3.3",
-    "vite": "8.2.2"
+    "vite": "8.3.5"
   }
 }

@@ -17,7 +17,10 @@ coverage/
 *.tsbuildinfo
 
 # Logs
-logs/
+# Anclado a la raíz a propósito: sin la barra inicial la regla también ignoraba cualquier
+# carpeta `logs` dentro de apps/ o packages/, y un módulo de código con ese nombre se quedaba
+# fuera del commit sin avisar.
+/logs/
 *.log
 npm-debug.log*
 

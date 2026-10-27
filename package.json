@@ -13,10 +13,10 @@
   },
   "overrides": {
     "@prisma/adapter-mariadb": {
-      "mariadb": "3.4.7"
+      "mariadb": "3.5.4"
     },
     "deepmerge-ts": "8.0.2",
-    "mariadb": "3.4.7",
+    "mariadb": "3.5.4",
     "mysql2": "3.24.3"
   },
   "scripts": {
@@ -76,9 +76,9 @@
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
-    "@prisma/prisma7": "7.10.0",
+    "@prisma/prisma7": "7.10.1",
     "@types/node": "24.10.9",
-    "concurrently": "9.2.4",
+    "concurrently": "10.0.6",
     "eslint": "10.9.1",
     "globals": "16.4.0",
     "prettier": "3.9.6",
@@ -87,6 +87,6 @@
     "typescript-eslint": "8.69.0"
   },
   "dependencies": {
-    "mariadb": "3.4.7"
+    "mariadb": "3.5.4"
   }
 }
