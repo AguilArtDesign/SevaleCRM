@@ -618,23 +618,25 @@ export function OrdersPage() {
           <Table.ScrollContainer>
             <Table.Content
               aria-label="Pedidos del CRM"
-              selectionMode="multiple"
-              selectedKeys={currentPageSelection}
-              onSelectionChange={updatePageSelection}
+              selectionMode={isAdmin ? 'multiple' : 'none'}
+              selectedKeys={isAdmin ? currentPageSelection : new Set()}
+              onSelectionChange={isAdmin ? updatePageSelection : undefined}
             >
               <Table.Header>
-                <Table.Column id="selection" className="inventory-selection-column">
-                  <Checkbox
-                    slot="selection"
-                    aria-label="Seleccionar todos los pedidos de esta página"
-                  >
-                    <Checkbox.Content>
-                      <Checkbox.Control>
-                        <Checkbox.Indicator />
-                      </Checkbox.Control>
-                    </Checkbox.Content>
-                  </Checkbox>
-                </Table.Column>
+                {isAdmin && (
+                  <Table.Column id="selection" className="inventory-selection-column">
+                    <Checkbox
+                      slot="selection"
+                      aria-label="Seleccionar todos los pedidos de esta página"
+                    >
+                      <Checkbox.Content>
+                        <Checkbox.Control>
+                          <Checkbox.Indicator />
+                        </Checkbox.Control>
+                      </Checkbox.Content>
+                    </Checkbox>
+                  </Table.Column>
+                )}
                 <Table.Column isRowHeader>Orden</Table.Column>
                 <Table.Column>Cliente</Table.Column>
                 <Table.Column>Tienda</Table.Column>
@@ -662,19 +664,21 @@ export function OrdersPage() {
               >
                 {(result?.data ?? []).map((order) => (
                   <Table.Row key={order.id} id={order.id}>
-                    <Table.Cell className="inventory-selection-cell">
-                      <Checkbox
-                        slot="selection"
-                        aria-label={`Seleccionar orden ${order.wooOrderId ?? order.id}`}
-                        variant="secondary"
-                      >
-                        <Checkbox.Content>
-                          <Checkbox.Control>
-                            <Checkbox.Indicator />
-                          </Checkbox.Control>
-                        </Checkbox.Content>
-                      </Checkbox>
-                    </Table.Cell>
+                    {isAdmin && (
+                      <Table.Cell className="inventory-selection-cell">
+                        <Checkbox
+                          slot="selection"
+                          aria-label={`Seleccionar orden ${order.wooOrderId ?? order.id}`}
+                          variant="secondary"
+                        >
+                          <Checkbox.Content>
+                            <Checkbox.Control>
+                              <Checkbox.Indicator />
+                            </Checkbox.Control>
+                          </Checkbox.Content>
+                        </Checkbox>
+                      </Table.Cell>
+                    )}
                     <Table.Cell onClick={stopRowSelection} onPointerDown={stopRowSelection}>
                       <strong className="order-code" title={String(order.wooOrderId ?? order.id)}>
                         #{order.wooOrderId ?? order.id}

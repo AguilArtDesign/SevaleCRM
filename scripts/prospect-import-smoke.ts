@@ -21,10 +21,11 @@ const prisma = app.get(PrismaService);
 const baseUrl = await app.getUrl();
 const origin = process.env.FRONTEND_URL || 'http://localhost:5173';
 const runId = randomUUID();
-const userIds = [randomUUID(), randomUUID()] as const;
+const userIds = [randomUUID(), randomUUID(), randomUUID()] as const;
 const emails = [
   `prospect-import-admin-${runId}@example.invalid`,
   `prospect-import-logistics-${runId}@example.invalid`,
+  `prospect-import-commercial-${runId}@example.invalid`,
 ] as const;
 const password = `P-${randomUUID()}-9a!`;
 const existingDocument = `9${runId.replace(/\D/g, '').slice(0, 9)}`;
@@ -93,6 +94,12 @@ try {
       role: Role.LOGISTICS,
       name: 'Import Prospect Logistics',
     },
+    {
+      id: userIds[2],
+      email: emails[2],
+      role: Role.COMMERCIAL,
+      name: 'Import Prospect Commercial',
+    },
   ] as const) {
     await prisma.user.create({
       data: {
@@ -130,10 +137,28 @@ try {
   expectStatus(await api('/api/prospects/import/status', 'GET'), 401, 'Estado anónimo');
   const adminCookie = await login(emails[0]);
   const logisticsCookie = await login(emails[1]);
+  const commercialCookie = await login(emails[2]);
   expectStatus(
     await api('/api/prospects/import/status', 'GET', logisticsCookie),
     403,
     'Estado logística',
+  );
+  // La importación es exclusiva del administrador: el comercial puede leer prospectos, pero
+  // no cargarlos en lote.
+  expectStatus(
+    await api('/api/prospects/import/status', 'GET', commercialCookie),
+    403,
+    'Estado comercial',
+  );
+  expectStatus(
+    await api('/api/prospects/import/preview', 'POST', commercialCookie, { csv: 'nombre\nAna' }),
+    403,
+    'Vista previa comercial',
+  );
+  expectStatus(
+    await api('/api/prospects/import', 'POST', commercialCookie, { csv: 'nombre\nAna' }),
+    403,
+    'Importación comercial',
   );
 
   const statusResponse = await api('/api/prospects/import/status', 'GET', adminCookie);

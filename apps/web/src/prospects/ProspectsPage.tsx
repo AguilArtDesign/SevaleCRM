@@ -147,6 +147,10 @@ export function ProspectsPage() {
   const canDelete = Boolean(role && hasPermission(role, 'prospects.delete'));
   const canConvert = Boolean(role && hasPermission(role, 'prospects.convert'));
   const canManageTags = Boolean(role && hasPermission(role, 'tags.manage'));
+  const canImport = Boolean(role && hasPermission(role, 'prospects.import'));
+  // La selección de filas existe para las acciones en lote, que son de administración. Sin
+  // selección no hay nada que hacer con los check, así que no se muestran al comercial.
+  const canSelect = role === 'ADMIN';
 
   const queryClient = useQueryClient();
   const navigate = useNavigate();
@@ -189,11 +193,12 @@ export function ProspectsPage() {
   });
 
   // La importación se apaga con `PROSPECT_IMPORT_ENABLED`: el botón solo existe si la API la
-  // habilita, y solo para quien puede crear prospectos.
+  // habilita, y solo para quien tiene `prospects.import` (administración). Sin consultar el estado
+  // cuando no hay permiso, se evita un 403 en cada carga del panel.
   const importStatusQuery = useQuery({
     queryKey: ['prospect-import-status'],
     queryFn: prospectsApi.importStatus,
-    enabled: canCreate,
+    enabled: canImport,
     staleTime: 60_000,
   });
 
@@ -589,7 +594,7 @@ export function ProspectsPage() {
               Etiquetas
             </Button>
           )}
-          {canCreate && importStatusQuery.data?.enabled && (
+          {canImport && importStatusQuery.data?.enabled && (
             <Button variant="secondary" onPress={() => setImportOpen(true)}>
               <ArrowUpFromLine width={17} height={17} />
               Importar CSV
@@ -676,23 +681,25 @@ export function ProspectsPage() {
           <Table.ScrollContainer>
             <Table.Content
               aria-label="Prospectos del CRM"
-              selectionMode="multiple"
-              selectedKeys={currentPageSelection}
-              onSelectionChange={updatePageSelection}
+              selectionMode={canSelect ? 'multiple' : 'none'}
+              selectedKeys={canSelect ? currentPageSelection : new Set()}
+              onSelectionChange={canSelect ? updatePageSelection : undefined}
             >
               <Table.Header>
-                <Table.Column id="selection" className="inventory-selection-column">
-                  <Checkbox
-                    slot="selection"
-                    aria-label="Seleccionar todos los prospectos de esta página"
-                  >
-                    <Checkbox.Content>
-                      <Checkbox.Control>
-                        <Checkbox.Indicator />
-                      </Checkbox.Control>
-                    </Checkbox.Content>
-                  </Checkbox>
-                </Table.Column>
+                {canSelect && (
+                  <Table.Column id="selection" className="inventory-selection-column">
+                    <Checkbox
+                      slot="selection"
+                      aria-label="Seleccionar todos los prospectos de esta página"
+                    >
+                      <Checkbox.Content>
+                        <Checkbox.Control>
+                          <Checkbox.Indicator />
+                        </Checkbox.Control>
+                      </Checkbox.Content>
+                    </Checkbox>
+                  </Table.Column>
+                )}
                 <Table.Column isRowHeader>Prospecto</Table.Column>
                 <Table.Column>Teléfono</Table.Column>
                 <Table.Column>Correo</Table.Column>
@@ -730,19 +737,21 @@ export function ProspectsPage() {
                   const status = prospectStatusMeta[prospect.status];
                   return (
                     <Table.Row key={prospect.id} id={prospect.id}>
-                      <Table.Cell className="inventory-selection-cell">
-                        <Checkbox
-                          slot="selection"
-                          aria-label={`Seleccionar prospecto ${prospect.displayName}`}
-                          variant="secondary"
-                        >
-                          <Checkbox.Content>
-                            <Checkbox.Control>
-                              <Checkbox.Indicator />
-                            </Checkbox.Control>
-                          </Checkbox.Content>
-                        </Checkbox>
-                      </Table.Cell>
+                      {canSelect && (
+                        <Table.Cell className="inventory-selection-cell">
+                          <Checkbox
+                            slot="selection"
+                            aria-label={`Seleccionar prospecto ${prospect.displayName}`}
+                            variant="secondary"
+                          >
+                            <Checkbox.Content>
+                              <Checkbox.Control>
+                                <Checkbox.Indicator />
+                              </Checkbox.Control>
+                            </Checkbox.Content>
+                          </Checkbox>
+                        </Table.Cell>
+                      )}
                       <Table.Cell {...ignoreRowPress}>
                         <div className="customer-name-cell">
                           <Avatar size="sm" className={customerAvatarClass(prospect.id)}>
@@ -1013,7 +1022,7 @@ export function ProspectsPage() {
 
       <TagsDialog isOpen={tagsOpen} onClose={() => setTagsOpen(false)} />
 
-      {importStatusQuery.data?.enabled && (
+      {importStatusQuery.data?.enabled && canImport && (
         <ProspectImportModal isOpen={importOpen} onOpenChange={setImportOpen} />
       )}
 

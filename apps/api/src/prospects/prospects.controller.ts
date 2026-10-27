@@ -33,22 +33,23 @@ export class ProspectsController {
     return this.prospects.assignableUsers();
   }
 
-  // Igual que en Inventario, la importación es una acción de alta y por eso exige `prospects.create`.
+  // Igual que en Inventario, la importación es una acción de alta masiva y tiene su propio permiso:
+  // `prospects.create` lo tiene el comercial, así que no sirve para restringirla al administrador.
   @Get('import/status')
-  @RequirePermissions('prospects.create')
+  @RequirePermissions('prospects.import')
   importStatus() {
     return this.prospectImport.status();
   }
 
   @Post('import/preview')
-  @RequirePermissions('prospects.create')
+  @RequirePermissions('prospects.import')
   importPreview(@Body() body: unknown) {
     const { csv } = parseInput(prospectImportCsvSchema, body);
     return this.prospectImport.preview(csv);
   }
 
   @Post('import')
-  @RequirePermissions('prospects.create')
+  @RequirePermissions('prospects.import')
   importProspects(@Body() body: unknown) {
     const { csv } = parseInput(prospectImportCsvSchema, body);
     return this.prospectImport.import(csv);

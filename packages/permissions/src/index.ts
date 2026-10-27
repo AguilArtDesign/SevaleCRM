@@ -45,6 +45,9 @@ export const permissions = [
   'prospects.update',
   'prospects.delete',
   'prospects.convert',
+  // Importar es una carga masiva que puede crear miles de fichas de golpe; queda fuera del alcance
+  // del comercial, que registra prospectos uno a uno.
+  'prospects.import',
   'tags.manage',
   'loyalty.read',
 ] as const;
@@ -74,8 +77,8 @@ export const rolePermissions = {
     'agreements.comments.create',
     'agreements.tasks.create',
     'agreements.tasks.update',
-    // Un comercial crea, edita y convierte prospectos, pero no los borra ni administra el
-    // catálogo de etiquetas.
+    // Un comercial crea, edita y convierte prospectos, pero no los borra, no los importa y no
+    // administra el catálogo de etiquetas.
     'prospects.read',
     'prospects.create',
     'prospects.update',
