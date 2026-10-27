@@ -568,12 +568,6 @@ export const updateShipmentSchema = z
   })
   .strict();
 
-export const createSiigoQuotationSchema = z
-  .object({
-    exchangeRate: z.number().finite().positive().max(999_999_999.999999).optional(),
-  })
-  .strict();
-
 export const orderListQuerySchema = z
   .object({
     search: z.string().trim().max(191, 'La búsqueda es demasiado larga.').default(''),
@@ -818,7 +812,6 @@ export type UpdateOrderOperationInput = z.infer<typeof updateOrderOperationSchem
 export type OrderListQuery = z.infer<typeof orderListQuerySchema>;
 export type CustomerOrdersQuery = z.infer<typeof customerOrdersQuerySchema>;
 export type UpdateShipmentInput = z.infer<typeof updateShipmentSchema>;
-export type CreateSiigoQuotationInput = z.infer<typeof createSiigoQuotationSchema>;
 export type WooOrderInboundInput = z.infer<typeof wooOrderInboundSchema>;
 
 export const n8nCustomerIntegrationSchema = z.object({
@@ -885,6 +878,22 @@ export const notificationIdSchema = z.coerce
   .number()
   .int('El identificador de la notificación no es válido.')
   .positive('El identificador de la notificación no es válido.');
+
+/** Bitácora de integraciones: se filtra por lo que aparece en la tabla, sin orden configurable. */
+export const logListQuerySchema = z.object({
+  integration: z.string().trim().max(50).optional(),
+  outcome: z.enum(['SUCCESS', 'ERROR']).optional(),
+  code: z.string().trim().max(100).optional(),
+  referenceId: z.string().trim().max(64).optional(),
+  search: z.string().trim().max(191).default(''),
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(50),
+});
+
+export const logIdSchema = z.coerce
+  .number()
+  .int('El identificador del registro no es válido.')
+  .positive('El identificador del registro no es válido.');
 
 // --- Convenios -------------------------------------------------------------------------------
 // Un convenio puede ser de cualquier país del catálogo de Clientes. El departamento se guarda con
@@ -1103,6 +1112,7 @@ export type CreateProductLinkInput = z.infer<typeof createProductLinkSchema>;
 export type SiigoProductLookupQuery = z.infer<typeof siigoProductLookupQuerySchema>;
 export type SiigoProductUpdateInput = z.infer<typeof siigoProductUpdateSchema>;
 export type NotificationListQuery = z.infer<typeof notificationListQuerySchema>;
+export type LogListQuery = z.infer<typeof logListQuerySchema>;
 
 export type CreateUserInput = z.infer<typeof createUserSchema>;
 export type UpdateUserInput = z.infer<typeof updateUserSchema>;

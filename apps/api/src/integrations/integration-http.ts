@@ -13,6 +13,41 @@ export type IntegrationRequestOptions = {
   retryCount?: number;
 };
 
+/** Entrada que se entrega al registro persistente cuando algo llama a una API externa. */
+export type IntegrationHttpLog = {
+  integration: string;
+  operation: string;
+  outcome: 'SUCCESS' | 'ERROR';
+  method: string;
+  url: string;
+  statusCode: number | null;
+  code: string | null;
+  message: string | null;
+  requestBody: unknown;
+  responseBody: unknown;
+  durationMs: number;
+};
+
+type IntegrationLogSink = (entry: IntegrationHttpLog) => void;
+
+let logSink: IntegrationLogSink | null = null;
+
+/**
+ * El registro vive en la base de datos, pero este módulo no conoce Prisma a propósito: es el punto
+ * por el que pasa toda llamada externa y debe poder usarse en pruebas sin base de datos.
+ */
+export function setIntegrationLogSink(sink: IntegrationLogSink | null): void {
+  logSink = sink;
+}
+
+function emitLog(entry: IntegrationHttpLog): void {
+  try {
+    logSink?.(entry);
+  } catch {
+    // El registro de diagnóstico nunca debe romper la integración que está describiendo.
+  }
+}
+
 export class IntegrationAuthenticationException extends BadGatewayException {
   constructor(integration: string) {
     super({
@@ -139,11 +174,75 @@ async function logIntegrationFailure(
   );
 }
 
+type RequestTrace = {
+  statusCode: number | null;
+  responseBody: unknown;
+};
+
+/**
+ * Envuelve la llamada para dejar rastro de todos los casos: éxito, rechazo del proveedor, timeout y
+ * caída de red. El cuerpo de la petición se guarda tal cual se envió, sin cabeceras.
+ */
 async function integrationRequest(
   url: URL,
   integration: string,
   init: RequestInit,
   options: IntegrationRequestOptions = {},
+): Promise<unknown> {
+  const startedAt = Date.now();
+  const method = (init.method ?? 'GET').toUpperCase();
+  const operation = `${method} ${url.pathname}`;
+  const trace: RequestTrace = { statusCode: null, responseBody: null };
+  try {
+    const payload = await performRequest(url, integration, init, options, trace);
+    emitLog({
+      integration,
+      operation,
+      outcome: 'SUCCESS',
+      method,
+      url: url.toString(),
+      statusCode: trace.statusCode ?? 200,
+      code: null,
+      message: null,
+      requestBody: init.body,
+      responseBody: payload,
+      durationMs: Date.now() - startedAt,
+    });
+    return payload;
+  } catch (error) {
+    emitLog({
+      integration,
+      operation,
+      outcome: 'ERROR',
+      method,
+      url: url.toString(),
+      statusCode: trace.statusCode,
+      code: integrationErrorCode(error),
+      message: exceptionMessage(error),
+      requestBody: init.body,
+      responseBody: trace.responseBody,
+      durationMs: Date.now() - startedAt,
+    });
+    throw error;
+  }
+}
+
+function exceptionMessage(error: unknown): string | null {
+  if (!isRecord(error) || typeof error.getResponse !== 'function') {
+    return error instanceof Error ? error.message : null;
+  }
+  const response = (error as { getResponse: () => unknown }).getResponse();
+  if (!isRecord(response) || !isRecord(response.error)) return null;
+  const message = response.error.message;
+  return typeof message === 'string' ? message : null;
+}
+
+async function performRequest(
+  url: URL,
+  integration: string,
+  init: RequestInit,
+  options: IntegrationRequestOptions,
+  trace: RequestTrace,
 ): Promise<unknown> {
   const timeoutMs = options.timeoutMs ?? REQUEST_TIMEOUT_MS;
   const retryCount = Math.max(0, options.retryCount ?? 0);
@@ -176,6 +275,13 @@ async function integrationRequest(
       });
     }
 
+    trace.statusCode = response.status;
+    try {
+      trace.responseBody = await response.clone().json();
+    } catch {
+      trace.responseBody = null;
+    }
+
     if (!response.ok) {
       const authenticationFailure = response.status === 401 || response.status === 403;
       if (authenticationFailure) {
@@ -191,7 +297,7 @@ async function integrationRequest(
       const transientFailure = response.status === 429 || response.status >= 500;
       if (transientFailure && attempt < retryCount) continue;
       await logIntegrationFailure(url, integration, response);
-      const payload = (await response.json().catch(() => null)) as unknown;
+      const payload = trace.responseBody;
       const detail = integrationErrorMessage(payload);
       throw new BadGatewayException({
         success: false,
@@ -204,9 +310,7 @@ async function integrationRequest(
       });
     }
 
-    try {
-      return await response.json();
-    } catch {
+    if (trace.responseBody === null) {
       throw new BadGatewayException({
         success: false,
         error: {
@@ -215,6 +319,7 @@ async function integrationRequest(
         },
       });
     }
+    return trace.responseBody;
   }
 
   throw new BadGatewayException();

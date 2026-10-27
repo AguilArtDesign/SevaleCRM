@@ -54,6 +54,7 @@ import {
 import { useFormattedPhone } from '../components/useFormattedPhone';
 import { ShipmentModal } from './ShipmentModal';
 import { ShipmentViewModal } from './ShipmentViewModal';
+import { SiigoQuotationModal } from './SiigoQuotationModal';
 import {
   ordersApi,
   type OrderDetailRecord,
@@ -78,7 +79,7 @@ function messageFrom(error: unknown): string {
 
 /** Acción de fila que necesita los datos del pedido antes de abrir su modal. */
 type OrderActionTarget = {
-  kind: 'shipment-form' | 'shipment-view';
+  kind: 'shipment-form' | 'shipment-view' | 'siigo-quotation';
   operationId: number;
 };
 
@@ -320,11 +321,12 @@ export function OrdersPage() {
     enabled: selectedId !== null,
   });
   // Comparte la clave de caché con el detalle, así al abrir una acción desde el propio detalle los
-  // datos ya están cargados y el modal aparece sin espera.
+  // datos ya están cargados y el modal aparece sin espera. La cotización trae su propia vista previa.
+  const actionNeedsDetail = actionTarget !== null && actionTarget.kind !== 'siigo-quotation';
   const actionQuery = useQuery({
     queryKey: ['orders', 'detail', actionOperationId],
     queryFn: () => ordersApi.detail(actionOperationId as number),
-    enabled: actionOperationId !== null,
+    enabled: actionOperationId !== null && actionNeedsDetail,
   });
   const editingQuery = useQuery({
     queryKey: ['orders', 'detail', editingId],
@@ -379,9 +381,15 @@ export function OrdersPage() {
       await queryClient.invalidateQueries({ queryKey: ['orders'] });
     },
   });
-  // La cotización de Siigo todavía no se puede crear: la opción del menú está deshabilitada hasta
-  // que se ajuste la petición. El modal y ordersApi.createSiigoQuotation quedan listos para cuando
-  // se habilite.
+  const quotation = useMutation({
+    mutationFn: (operationId: number) => ordersApi.createSiigoQuotation(operationId),
+    onSuccess: async (order) => {
+      queryClient.setQueryData(['orders', 'detail', order.id], order);
+      await queryClient.invalidateQueries({ queryKey: ['orders'] });
+      await queryClient.invalidateQueries({ queryKey: ['orders', 'siigo-quotation', order.id] });
+      setActionTarget(null);
+    },
+  });
 
   const result = ordersQuery.data;
   const selectedIdSet = selectedKeys === 'all' ? new Set<number>() : selectedKeys;
@@ -737,6 +745,13 @@ export function OrdersPage() {
                                 if (key === 'complete') setCompleteTarget(order);
                                 if (key === 'retry') void retryOrderSync(order);
                                 if (key === 'delete') setDeleteTarget(order);
+                                if (key === 'siigo-quotation') {
+                                  quotation.reset();
+                                  setActionTarget({
+                                    kind: 'siigo-quotation',
+                                    operationId: order.operationId,
+                                  });
+                                }
                                 if (key === 'shipment') {
                                   // Logística asigna el envío; quien no tenga el permiso lo
                                   // consulta en solo lectura.
@@ -795,12 +810,9 @@ export function OrdersPage() {
                                 <>
                                   <Separator />
                                   <Dropdown.Section>
-                                    {/* Sin funcionalidad todavía: hay que ajustar la petición antes
-                                        de habilitar la creación de cotizaciones en Siigo. */}
                                     <Dropdown.Item
                                       id="siigo-quotation"
                                       textValue="Cotización Siigo"
-                                      isDisabled
                                     >
                                       <FileText className="size-4 shrink-0 text-muted" />
                                       <Label>Cotización Siigo</Label>
@@ -984,8 +996,8 @@ export function OrdersPage() {
       </Modal>
 
       {/* Una fila puede pedir datos que todavía no están cargados: el aviso evita el salto en seco.
-          La vista de envío no lo necesita porque muestra su propia carga dentro del modal. */}
-      {actionTarget && actionTarget.kind !== 'shipment-view' && actionQuery.isPending && (
+          La vista de envío y la cotización no lo necesitan porque muestran su propia carga. */}
+      {actionTarget && actionNeedsDetail && actionQuery.isPending && (
         <div className="order-edit-loading" aria-label="Cargando pedido">
           <Spinner />
         </div>
@@ -1004,6 +1016,17 @@ export function OrdersPage() {
 
       {actionTarget?.kind === 'shipment-view' && (
         <ShipmentViewModal isOpen order={actionQuery.data} onClose={() => setActionTarget(null)} />
+      )}
+
+      {actionTarget?.kind === 'siigo-quotation' && (
+        <SiigoQuotationModal
+          isOpen
+          operationId={actionTarget.operationId}
+          isSubmitting={quotation.isPending}
+          serverError={quotation.isError ? messageFrom(quotation.error) : ''}
+          onClose={() => setActionTarget(null)}
+          onSubmit={() => quotation.mutate(actionTarget.operationId)}
+        />
       )}
 
       <AlertDialog

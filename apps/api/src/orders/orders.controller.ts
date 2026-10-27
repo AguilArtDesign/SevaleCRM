@@ -12,7 +12,6 @@ import {
   Req,
 } from '@nestjs/common';
 import {
-  createSiigoQuotationSchema,
   createOrderOperationSchema,
   customerIdSchema,
   customerOrdersQuerySchema,
@@ -121,12 +120,21 @@ export class OrdersController {
     return this.orders.retryShipmentSync(parseInput(orderOperationIdSchema, id));
   }
 
+  @Get(':id/siigo-quotation')
+  @RequirePermissions('orders.siigo_quote.create')
+  siigoQuotationPreview(@Param('id') id: string, @Req() request: AuthenticatedRequest) {
+    return this.orders.siigoQuotationPreview(
+      parseInput(orderOperationIdSchema, id),
+      request.auth.user.id,
+    );
+  }
+
   @Post(':id/siigo-quotation')
   @RequirePermissions('orders.siigo_quote.create')
-  createSiigoQuotation(@Param('id') id: string, @Body() body: unknown) {
+  createSiigoQuotation(@Param('id') id: string, @Req() request: AuthenticatedRequest) {
     return this.orders.createSiigoQuotation(
       parseInput(orderOperationIdSchema, id),
-      parseInput(createSiigoQuotationSchema, body),
+      request.auth.user.id,
     );
   }
 }

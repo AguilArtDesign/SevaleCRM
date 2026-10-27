@@ -1,5 +1,4 @@
 import type {
-  CreateSiigoQuotationInput,
   CreateOrderOperationInput,
   UpdateOrderOperationInput,
   UpdateShipmentInput,
@@ -159,6 +158,44 @@ export type OrderDetailRecord = {
   }>;
 };
 
+export type SiigoQuotationPreviewRecord = {
+  operationCode: string;
+  currency: 'COP' | 'USD';
+  customer: {
+    id: number;
+    displayName: string;
+    documentType: string;
+    documentTypeLabel: string;
+    documentNumber: string;
+  };
+  seller: { id: number | null; name: string; email: string };
+  documentId: number;
+  costCenter: number;
+  tax: { id: number; label: string };
+  exchangeRate: { required: boolean; value: number | null; validFrom: string | null };
+  items: Array<{
+    kind: 'PRODUCT' | 'SHIPPING';
+    code: string;
+    description: string;
+    quantity: number;
+    grossPrice: number;
+    price: number;
+    /** Descuento en porcentaje, como lo aplica Siigo por producto. */
+    discount: number;
+    store: ProductStore | null;
+  }>;
+  issues: Array<{ code: string; message: string }>;
+  quotation: {
+    status: string | null;
+    number: string | null;
+    name: string | null;
+    url: string | null;
+    syncedAt: string | null;
+    errorCode: string | null;
+    errorMessage: string | null;
+  } | null;
+};
+
 export type OrderListResponse = {
   data: OrderListRecord[];
   pagination: { page: number; pageSize: number; total: number; totalPages: number };
@@ -298,9 +335,8 @@ export const ordersApi = {
     }),
   retryShipmentSync: (id: number) =>
     request<OrderDetailRecord>(`/api/orders/${id}/shipment/sync`, { method: 'POST' }),
-  createSiigoQuotation: (id: number, input: CreateSiigoQuotationInput) =>
-    request<OrderDetailRecord>(`/api/orders/${id}/siigo-quotation`, {
-      method: 'POST',
-      body: JSON.stringify(input),
-    }),
+  createSiigoQuotation: (id: number) =>
+    request<OrderDetailRecord>(`/api/orders/${id}/siigo-quotation`, { method: 'POST' }),
+  siigoQuotationPreview: (id: number) =>
+    request<SiigoQuotationPreviewRecord>(`/api/orders/${id}/siigo-quotation`),
 };

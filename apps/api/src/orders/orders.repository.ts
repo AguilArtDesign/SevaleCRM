@@ -150,27 +150,40 @@ export type ShipmentSyncJob = Prisma.ShipmentStoreSyncGetPayload<{
   include: typeof shipmentSyncJobInclude;
 }>;
 
-const siigoQuotationJobInclude = {
-  operation: {
+/**
+ * Datos de la operación que necesita una cotización de Siigo: el cliente con su vínculo, y los
+ * productos de todas las tiendas de la operación con el SKU que Siigo usa como código.
+ */
+const quotationOperationInclude = {
+  customer: { include: { integrations: true } },
+  siigoQuotation: true,
+  orders: {
     include: {
-      customer: { include: { integrations: true } },
-      orders: {
-        include: {
-          items: {
-            orderBy: { id: 'asc' as const },
-            include: {
-              product: { select: { id: true, siigoId: true } },
-            },
-          },
-        },
+      items: {
+        orderBy: { id: 'asc' as const },
+        include: { product: { select: { id: true, sku: true, productName: true } } },
       },
     },
   },
 } as const;
 
+export type QuotationOperation = Prisma.OrderOperationGetPayload<{
+  include: typeof quotationOperationInclude;
+}>;
+
+const siigoQuotationJobInclude = {
+  operation: { include: quotationOperationInclude },
+} as const;
+
 export type SiigoQuotationJob = Prisma.SiigoQuotationGetPayload<{
   include: typeof siigoQuotationJobInclude;
 }>;
+
+export type QuotationSeller = {
+  id: number | null;
+  name: string;
+  email: string;
+};
 
 export type SiigoQuotationClaim =
   | { outcome: 'NOT_FOUND' }
@@ -650,7 +663,7 @@ export class OrdersRepository {
     });
   }
 
-  claimSiigoQuotation(operationId: number, exchangeRate?: number): Promise<SiigoQuotationClaim> {
+  claimSiigoQuotation(operationId: number): Promise<SiigoQuotationClaim> {
     return this.prisma.$transaction(async (transaction) => {
       const operation = await transaction.orderOperation.findFirst({
         where: { id: operationId, deletedAt: null },
@@ -663,17 +676,8 @@ export class OrdersRepository {
 
       const quotation = await transaction.siigoQuotation.upsert({
         where: { operationId },
-        create: {
-          operationId,
-          status: 'SYNCING',
-          exchangeRate,
-        },
-        update: {
-          status: 'SYNCING',
-          ...(exchangeRate === undefined ? {} : { exchangeRate }),
-          errorCode: null,
-          errorMessage: null,
-        },
+        create: { operationId, status: 'SYNCING' },
+        update: { status: 'SYNCING', errorCode: null, errorMessage: null },
       });
       return { outcome: 'CLAIMED', quotationId: quotation.id };
     });
@@ -684,6 +688,23 @@ export class OrdersRepository {
       where: { id, status: 'SYNCING', externalId: null },
       include: siigoQuotationJobInclude,
     });
+  }
+
+  /** Operación con lo necesario para previsualizar la cotización, sin importar su estado. */
+  quotationOperation(id: number): Promise<QuotationOperation | null> {
+    return this.prisma.orderOperation.findFirst({
+      where: { id, deletedAt: null },
+      include: quotationOperationInclude,
+    });
+  }
+
+  /** El vendedor de Siigo es el del usuario que dispara la cotización, no el del cliente. */
+  async quotationSeller(userId: string): Promise<QuotationSeller | null> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { name: true, email: true, sellerId: true },
+    });
+    return user ? { id: user.sellerId, name: user.name, email: user.email } : null;
   }
 
   markSiigoQuotationSynced(

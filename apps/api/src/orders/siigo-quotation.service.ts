@@ -1,6 +1,9 @@
-import { HttpException, Injectable } from '@nestjs/common';
+import { HttpException, Injectable, NotFoundException } from '@nestjs/common';
 import { SiigoService } from '../integrations/siigo/siigo.service.js';
-import { OrdersRepository, type SiigoQuotationJob } from './orders.repository.js';
+import { ExchangeRateService } from '../integrations/trm/trm.service.js';
+import { IntegrationLogsService } from '../logs/integration-logs.service.js';
+import { buildQuotation } from './siigo-quotation-input.js';
+import { OrdersRepository, type QuotationOperation } from './orders.repository.js';
 
 class SiigoQuotationError extends Error {
   constructor(
@@ -9,21 +12,6 @@ class SiigoQuotationError extends Error {
   ) {
     super(message);
   }
-}
-
-function bogotaDate(date = new Date()): string {
-  const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'America/Bogota',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  })
-    .formatToParts(date)
-    .reduce<Record<string, string>>((result, part) => {
-      if (part.type !== 'literal') result[part.type] = part.value;
-      return result;
-    }, {});
-  return `${parts.year}-${parts.month}-${parts.day}`;
 }
 
 function safeMessage(error: unknown): string {
@@ -45,77 +33,82 @@ function errorCode(error: unknown): string {
   return error instanceof SiigoQuotationError ? error.code : 'SIIGO_QUOTATION_CREATE_FAILED';
 }
 
-function quotationInput(job: SiigoQuotationJob) {
-  const operation = job.operation;
-  const integration = operation.customer.integrations.find(({ provider }) => provider === 'SIIGO');
-  if (!integration?.externalId) {
-    throw new SiigoQuotationError(
-      'SIIGO_CUSTOMER_NOT_LINKED',
-      'El cliente todavía no está vinculado con Siigo.',
-    );
-  }
-  const currency = operation.currency;
-  if (currency !== 'COP' && currency !== 'USD') {
-    throw new SiigoQuotationError(
-      'SIIGO_CURRENCY_NOT_SUPPORTED',
-      `Siigo no admite la moneda ${currency} para esta cotización.`,
-    );
-  }
-  const supportedCurrency: 'COP' | 'USD' = currency;
-  const exchangeRate = job.exchangeRate?.toNumber();
-  if (currency === 'USD' && (!exchangeRate || exchangeRate <= 0)) {
-    throw new SiigoQuotationError(
-      'SIIGO_EXCHANGE_RATE_REQUIRED',
-      'Indica una tasa de cambio válida para crear la cotización en dólares.',
-    );
-  }
-
-  const items = operation.orders.flatMap((order) =>
-    order.items.map((item) => {
-      if (!item.product?.siigoId) {
-        throw new SiigoQuotationError(
-          'SIIGO_PRODUCT_NOT_LINKED',
-          `El producto ${item.skuSnapshot} no tiene un vínculo válido con Siigo.`,
-        );
-      }
-      return {
-        productExternalId: item.product.siigoId,
-        description: item.nameSnapshot,
-        quantity: item.quantity,
-        price: item.unitPrice.toNumber(),
-        discountValue: item.discountTotal.toNumber(),
-      };
-    }),
-  );
-  if (items.length === 0) {
-    throw new SiigoQuotationError(
-      'SIIGO_QUOTATION_WITHOUT_ITEMS',
-      'La operación no contiene productos para cotizar.',
-    );
-  }
-  return {
-    customerExternalId: integration.externalId,
-    customerIdentification: operation.customer.documentNumber,
-    currency: supportedCurrency,
-    ...(exchangeRate ? { exchangeRate } : {}),
-    date: bogotaDate(),
-    items,
-  };
-}
-
 @Injectable()
 export class SiigoQuotationService {
   constructor(
     private readonly orders: OrdersRepository,
     private readonly siigo: SiigoService,
+    private readonly exchangeRate: ExchangeRateService,
+    private readonly logs: IntegrationLogsService,
   ) {}
 
-  async synchronize(quotationId: number): Promise<void> {
+  /** Vista previa: no toca Siigo, solo arma lo que se enviaría y señala lo que lo impide. */
+  async preview(operationId: number, userId: string) {
+    const [operation, seller] = await Promise.all([
+      this.orders.quotationOperation(operationId),
+      this.orders.quotationSeller(userId),
+    ]);
+    if (!operation) throw new NotFoundException('La operación no existe.');
+    const rate = await this.exchangeRateFor(operation);
+    const draft = buildQuotation(operation, {
+      seller: seller ?? { id: null, name: '', email: '' },
+      exchangeRate: rate?.value ?? null,
+      exchangeRateDate: rate?.validFrom ?? null,
+    });
+    const quotation = operation.siigoQuotation;
+    return {
+      ...draft.preview,
+      quotation: quotation
+        ? {
+            status: quotation.status,
+            number: quotation.number,
+            name: quotation.name,
+            url: quotation.url,
+            syncedAt: quotation.syncedAt,
+            errorCode: quotation.errorCode,
+            errorMessage: quotation.errorMessage,
+          }
+        : null,
+    };
+  }
+
+  async synchronize(quotationId: number, userId: string): Promise<void> {
     const job = await this.orders.siigoQuotationJob(quotationId);
     if (!job) return;
     try {
-      const result = await this.siigo.createQuotation(quotationInput(job));
-      const confirmed = await this.orders.markSiigoQuotationSynced(job.id, result);
+      const seller = await this.orders.quotationSeller(userId);
+      if (!seller) throw new SiigoQuotationError('SIIGO_USER_NOT_FOUND', 'El usuario no existe.');
+      const rate = await this.exchangeRateFor(job.operation);
+      const draft = buildQuotation(job.operation, {
+        seller,
+        exchangeRate: rate?.value ?? null,
+        exchangeRateDate: rate?.validFrom ?? null,
+      });
+      const issue = draft.preview.issues[0];
+      if (issue || !draft.input) {
+        throw new SiigoQuotationError(
+          issue?.code ?? 'SIIGO_QUOTATION_INVALID',
+          issue?.message ?? 'La operación no está lista para cotizar.',
+        );
+      }
+      const result = await this.siigo.createQuotation(draft.input);
+      const confirmed = await this.orders.markSiigoQuotationSynced(job.id, {
+        ...result,
+        // Se guarda la tasa que efectivamente viajó: Siigo la devuelve en dólares, pero no en pesos.
+        exchangeRate: result.exchangeRate ?? draft.input.exchangeRate ?? null,
+      });
+      await this.logs.record({
+        integration: 'SIIGO',
+        operation: 'quotation.create',
+        outcome: 'SUCCESS',
+        code: 'SIIGO_QUOTATION_CREATED',
+        message: `Cotización ${result.name} creada para ${job.operation.operationCode}.`,
+        requestBody: draft.input,
+        responseBody: result,
+        referenceType: 'ORDER_OPERATION',
+        referenceId: job.operation.id,
+        userId,
+      });
       if (confirmed.count !== 1) {
         await this.orders.markSiigoQuotationError(
           job.id,
@@ -124,7 +117,37 @@ export class SiigoQuotationService {
         );
       }
     } catch (error) {
-      await this.orders.markSiigoQuotationError(job.id, errorCode(error), safeMessage(error));
+      const code = errorCode(error);
+      const message = safeMessage(error);
+      await this.orders.markSiigoQuotationError(job.id, code, message);
+      // La cotización fallida es el caso que más se investiga: queda con su código y la operación
+      // a la que pertenece para poder cruzarla con las llamadas HTTP del mismo intento.
+      await this.logs.record({
+        integration: 'SIIGO',
+        operation: 'quotation.create',
+        outcome: 'ERROR',
+        code,
+        message,
+        referenceType: 'ORDER_OPERATION',
+        referenceId: job.operation.id,
+        userId,
+      });
+    }
+  }
+
+  /**
+   * La TRM solo hace falta en dólares y Siigo la exige en el documento. Si la fuente no responde,
+   * la cotización queda marcada con ese error en lugar de enviarse con una tasa inventada.
+   */
+  private async exchangeRateFor(operation: QuotationOperation) {
+    if (operation.currency !== 'USD') return null;
+    try {
+      return await this.exchangeRate.current();
+    } catch {
+      throw new SiigoQuotationError(
+        'EXCHANGE_RATE_UNAVAILABLE',
+        'No fue posible consultar la TRM del día.',
+      );
     }
   }
 }

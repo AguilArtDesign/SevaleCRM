@@ -6,6 +6,7 @@ import {
   Briefcase,
   Gear,
   LayoutSideContentLeft,
+  ListCheck,
   Persons,
   PersonsLock,
   PersonMagnifier,
@@ -197,6 +198,12 @@ export function AppShell() {
       label: 'Administración',
       items: [
         { to: '/users', label: 'Usuarios', icon: <PersonsLock />, when: user?.role === 'ADMIN' },
+        {
+          to: '/logs',
+          label: 'Logs',
+          icon: <ListCheck />,
+          when: can('logs.read'),
+        },
       ],
     },
   ]

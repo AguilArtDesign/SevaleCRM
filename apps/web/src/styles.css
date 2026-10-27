@@ -4925,34 +4925,208 @@ select {
   border-radius: 0.7rem;
 }
 
-.siigo-quotation-detail {
-  display: grid;
-  gap: 0.35rem;
+.siigo-quotation-modal .siigo-quotation-subtitle {
+  color: var(--muted);
+  font-size: 0.78rem;
 }
 
-.siigo-quotation-detail > div:first-child {
+/* Con TRM, impuestos y bloqueos el contenido puede pasar del alto del modal: se desplaza dentro. */
+.siigo-quotation-modal .modal__body {
+  display: grid;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  align-content: start;
+  gap: 0.9rem;
+}
+
+.siigo-quotation-brand {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  justify-content: space-between;
+  padding-bottom: 1rem;
 }
 
-.siigo-quotation-detail p {
+.siigo-quotation-brand img {
+  height: 1.9rem;
+  width: auto;
+}
+
+.siigo-quotation-currency {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-weight: 600;
+}
+
+.siigo-quotation-currency img {
+  width: 1.15rem;
+  height: 1.15rem;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.siigo-quotation-meta {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   margin: 0;
+  gap: 0.95rem 1rem;
 }
 
-.siigo-quotation-detail a {
+.siigo-quotation-meta dt {
+  color: var(--muted);
+  font-size: 0.76rem;
+}
+
+.siigo-quotation-meta dd {
+  margin: 0.15rem 0 0;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.siigo-quotation-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
   color: var(--accent);
-  font-weight: 500;
   text-decoration: none;
-  width: fit-content;
 }
 
-.siigo-quotation-detail a:hover {
+.siigo-quotation-link:hover {
   text-decoration: underline;
 }
 
-.siigo-quotation-modal form {
-  display: contents;
+.siigo-quotation-summary {
+  margin-top: 1.1rem;
+  padding: 0.85rem;
+  background: var(--surface-secondary);
+  border-radius: 0.9rem;
+}
+
+.siigo-quotation-summary header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 0 0.15rem 0.5rem;
+}
+
+.siigo-quotation-summary header span {
+  color: var(--muted);
+  font-size: 0.76rem;
+}
+
+.siigo-quotation-summary ul {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  gap: 0.35rem;
+  list-style: none;
+}
+
+.siigo-quotation-summary li {
+  display: flex;
+  align-items: center;
+  padding: 0.55rem 0.65rem;
+  gap: 0.75rem;
+  background: var(--surface);
+  border-radius: 0.65rem;
+}
+
+.siigo-quotation-item-copy {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+  gap: 0.1rem;
+}
+
+.siigo-quotation-item-copy strong {
+  font-size: 0.83rem;
+  font-weight: 600;
+}
+
+.siigo-quotation-item-copy span {
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.siigo-quotation-item-copy span {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.siigo-quotation-item-qty {
+  color: var(--muted);
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
+
+.siigo-quotation-item-discount {
+  color: var(--danger);
+  font-size: 0.72rem;
+  font-style: normal;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.siigo-quotation-item-amount {
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+
+.siigo-quotation-footnote {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  margin: 0.9rem 0 0;
+  gap: 0.4rem;
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.siigo-quotation-rate {
+  display: grid;
+  margin-top: 0.9rem;
+  padding: 0.75rem;
+  gap: 0.35rem;
+  background: var(--siigo-bg);
+  border-radius: 0.75rem;
+}
+
+.siigo-quotation-rate > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.siigo-quotation-rate span {
+  color: var(--muted);
+  font-size: 0.76rem;
+}
+
+.siigo-quotation-rate p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.siigo-quotation-issues {
+  display: grid;
+  margin: 0;
+  padding-left: 1rem;
+  gap: 0.25rem;
+}
+
+.siigo-quotation-loading {
+  display: grid;
+  justify-items: center;
+  padding: 2rem 0;
+  gap: 0.75rem;
+  color: var(--muted);
+  font-size: 0.85rem;
 }
 
 .shipment-detail dt,
@@ -5140,6 +5314,187 @@ select {
   display: contents;
 }
 
+/* --- Logs de integración --------------------------------------------------------------- */
+
+.logs-layout {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
+.logs-heading {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.logs-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.logs-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.logs-toolbar .search-field {
+  width: min(22rem, 100%);
+}
+
+.logs-toolbar .select {
+  width: 12.5rem;
+}
+
+.logs-table-shell {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  height: calc(100vh - 200px);
+  background: var(--surface-secondary);
+  border-radius: 1rem;
+}
+
+.logs-table-shell .table__content {
+  min-width: 68rem;
+}
+
+.logs-table-shell .table__row:last-child .table__cell,
+.logs-table-shell .table__row:only-child .table__cell {
+  border-bottom: 0;
+}
+
+.logs-table-shell .pagination {
+  margin-top: auto;
+  padding: 0.8rem 1rem;
+}
+
+.logs-state {
+  display: grid;
+  min-height: 16rem;
+  place-items: center;
+  align-content: center;
+  padding: 1rem;
+  gap: 0.4rem;
+  color: var(--muted-foreground);
+  text-align: center;
+}
+
+.logs-integration-cell {
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+
+.logs-call-cell {
+  display: grid;
+  gap: 0.1rem;
+}
+
+.logs-call-cell strong {
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+
+.logs-call-cell span {
+  font-size: 0.78rem;
+  overflow-wrap: anywhere;
+}
+
+.logs-code-cell {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 0.75rem;
+}
+
+.logs-message-cell {
+  display: block;
+  max-width: 26rem;
+  overflow: hidden;
+  font-size: 0.78rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.log-outcome-chip {
+  font-size: 0.72rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.log-outcome-success {
+  color: var(--success, #16a34a);
+  background: color-mix(in oklab, var(--success, #16a34a) 14%, transparent);
+}
+
+.log-outcome-error {
+  color: var(--danger);
+  background: color-mix(in oklab, var(--danger) 14%, transparent);
+}
+
+.log-detail-meta {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 0;
+  gap: 0.75rem 1rem;
+}
+
+.log-detail-meta > div {
+  display: grid;
+  padding: 0.6rem 0.7rem;
+  gap: 0.2rem;
+  background: var(--surface-secondary);
+  border-radius: 0.7rem;
+}
+
+.log-detail-meta dt {
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.log-detail-meta dd {
+  margin: 0;
+  font-size: 0.82rem;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+.log-detail-wide {
+  grid-column: 1 / -1;
+}
+
+.log-detail-url {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 0.74rem !important;
+  font-weight: 400 !important;
+}
+
+.log-detail-bodies {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.log-detail-bodies h3 {
+  margin: 0 0 0.35rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.log-detail-bodies pre {
+  max-height: 18rem;
+  margin: 0;
+  padding: 0.75rem;
+  overflow: auto;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 0.72rem;
+  line-height: 1.5;
+  background: var(--surface-secondary);
+  border-radius: 0.7rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
 .coupon-form-body {
   display: grid;
   gap: 1rem;

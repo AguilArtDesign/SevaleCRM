@@ -21,17 +21,24 @@ export type SiigoProduct = {
 };
 
 export type SiigoQuotationCreateInput = {
+  /** Tipo de cotización configurado en Siigo. */
+  documentId: number;
+  /** Centro de costo que exige el comprobante. */
+  costCenter: number;
   customerExternalId: string;
   customerIdentification: string;
+  sellerId: number;
   currency: 'COP' | 'USD';
   exchangeRate?: number;
   date: string;
   items: Array<{
-    productExternalId: string;
+    code: string;
     description: string;
     quantity: number;
     price: number;
-    discountValue: number;
+    /** Descuento en porcentaje sobre el precio del ítem. */
+    discountPercent: number;
+    taxId: number;
   }>;
 };
 
@@ -49,7 +56,6 @@ type QuotationDocument = {
   active: boolean;
   discountType: 'Percentage' | 'Value';
   automaticNumber: boolean;
-  costCenter: number | null;
 };
 
 function isRecord(value: unknown): value is UnknownRecord {
@@ -120,16 +126,6 @@ function quotationConfigurationError(message: string) {
   });
 }
 
-function configuredPositiveInteger(name: string): number | null {
-  const value = process.env[name]?.trim();
-  if (!value) return null;
-  const number = Number(value);
-  if (!Number.isSafeInteger(number) || number <= 0) {
-    throw quotationConfigurationError(`La variable ${name} no contiene un identificador válido.`);
-  }
-  return number;
-}
-
 function normalizeDocument(value: unknown): QuotationDocument | null {
   if (!isRecord(value)) return null;
   const id = positiveInteger(value.id);
@@ -140,14 +136,11 @@ function normalizeDocument(value: unknown): QuotationDocument | null {
   ) {
     return null;
   }
-  const costCenter = positiveInteger(value.cost_center_default);
-  if (value.cost_center_mandatory === true && !costCenter) return null;
   return {
     id,
     active: value.active !== false,
     discountType: value.discount_type,
     automaticNumber: value.automatic_number === true,
-    costCenter,
   };
 }
 
@@ -223,7 +216,10 @@ export class SiigoService {
     const baseUrl = requireIntegrationValue('SIIGO_API_URL', 'Siigo');
     const partnerId = requireIntegrationValue('SIIGO_PARTNER_ID', 'Siigo');
     const headers = { Authorization: `Bearer ${token}`, 'Partner-Id': partnerId };
-    const [documentPayload, customerPayload, products] = await Promise.all([
+    // El tipo de documento se confirma contra Siigo para conocer cómo interpreta el descuento
+    // (valor o porcentaje) y para no enviar un comprobante inactivo. Los productos no se consultan:
+    // el código de cada ítem es el SKU que el inventario ya tiene vinculado.
+    const [documentPayload, customerPayload] = await Promise.all([
       integrationGet(
         (() => {
           const url = integrationUrl(baseUrl, 'document-types');
@@ -238,35 +234,10 @@ export class SiigoService {
         headers,
         'Siigo',
       ),
-      Promise.all(
-        [...new Set(input.items.map(({ productExternalId }) => productExternalId))].map(
-          async (productExternalId) => ({
-            productExternalId,
-            payload: await integrationGet(
-              integrationUrl(baseUrl, `products/${encodeURIComponent(productExternalId)}`),
-              headers,
-              'Siigo',
-            ),
-          }),
-        ),
-      ),
     ]);
 
-    const document = this.resolveQuotationDocument(documentPayload);
+    const document = this.resolveQuotationDocument(documentPayload, input.documentId);
     const customer = this.resolveQuotationCustomer(customerPayload, input.customerIdentification);
-    const sellerId = await this.resolveSellerId(customer.sellerId, baseUrl, headers);
-    const productCodes = new Map<string, string>();
-    for (const { productExternalId, payload } of products) {
-      if (!isRecord(payload)) throw invalidIntegrationResponse('Siigo');
-      const id = typeof payload.id === 'string' ? payload.id.trim() : '';
-      const code = typeof payload.code === 'string' ? payload.code.trim() : '';
-      if (id !== productExternalId || !code || payload.active === false) {
-        throw quotationConfigurationError(
-          `El producto vinculado con Siigo (${productExternalId}) no existe o está inactivo.`,
-        );
-      }
-      productCodes.set(productExternalId, code);
-    }
 
     const payload = {
       document: { id: document.id },
@@ -275,24 +246,24 @@ export class SiigoService {
         identification: customer.identification,
         branch_office: customer.branchOffice,
       },
-      ...(document.costCenter ? { cost_center: document.costCenter } : {}),
+      cost_center: input.costCenter,
       ...(input.currency === 'USD'
         ? { currency: { code: 'USD', exchange_rate: input.exchangeRate } }
         : {}),
-      seller: sellerId,
+      seller: input.sellerId,
       items: input.items.map((item) => {
-        const subtotal = item.price * item.quantity;
+        // El descuento ya viene como porcentaje, que es lo que usa el comprobante. Un comprobante
+        // configurado por valor necesita la conversión sobre el total de la línea.
         const discount =
-          document.discountType === 'Value'
-            ? round(item.discountValue, 2)
-            : subtotal > 0
-              ? round((item.discountValue / subtotal) * 100, 6)
-              : 0;
+          document.discountType === 'Percentage'
+            ? round(item.discountPercent, 2)
+            : round((item.price * item.quantity * item.discountPercent) / 100, 2);
         return {
-          code: productCodes.get(item.productExternalId),
+          code: item.code,
           description: item.description,
           quantity: item.quantity,
           price: round(item.price, 6),
+          taxes: [{ id: item.taxId }],
           discount,
         };
       }),
@@ -303,28 +274,21 @@ export class SiigoService {
       payload,
       'Siigo',
     );
-    return this.normalizeQuotationResponse(response, sellerId);
+    return this.normalizeQuotationResponse(response, input.sellerId);
   }
 
-  private resolveQuotationDocument(payload: unknown): QuotationDocument {
-    const active = collection(payload)
+  private resolveQuotationDocument(payload: unknown, expectedId: number): QuotationDocument {
+    const document = collection(payload)
       .map(normalizeDocument)
-      .filter((document): document is QuotationDocument => Boolean(document?.active));
-    const configuredId = configuredPositiveInteger('SIIGO_QUOTATION_DOCUMENT_ID');
-    if (configuredId) {
-      const configured = active.find(({ id }) => id === configuredId);
-      if (configured) return this.ensureSupportedDocument(configured);
+      .find((candidate): candidate is QuotationDocument =>
+        Boolean(candidate?.active && candidate.id === expectedId),
+      );
+    if (!document) {
       throw quotationConfigurationError(
-        'El tipo de cotización configurado no existe o está inactivo en Siigo.',
+        `El tipo de cotización ${expectedId} no existe o está inactivo en Siigo.`,
       );
     }
-    if (active.length === 1) return this.ensureSupportedDocument(active[0]!);
-    if (active.length === 0) {
-      throw quotationConfigurationError('No existe un tipo de cotización activo en Siigo.');
-    }
-    throw quotationConfigurationError(
-      'Hay varios tipos de cotización activos. Configura SIIGO_QUOTATION_DOCUMENT_ID.',
-    );
+    return this.ensureSupportedDocument(document);
   }
 
   private ensureSupportedDocument(document: QuotationDocument): QuotationDocument {
@@ -349,30 +313,7 @@ export class SiigoService {
     return {
       identification,
       branchOffice: Math.max(0, Math.trunc(finiteNumber(payload.branch_office) ?? 0)),
-      sellerId: positiveInteger(payload.seller_id),
     };
-  }
-
-  private async resolveSellerId(
-    customerSellerId: number | null,
-    baseUrl: string,
-    headers: HeadersInit,
-  ): Promise<number> {
-    if (customerSellerId) return customerSellerId;
-    const configuredId = configuredPositiveInteger('SIIGO_QUOTATION_SELLER_ID');
-    if (configuredId) return configuredId;
-    const url = integrationUrl(baseUrl, 'users');
-    url.searchParams.set('page', '1');
-    url.searchParams.set('page_size', '100');
-    const payload = await integrationGet(url, headers, 'Siigo');
-    const activeIds = collection(payload)
-      .filter((value): value is UnknownRecord => isRecord(value) && value.active !== false)
-      .map(({ id }) => positiveInteger(id))
-      .filter((id): id is number => id !== null);
-    if (activeIds.length === 1) return activeIds[0]!;
-    throw quotationConfigurationError(
-      'El cliente no tiene vendedor asignado. Configura SIIGO_QUOTATION_SELLER_ID.',
-    );
   }
 
   private normalizeQuotationResponse(payload: unknown, sellerId: number): SiigoQuotationReference {

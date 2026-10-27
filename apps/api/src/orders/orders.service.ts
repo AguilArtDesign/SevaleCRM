@@ -6,7 +6,6 @@ import {
 } from '@nestjs/common';
 import { randomInt } from 'node:crypto';
 import type {
-  CreateSiigoQuotationInput,
   CreateOrderOperationInput,
   CustomerOrdersQuery,
   OrderListQuery,
@@ -335,8 +334,8 @@ export class OrdersService {
     return serializeDetail(updated);
   }
 
-  async createSiigoQuotation(id: number, input: CreateSiigoQuotationInput) {
-    const claim = await this.orders.claimSiigoQuotation(id, input.exchangeRate);
+  async createSiigoQuotation(id: number, userId: string) {
+    const claim = await this.orders.claimSiigoQuotation(id);
     if (claim.outcome === 'NOT_FOUND') {
       throw businessError(NotFoundException, 'ORDER_NOT_FOUND', 'La operación no existe.');
     }
@@ -355,7 +354,7 @@ export class OrdersService {
       );
     }
     if (claim.outcome === 'CLAIMED') {
-      await this.siigoQuotation.synchronize(claim.quotationId);
+      await this.siigoQuotation.synchronize(claim.quotationId, userId);
       const updated = await this.orders.detail(id);
       if (!updated) {
         throw businessError(NotFoundException, 'ORDER_NOT_FOUND', 'La operación no existe.');
@@ -366,6 +365,10 @@ export class OrdersService {
     return this.detail(id);
   }
 
+  /** Lo que se enviaría a Siigo y lo que lo impide, sin crear nada. */
+  siigoQuotationPreview(id: number, userId: string) {
+    return this.siigoQuotation.preview(id, userId);
+  }
   async remove(id: number) {
     const result = await this.orders.delete(id);
     if (result.outcome === 'NOT_FOUND') {

@@ -112,6 +112,7 @@ model User {
   agreementTasksAssigned AgreementTask[]    @relation("AgreementTaskAssignee")
   prospectsAssigned      Prospect[]         @relation("ProspectAssignee")
   prospectsCreated       Prospect[]         @relation("ProspectCreator")
+  integrationLogs        IntegrationLog[]
 
   @@map("users")
 }
@@ -367,6 +368,43 @@ model Notification {
   @@index([requiredPermission])
   @@index([createdAt])
   @@map("notifications")
+}
+
+enum IntegrationLogOutcome {
+  SUCCESS
+  ERROR
+}
+
+/**
+ * Rastro de cada llamada a una API externa. Existe para diagnosticar: guarda el código y el mensaje
+ * que devolvió el proveedor y los cuerpos enviado y recibido, sin credenciales. Crece rápido, así que
+ * se purga por antigüedad.
+ */
+model IntegrationLog {
+  id            Int                  @id @default(autoincrement())
+  integration   String               @db.VarChar(50)
+  operation     String               @db.VarChar(100)
+  outcome       IntegrationLogOutcome
+  method        String?              @db.VarChar(10)
+  url           String?              @db.Text
+  statusCode    Int?                 @map("status_code")
+  code          String?              @db.VarChar(100)
+  message       String?              @db.Text
+  requestBody   String?              @map("request_body") @db.LongText
+  responseBody  String?              @map("response_body") @db.LongText
+  durationMs    Int?                 @map("duration_ms")
+  referenceType String?              @map("reference_type") @db.VarChar(50)
+  referenceId   String?              @map("reference_id") @db.VarChar(64)
+  userId        String?              @map("user_id") @db.VarChar(36)
+  createdAt     DateTime             @default(now()) @map("created_at")
+  user          User?                @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt])
+  @@index([integration])
+  @@index([outcome])
+  @@index([code])
+  @@index([referenceType, referenceId])
+  @@map("integration_logs")
 }
 
 model OrderOperation {

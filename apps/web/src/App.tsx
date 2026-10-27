@@ -13,6 +13,7 @@ import { CouponsPage } from './coupons/CouponsPage';
 import { AgreementsPage } from './agreements/AgreementsPage';
 import { AgreementDetailPage } from './agreements/AgreementDetailPage';
 import { ProspectsPage } from './prospects/ProspectsPage';
+import { LogsPage } from './logs/LogsPage';
 import { PointsColombiaPage } from './loyalty/PointsColombiaPage';
 import { PermissionRoute } from './auth/PermissionRoute';
 
@@ -81,6 +82,14 @@ export function App() {
           element={
             <PermissionRoute permission="loyalty.read">
               <PointsColombiaPage />
+            </PermissionRoute>
+          }
+        />
+        <Route
+          path="/logs"
+          element={
+            <PermissionRoute permission="logs.read">
+              <LogsPage />
             </PermissionRoute>
           }
         />

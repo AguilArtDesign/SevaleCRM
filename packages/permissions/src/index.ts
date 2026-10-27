@@ -50,6 +50,10 @@ export const permissions = [
   'prospects.import',
   'tags.manage',
   'loyalty.read',
+  // Bitácora de las llamadas a las APIs externas. Contiene cuerpos con datos de clientes y pedidos,
+  // así que es exclusiva de la administración; vaciarla es un acto aparte.
+  'logs.read',
+  'logs.clear',
 ] as const;
 
 export type Role = (typeof roles)[number];

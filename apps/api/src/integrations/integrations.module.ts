@@ -3,6 +3,7 @@ import { IntegrationsController } from './integrations.controller.js';
 import { SiigoTokenRepository } from './siigo/siigo-token.repository.js';
 import { SiigoTokenService } from './siigo/siigo-token.service.js';
 import { SiigoService } from './siigo/siigo.service.js';
+import { ExchangeRateService } from './trm/trm.service.js';
 import { WooCommerceService } from './woocommerce/woocommerce.service.js';
 import { N8nApiKeyGuard } from './n8n/n8n-api-key.guard.js';
 import { SiigoWebhookController } from './n8n/siigo-webhook.controller.js';
@@ -18,11 +19,12 @@ import { NotificationsModule } from '../notifications/notifications.module.js';
     SiigoTokenRepository,
     SiigoTokenService,
     SiigoService,
+    ExchangeRateService,
     WooCommerceService,
     N8nApiKeyGuard,
     SiigoWebhookRepository,
     SiigoWebhookService,
   ],
-  exports: [SiigoTokenService, SiigoService, WooCommerceService],
+  exports: [SiigoTokenService, SiigoService, ExchangeRateService, WooCommerceService],
 })
 export class IntegrationsModule {}
