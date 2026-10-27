@@ -1,13 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { rolePermissions, roles, type Permission } from '@sevale/permissions';
 import type { NotificationListQuery } from '@sevale/validation';
-import type {
-  Customer,
-  OrderSyncStatus,
-  Product,
-  Store,
-  SyncStatus,
-} from '../generated/prisma/client.js';
+import type { OrderSyncStatus, Product, Store, SyncStatus } from '../generated/prisma/client.js';
 import { RealtimeGateway, type ProductUpdateChanges } from '../realtime/realtime.gateway.js';
 import { NotificationsRepository } from './notifications.repository.js';
 
@@ -18,12 +12,6 @@ const statusLabels: Record<SyncStatus, string> = {
   PENDING: 'Pendiente',
   OUT_OF_SYNC: 'Desactualizado',
   ERROR: 'Con error',
-};
-
-type CustomerSyncResult = {
-  provider: 'SIIGO' | 'SERATUS' | 'PALI';
-  status: 'SYNCED' | 'ERROR';
-  message: string | null;
 };
 
 function permissionsFor(role: unknown): readonly Permission[] {
@@ -52,8 +40,6 @@ export class NotificationsService {
         message: notification.message,
         productId: notification.productId,
         product: notification.product,
-        customerId: notification.customerId,
-        customer: notification.customer,
         orderOperationId: notification.orderOperationId,
         orderOperation: notification.orderOperation,
         createdAt: notification.createdAt,
@@ -107,33 +93,6 @@ export class NotificationsService {
       message: product.productName,
       productId: product.id,
     });
-  }
-
-  createCustomerLocal(customer: Customer) {
-    return this.create({
-      type: 'CUSTOMER_CREATED',
-      title: 'Cliente creado',
-      message: customer.displayName,
-      customerId: customer.id,
-      requiredPermission: 'customers.read',
-    });
-  }
-
-  createCustomerRetry(customer: Customer, result: CustomerSyncResult) {
-    return this.create({
-      type:
-        result.status === 'SYNCED'
-          ? `CUSTOMER_SYNCED_${result.provider}`
-          : `CUSTOMER_SYNC_ERROR_${result.provider}`,
-      title: result.status === 'SYNCED' ? 'Cliente sincronizado' : 'Error de sincronización',
-      message: customer.displayName,
-      customerId: customer.id,
-      requiredPermission: 'customers.read',
-    });
-  }
-
-  createCustomerRetrySummary(customer: Customer, results: CustomerSyncResult[]) {
-    return Promise.all(results.map((result) => this.createCustomerRetry(customer, result)));
   }
 
   createOrderOperation(

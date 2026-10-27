@@ -53,7 +53,7 @@ const users = [
 ] as const;
 let productId: number | null = null;
 let customerId: number | null = null;
-let customerNotificationId: number | null = null;
+let restrictedNotificationId: number | null = null;
 let operationId: number | null = null;
 let orderNotificationId: number | null = null;
 const notificationIds: number[] = [];
@@ -158,16 +158,18 @@ try {
     });
     notificationIds.push(notification.id);
   }
-  const customerNotification = await prisma.notification.create({
+  // Fixture de permisos: el listado debe ocultar a Logística cualquier notificación que exija
+  // `customers.read`. No representa una notificación que el producto genere hoy.
+  const restrictedNotification = await prisma.notification.create({
     data: {
-      type: 'CUSTOMER_SYNC_PARTIAL',
-      title: 'Sincronización parcial',
-      message: `${customer.displayName}\nPali requiere atención.`,
+      type: 'RESTRICTED_PERMISSION_TEST',
+      title: 'Notificación restringida',
+      message: `${customer.displayName}\nSolo lectura de clientes.`,
       customerId,
       requiredPermission: 'customers.read',
     },
   });
-  customerNotificationId = customerNotification.id;
+  restrictedNotificationId = restrictedNotification.id;
   const operation = await prisma.orderOperation.create({
     data: {
       operationCode: `OP-NOTIFY-${runId.slice(0, 8)}`,
@@ -260,12 +262,6 @@ try {
   ) {
     throw new Error('El listado no devolvió las notificaciones normalizadas esperadas.');
   }
-  const customerItem = unreadA.data.find(
-    (notification) => notification.id === customerNotificationId,
-  ) as (typeof unreadA.data)[number] & { customer?: { displayName: string } | null };
-  if (customerItem?.customer?.displayName !== customer.displayName) {
-    throw new Error('La notificación de cliente no devolvió su resumen relacionado.');
-  }
   const orderItem = unreadA.data.find((notification) => notification.id === orderNotificationId);
   if (
     orderItem?.orderOperation?.operationCode !== operation.operationCode ||
@@ -278,16 +274,16 @@ try {
   const logisticsUnreadResponse = await api('/api/notifications?status=unread', logisticsCookie);
   expectStatus(logisticsUnreadResponse, 200, 'Notificaciones de Logística');
   const logisticsUnread = (await logisticsUnreadResponse.json()) as { data: Array<{ id: number }> };
-  if (logisticsUnread.data.some((notification) => notification.id === customerNotificationId)) {
+  if (logisticsUnread.data.some((notification) => notification.id === restrictedNotificationId)) {
     throw new Error('Logística recibió una notificación restringida a customers.read.');
   }
   if (!logisticsUnread.data.some((notification) => notification.id === orderNotificationId)) {
     throw new Error('Logística no recibió la notificación restringida a orders.read.');
   }
   expectStatus(
-    await api(`/api/notifications/${customerNotificationId}/read`, logisticsCookie, 'PATCH'),
+    await api(`/api/notifications/${restrictedNotificationId}/read`, logisticsCookie, 'PATCH'),
     404,
-    'Lectura de notificación de cliente por Logística',
+    'Lectura de notificación restringida por Logística',
   );
 
   expectStatus(
@@ -341,8 +337,8 @@ try {
   if (notificationIds.length > 0) {
     await prisma.notification.deleteMany({ where: { id: { in: notificationIds } } });
   }
-  if (customerNotificationId !== null) {
-    await prisma.notification.deleteMany({ where: { id: customerNotificationId } });
+  if (restrictedNotificationId !== null) {
+    await prisma.notification.deleteMany({ where: { id: restrictedNotificationId } });
   }
   if (orderNotificationId !== null) {
     await prisma.notification.deleteMany({ where: { id: orderNotificationId } });

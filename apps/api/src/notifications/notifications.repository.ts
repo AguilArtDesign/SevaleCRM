@@ -32,15 +32,6 @@ export class NotificationsRepository {
         take: query.pageSize,
         include: {
           product: { select: { sku: true, productName: true, imageUrl: true, store: true } },
-          customer: {
-            select: {
-              personType: true,
-              firstName: true,
-              lastName: true,
-              displayName: true,
-              email: true,
-            },
-          },
           orderOperation: {
             select: {
               operationCode: true,

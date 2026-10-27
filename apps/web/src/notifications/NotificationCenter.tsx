@@ -27,9 +27,6 @@ function notificationDescription(notification: NotificationRecord) {
   if (notification.type.startsWith('ORDER_') && notification.orderOperation) {
     return `${notification.orderOperation.customer.displayName} · ${notification.orderOperation.operationCode}`;
   }
-  if (notification.type.startsWith('CUSTOMER_')) {
-    return notification.message.split('\n')[0] || notification.customer?.displayName || '';
-  }
   if (
     notification.type === 'SIIGO_PRODUCT_UPDATED' ||
     notification.type === 'PRODUCT_LINK_UPDATED'
@@ -48,47 +45,30 @@ function notificationChanges(notification: NotificationRecord) {
   return changes.join('\n') || null;
 }
 
-type CustomerProvider = 'SIIGO' | 'PALI' | 'SERATUS';
+type SyncProvider = 'SIIGO' | 'PALI' | 'SERATUS';
 
-const customerProviderLabels: Record<CustomerProvider, string> = {
+const providerLabels: Record<SyncProvider, string> = {
   SIIGO: 'Siigo',
   PALI: 'Pali',
   SERATUS: 'Seratus',
 };
 
-function customerNotificationProvider(notification: NotificationRecord): CustomerProvider | null {
+function notificationProvider(notification: NotificationRecord): SyncProvider | null {
   const providerFromType = notification.type.match(/_(SIIGO|PALI|SERATUS)$/)?.[1] as
-    CustomerProvider | undefined;
+    SyncProvider | undefined;
   if (providerFromType) return providerFromType;
 
   const details = notification.message.split('\n').slice(1).join(' ');
   return (
-    (Object.keys(customerProviderLabels) as CustomerProvider[]).find((provider) =>
-      details.toLocaleLowerCase('es-CO').includes(customerProviderLabels[provider].toLowerCase()),
+    (Object.keys(providerLabels) as SyncProvider[]).find((provider) =>
+      details.toLocaleLowerCase('es-CO').includes(providerLabels[provider].toLowerCase()),
     ) ?? null
   );
 }
 
-function orderNotificationProvider(notification: NotificationRecord): CustomerProvider | null {
+function orderNotificationProvider(notification: NotificationRecord): SyncProvider | null {
   if (!notification.type.startsWith('ORDER_')) return null;
-  return customerNotificationProvider(notification);
-}
-
-function customerNotificationPresentation(notification: NotificationRecord) {
-  if (!notification.type.startsWith('CUSTOMER_')) return null;
-  if (notification.type === 'CUSTOMER_CREATED') {
-    return { title: 'Cliente creado', provider: null };
-  }
-  if (notification.type.includes('ERROR') || notification.type === 'CUSTOMER_SYNC_PARTIAL') {
-    return {
-      title: 'Error de sincronización',
-      provider: customerNotificationProvider(notification),
-    };
-  }
-  if (notification.type.includes('SYNCED') || notification.type === 'CUSTOMER_RETRY_SUCCEEDED') {
-    return { title: 'Cliente sincronizado', provider: customerNotificationProvider(notification) };
-  }
-  return { title: notification.title, provider: null };
+  return notificationProvider(notification);
 }
 
 export function NotificationCenter() {
@@ -131,15 +111,14 @@ export function NotificationCenter() {
           <strong>{status === 'unread' ? 'Todo está al día' : 'Sin notificaciones leídas'}</strong>
           <span>
             {status === 'unread'
-              ? 'Las novedades del inventario, clientes y pedidos aparecerán aquí.'
+              ? 'Las novedades del inventario y de los pedidos aparecerán aquí.'
               : 'Las notificaciones que marques como leídas aparecerán aquí.'}
           </span>
         </div>
       ) : (
         notificationsQuery.data.data.map((notification) => {
-          const customerPresentation = customerNotificationPresentation(notification);
           const orderProvider = orderNotificationProvider(notification);
-          const relatedCustomer = notification.customer ?? notification.orderOperation?.customer;
+          const relatedCustomer = notification.orderOperation?.customer;
           return (
             <article
               className={`notification-item${notification.readAt ? '' : ' notification-item-unread'}`}
@@ -149,7 +128,7 @@ export function NotificationCenter() {
               {relatedCustomer ? (
                 <Avatar
                   size="md"
-                  className={`notification-customer-avatar ${customerAvatarClass(notification.customerId ?? notification.orderOperation?.customer.id ?? notification.id)}`}
+                  className={`notification-customer-avatar ${customerAvatarClass(notification.orderOperation?.customer.id ?? notification.id)}`}
                   aria-hidden="true"
                 >
                   <Avatar.Fallback>{customerInitials(relatedCustomer)}</Avatar.Fallback>
@@ -169,7 +148,7 @@ export function NotificationCenter() {
               )}
               <div className="notification-copy">
                 <div className="notification-title-row">
-                  <strong>{customerPresentation?.title ?? notification.title}</strong>
+                  <strong>{notification.title}</strong>
                   {notification.type === 'SIIGO_PRODUCT_UPDATED' && (
                     <>
                       <Chip className="notification-siigo-chip" color="default">
@@ -185,20 +164,12 @@ export function NotificationCenter() {
                       )}
                     </>
                   )}
-                  {customerPresentation?.provider && (
-                    <Chip
-                      className={`notification-provider-chip--${customerPresentation.provider.toLowerCase()}`}
-                      color="default"
-                    >
-                      {customerProviderLabels[customerPresentation.provider]}
-                    </Chip>
-                  )}
                   {orderProvider && (
                     <Chip
                       className={`notification-provider-chip--${orderProvider.toLowerCase()}`}
                       color="default"
                     >
-                      {customerProviderLabels[orderProvider]}
+                      {providerLabels[orderProvider]}
                     </Chip>
                   )}
                 </div>
@@ -216,7 +187,7 @@ export function NotificationCenter() {
                   isIconOnly
                   size="sm"
                   variant="ghost"
-                  aria-label={`Marcar como leída: ${customerPresentation?.title ?? notification.title}`}
+                  aria-label={`Marcar como leída: ${notification.title}`}
                   isDisabled={markRead.isPending}
                   onPress={() => markRead.mutate(notification.id)}
                 >

@@ -8,7 +8,6 @@ import { PrismaService } from '../apps/api/src/database/prisma.service.js';
 import { OperationStatus, OrderSource, Role } from '../apps/api/src/generated/prisma/client.js';
 import { SiigoCustomerService } from '../apps/api/src/customers/integrations/siigo-customer.service.js';
 import { WooCustomerService } from '../apps/api/src/customers/integrations/woo-customer.service.js';
-import { NotificationsService } from '../apps/api/src/notifications/notifications.service.js';
 
 process.env.BETTER_AUTH_SECRET ||= 'local-customers-smoke-secret-at-least-32-characters';
 
@@ -23,7 +22,6 @@ await app.listen(0, '127.0.0.1');
 const prisma = app.get(PrismaService);
 const siigoCustomers = app.get(SiigoCustomerService);
 const wooCustomers = app.get(WooCustomerService);
-const notifications = app.get(NotificationsService);
 const baseUrl = await app.getUrl();
 const runId = randomUUID();
 const password = `C-${randomUUID()}-9a!`;
@@ -653,18 +651,6 @@ try {
     201,
     'Reintento sin provider y sin body',
   );
-  const createCustomerRetrySummary = notifications.createCustomerRetrySummary.bind(notifications);
-  notifications.createCustomerRetrySummary = () =>
-    Promise.reject(new Error('Fallo interno simulado del sistema de notificaciones.'));
-  expectStatus(
-    await api(`/api/customers/${created.id}/sync`, adminCookie, {
-      method: 'POST',
-      body: JSON.stringify({ provider: 'SERATUS' }),
-    }),
-    201,
-    'Sincronización aislada de un fallo de notificaciones',
-  );
-  notifications.createCustomerRetrySummary = createCustomerRetrySummary;
   await prisma.customer.update({
     where: { id: created.id },
     data: {
@@ -826,7 +812,7 @@ try {
   }
 
   process.stdout.write(
-    'Customers smoke: safe Siigo lookup, physical deletion, valid-operation protection, legacy cleanup, same-document recreation, RBAC, duplicates, geography, search, pagination, detail, update, agreement link and notification isolation checks passed.\n',
+    'Customers smoke: safe Siigo lookup, physical deletion, valid-operation protection, legacy cleanup, same-document recreation, RBAC, duplicates, geography, search, pagination, detail, update and agreement link checks passed.\n',
   );
 } finally {
   if (customerIds.length > 0) {

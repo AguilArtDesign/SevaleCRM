@@ -7,7 +7,6 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Prisma } from '../generated/prisma/client.js';
-import { NotificationsService } from '../notifications/notifications.service.js';
 import { RealtimeGateway } from '../realtime/realtime.gateway.js';
 import {
   createCustomerSchema,
@@ -274,7 +273,6 @@ export class CustomersService {
   constructor(
     private readonly customers: CustomersRepository,
     private readonly integrations: CustomerIntegrationService,
-    private readonly notifications: NotificationsService,
     private readonly realtime: RealtimeGateway,
     private readonly siigoCustomers: SiigoCustomerService,
     private readonly wooCustomers: WooCustomerService,
@@ -374,7 +372,6 @@ export class CustomersService {
       for (const integration of customer.integrations) {
         this.realtime.emitCustomerIntegrationUpdated(customer, integration);
       }
-      await this.publishNotification(this.notifications.createCustomerLocal(customer), 'creación');
       return serializeCustomer(customer, includeIntegrationErrors);
     } catch (error) {
       if (isUniqueConstraintError(error)) {
@@ -475,10 +472,6 @@ export class CustomersService {
     for (const result of results) {
       this.realtime.emitCustomerIntegrationUpdated(synchronized, result);
     }
-    await this.publishNotification(
-      this.notifications.createCustomerRetrySummary(synchronized, results),
-      'reintento',
-    );
     return serializeCustomer(synchronized, includeIntegrationErrors);
   }
 
@@ -595,14 +588,6 @@ export class CustomersService {
         ],
       },
     });
-  }
-
-  private async publishNotification(operation: Promise<unknown>, context: string) {
-    try {
-      await operation;
-    } catch {
-      this.logger.warn(`No se pudo registrar la notificación de ${context} del cliente.`);
-    }
   }
 
   /** El convenio se elige en el formulario, así que un id inexistente se rechaza antes de guardar. */
