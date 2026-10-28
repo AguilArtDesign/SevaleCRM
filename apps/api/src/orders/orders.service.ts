@@ -20,6 +20,7 @@ import {
   toShippingCents,
 } from '@sevale/shared';
 import { Prisma, type Product, type Store } from '../generated/prisma/client.js';
+import { capitalizeCustomerName } from '../customers/customer-data-sanitizer.js';
 import { OrdersRepository, type OrderOperationDetail } from './orders.repository.js';
 import type {
   PreparedOperation,
@@ -92,6 +93,26 @@ function money(value: Prisma.Decimal): string {
   return value.toFixed(2);
 }
 
+/**
+ * Un nombre de persona se muestra con inicial mayúscula. Los pedidos creados antes de normalizar en
+ * el alta guardaron lo que se escribió, así que se corrige al leer: la ficha, el recibo y el
+ * formulario de edición coinciden con un pedido nuevo sin reescribir la fila guardada.
+ *
+ * No se puede recuperar la tilde: "HERNANDEZ" vuelve como "Hernandez", no como "Hernández". Un
+ * nombre escrito sin tildes tampoco las gana.
+ */
+function capitalizedName(value: string | null): string | null {
+  return value ? capitalizeCustomerName(value) : null;
+}
+
+/** El nombre visible de un cliente se normaliza solo si es persona: una empresa conserva su forma. */
+function withNormalizedCustomer<T extends { personType?: string; displayName?: string | null }>(
+  customer: T,
+): T {
+  if (customer.personType !== 'PERSON') return customer;
+  return { ...customer, displayName: capitalizedName(customer.displayName ?? '') ?? '' };
+}
+
 function serializeItem(item: OrderOperationDetail['orders'][number]['items'][number]) {
   return {
     ...item,
@@ -106,6 +127,14 @@ function serializeItem(item: OrderOperationDetail['orders'][number]['items'][num
 function serializeDetail(operation: OrderOperationDetail) {
   return {
     ...operation,
+    // Los pedidos anteriores a la normalización guardaron el nombre tal como se escribió. Se
+    // corrige al leer para que la ficha, el recibo y la edición muestren la misma forma que un
+    // pedido nuevo, sin reescribir la fila.
+    billingFirstName: capitalizedName(operation.billingFirstName),
+    billingLastName: capitalizedName(operation.billingLastName),
+    shippingFirstName: capitalizedName(operation.shippingFirstName),
+    shippingLastName: capitalizedName(operation.shippingLastName),
+    customer: withNormalizedCustomer(operation.customer),
     couponAmount: operation.couponAmount ? money(operation.couponAmount) : null,
     subtotal: money(operation.subtotal),
     discountTotal: money(operation.discountTotal),
@@ -157,7 +186,7 @@ export class OrdersService {
         currency: operation.currency,
         createdAt: operation.createdAt,
         updatedAt: operation.updatedAt,
-        customer: operation.customer,
+        customer: withNormalizedCustomer(operation.customer),
         wooOrderId: order.wooOrderId?.toString() ?? null,
         wooStatus: order.wooStatus,
         subtotal: money(order.subtotal),
@@ -217,8 +246,8 @@ export class OrdersService {
         paymentMethodTitle: operation.paymentMethodTitle,
         createdBy: operation.createdBy,
         billing: {
-          firstName: operation.billingFirstName,
-          lastName: operation.billingLastName,
+          firstName: capitalizedName(operation.billingFirstName),
+          lastName: capitalizedName(operation.billingLastName),
           company: operation.billingCompany,
           address1: operation.billingAddress1,
           address2: operation.billingAddress2,
@@ -232,8 +261,8 @@ export class OrdersService {
         shipping: {
           method: operation.shippingMethod,
           methodTitle: operation.shippingMethodTitle,
-          firstName: operation.shippingFirstName,
-          lastName: operation.shippingLastName,
+          firstName: capitalizedName(operation.shippingFirstName),
+          lastName: capitalizedName(operation.shippingLastName),
           address1: operation.shippingAddress1,
           address2: operation.shippingAddress2,
           city: operation.shippingCity,
@@ -602,8 +631,11 @@ export class OrdersService {
       discountTotal,
       shippingTotal,
       total: subtotal.minus(discountTotal).plus(shippingTotal),
-      billingFirstName: input.billing.firstName,
-      billingLastName: input.billing.lastName,
+      // El pedido copia los datos del cliente y los envía a WooCommerce tal cual, así que los
+      // nombres se guardan con la misma forma que en Clientes: inicial mayúscula, no lo que se
+      // haya escrito en el formulario.
+      billingFirstName: capitalizeCustomerName(input.billing.firstName),
+      billingLastName: capitalizeCustomerName(input.billing.lastName),
       billingCompany: input.billing.company,
       billingAddress1: input.billing.address1,
       billingAddress2: input.billing.address2,
@@ -613,8 +645,8 @@ export class OrdersService {
       billingCountry: input.billing.country?.toUpperCase() ?? null,
       billingEmail: input.billing.email,
       billingPhone: input.billing.phone,
-      shippingFirstName: input.shipping.firstName,
-      shippingLastName: input.shipping.lastName,
+      shippingFirstName: capitalizeCustomerName(input.shipping.firstName),
+      shippingLastName: capitalizeCustomerName(input.shipping.lastName),
       shippingCompany: input.shipping.company,
       shippingAddress1: input.shipping.address1,
       shippingAddress2: input.shipping.address2,

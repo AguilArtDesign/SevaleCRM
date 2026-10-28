@@ -26,6 +26,10 @@ import {
 } from '@gravity-ui/icons';
 import {
   countryFlagPath,
+  getCustomerColombiaCities,
+  getCustomerColombiaStates,
+  getCustomerCountries,
+  getCustomerWooStates,
   paymentMethods,
   resolveCity,
   resolveCountry,
@@ -39,10 +43,13 @@ import {
 import type { CreateOrderOperationInput } from '@sevale/validation';
 import { Input } from '../components/Input';
 import { Chip } from '../components/Chip';
+import { PhoneInput } from '../components/PhoneInput';
 import { Select } from '../components/Select';
 import { couponsApi, type CouponRecord } from '../coupons/api';
+import { CustomerAutocomplete } from '../customers/CustomerAutocomplete';
 import { customersApi, type CustomerRecord } from '../customers/api';
 import {
+  capitalizeName,
   customerAvatarClass,
   customerDisplayName,
   customerInitials,
@@ -88,6 +95,16 @@ const emptyAddress: AddressValue = {
 
 function nullable(value: string): string | null {
   return value.trim() || null;
+}
+
+/**
+ * El valor guardado puede no estar en el catálogo: un pedido importado de la tienda puede traer una
+ * ciudad o un departamento que el CRM no conoce. Se agrega como opción para que el selector lo
+ * muestre en lugar de aparecer vacío y dar la impresión de que el dato se perdió.
+ */
+function withCurrentOption(options: Array<{ id: string; name: string }>, current: string) {
+  if (!current || options.some((option) => option.id === current)) return options;
+  return [{ id: current, name: current }, ...options];
 }
 
 function money(value: string | number): number {
@@ -239,13 +256,31 @@ function AddressFields({
   value,
   onChange,
   includeEmail = false,
+  lockedEmail,
 }: {
   value: AddressValue | BillingValue;
   onChange: (value: AddressValue | BillingValue) => void;
   includeEmail?: boolean;
+  /**
+   * Correo del envío: se muestra y no se edita. El pedido lo toma de la facturación, así que aquí
+   * solo se confirma cuál va a viajar.
+   */
+  lockedEmail?: string;
 }) {
+  const countries = useMemo(() => getCustomerCountries(), []);
+  const isColombia = value.country === 'CO';
+  const states = useMemo(
+    () => (isColombia ? getCustomerColombiaStates() : getCustomerWooStates(value.country)),
+    [isColombia, value.country],
+  );
+  const cities = useMemo(
+    () => (isColombia ? getCustomerColombiaCities(value.state) : []),
+    [isColombia, value.state],
+  );
+
   const field = (key: keyof BillingValue) => (event: ChangeEvent<HTMLInputElement>) =>
     onChange({ ...value, [key]: event.target.value });
+
   return (
     <div className="order-address-grid">
       <TextField>
@@ -268,41 +303,108 @@ function AddressFields({
         <Label>Complemento</Label>
         <Input variant="secondary" value={value.address2} onChange={field('address2')} />
       </TextField>
-      <TextField>
-        <Label>Ciudad</Label>
-        <Input variant="secondary" value={value.city} onChange={field('city')} />
-      </TextField>
-      <TextField>
-        <Label>Departamento / región</Label>
-        <Input variant="secondary" value={value.state} onChange={field('state')} />
-      </TextField>
-      <TextField>
-        <Label>Código postal</Label>
-        <Input variant="secondary" value={value.postcode} onChange={field('postcode')} />
-      </TextField>
-      <TextField>
-        <Label>País</Label>
-        <Input
-          variant="secondary"
-          maxLength={2}
-          value={value.country}
-          onChange={field('country')}
+      <CustomerAutocomplete
+        ariaLabel="País"
+        label="País"
+        placeholder="Seleccionar"
+        value={value.country}
+        options={withCurrentOption(
+          countries.map((option) => ({ id: option.code, name: option.name })),
+          value.country,
+        )}
+        onChange={(country) =>
+          onChange({
+            ...value,
+            country: country || 'CO',
+            // Departamento y ciudad pertenecen al país anterior: dejar la ciudad de un catálogo
+            // dentro de otro país guardaría una ubicación que no existe.
+            state: '',
+            city: '',
+          })
+        }
+      />
+      {states.length > 0 ? (
+        <CustomerAutocomplete
+          key={`state:${value.country}`}
+          ariaLabel={isColombia ? 'Departamento' : 'Región o provincia'}
+          label={isColombia ? 'Departamento' : 'Región / provincia'}
+          placeholder="Seleccionar"
+          value={value.state}
+          options={withCurrentOption(
+            states.map((option) => ({ id: option.code, name: option.name })),
+            value.state,
+          )}
+          isDisabled={!value.country}
+          onChange={(state) => onChange({ ...value, state: state || '', city: '' })}
         />
-      </TextField>
-      {includeEmail && (
-        <TextField type="email">
-          <Label>Correo electrónico</Label>
+      ) : (
+        <TextField>
+          <Label>Región / provincia</Label>
           <Input
             variant="secondary"
-            value={'email' in value ? value.email : ''}
-            onChange={field('email')}
+            placeholder="Escribe la región o provincia"
+            value={value.state}
+            disabled={!value.country}
+            onChange={(event) => onChange({ ...value, state: event.target.value, city: '' })}
+          />
+        </TextField>
+      )}
+      {isColombia ? (
+        <CustomerAutocomplete
+          key={`city:${value.state}`}
+          ariaLabel="Ciudad o municipio"
+          label="Ciudad / municipio"
+          placeholder="Seleccionar"
+          // El pedido guarda el nombre de la ciudad, que es lo que WooCommerce espera recibir.
+          value={value.city}
+          options={withCurrentOption(
+            cities.map((option) => ({ id: option.name, name: option.name })),
+            value.city,
+          )}
+          isDisabled={!value.state}
+          onChange={(city) => onChange({ ...value, city: city || '' })}
+        />
+      ) : (
+        <TextField>
+          <Label>Ciudad</Label>
+          <Input
+            variant="secondary"
+            placeholder="Escribe la ciudad"
+            value={value.city}
+            disabled={!value.country}
+            onChange={(event) => onChange({ ...value, city: event.target.value })}
           />
         </TextField>
       )}
       <TextField>
-        <Label>Teléfono</Label>
-        <Input variant="secondary" value={value.phone} onChange={field('phone')} />
+        <Label>Código postal</Label>
+        <Input variant="secondary" value={value.postcode} onChange={field('postcode')} />
       </TextField>
+      {lockedEmail !== undefined ? (
+        <TextField type="email">
+          <Label>Correo electrónico</Label>
+          <Input variant="secondary" value={lockedEmail} disabled />
+        </TextField>
+      ) : (
+        includeEmail && (
+          <TextField type="email">
+            <Label>Correo electrónico</Label>
+            <Input
+              variant="secondary"
+              value={'email' in value ? value.email : ''}
+              onChange={field('email')}
+            />
+          </TextField>
+        )
+      )}
+      <div className="customer-field">
+        <Label>Teléfono</Label>
+        <PhoneInput
+          country={value.country || 'CO'}
+          value={value.phone}
+          onChange={(phone) => onChange({ ...value, phone })}
+        />
+      </div>
     </div>
   );
 }
@@ -814,8 +916,16 @@ export function OrderForm({
       setError('Completa los datos de facturación antes de continuar.');
       return;
     }
-    setBilling(billingDraft);
-    if (!differentShipping) setShipping(withoutEmail(billingDraft));
+    // Los nombres se normalizan al guardar, no mientras se escriben: es la misma forma en que se
+    // almacenan y la que va a viajar a la tienda, así que el resumen no puede mostrar otra cosa.
+    const normalized: BillingValue = {
+      ...billingDraft,
+      firstName: capitalizeName(billingDraft.firstName),
+      lastName: capitalizeName(billingDraft.lastName),
+    };
+    setBilling(normalized);
+    setBillingDraft(normalized);
+    if (!differentShipping) setShipping(withoutEmail(normalized));
     setError('');
     setBillingVisible(false);
   };
@@ -1033,7 +1143,11 @@ export function OrderForm({
                         </Switch.Content>
                       </Switch>
                       {differentShipping ? (
-                        <AddressFields value={shipping} onChange={(next) => setShipping(next)} />
+                        <AddressFields
+                          value={shipping}
+                          lockedEmail={billing.email}
+                          onChange={(next) => setShipping(next)}
+                        />
                       ) : (
                         <p className="order-form-note">
                           Se usará la misma información de facturación.

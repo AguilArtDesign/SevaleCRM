@@ -6,7 +6,11 @@ type CustomerName = {
   personType?: 'PERSON' | 'COMPANY' | null;
 };
 
-function capitalizeName(value: string) {
+/**
+ * Nombres con inicial mayúscula. Es la forma en que se guardan los nombres de persona, así que sirve
+ * tanto para mostrarlos como para corregir lo que se escribe en un formulario.
+ */
+export function capitalizeName(value: string) {
   return value
     .toLocaleLowerCase('es-CO')
     .replace(

@@ -35,7 +35,7 @@ export type OrderListRecord = {
   updatedAt: string;
   customer: Pick<
     CustomerRecord,
-    'id' | 'displayName' | 'documentType' | 'documentNumber' | 'email'
+    'id' | 'displayName' | 'personType' | 'documentType' | 'documentNumber' | 'email'
   >;
 };
 

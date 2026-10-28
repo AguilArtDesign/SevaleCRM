@@ -318,6 +318,8 @@ export class OrdersRepository {
                 select: {
                   id: true,
                   displayName: true,
+                  // Decide si el nombre se normaliza al leer: una empresa conserva su forma.
+                  personType: true,
                   documentType: true,
                   documentNumber: true,
                   email: true,
