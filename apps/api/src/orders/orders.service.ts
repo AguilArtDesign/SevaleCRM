@@ -8,6 +8,7 @@ import { randomInt } from 'node:crypto';
 import type {
   CreateOrderOperationInput,
   CustomerOrdersQuery,
+  OrderActivityQuery,
   OrderListQuery,
   UpdateShipmentInput,
   UpdateOrderOperationInput,
@@ -32,6 +33,7 @@ import { WooOrderOutboundService } from './woo-order-outbound.service.js';
 import { ShipmentSyncService } from './shipment-sync.service.js';
 import { SiigoQuotationService } from './siigo-quotation.service.js';
 import { OrderEventPublisher } from './order-event-publisher.service.js';
+import { OrderEventsService } from './order-events.service.js';
 
 type OperationInput = CreateOrderOperationInput;
 
@@ -172,6 +174,7 @@ export class OrdersService {
     private readonly shipmentSync: ShipmentSyncService,
     private readonly siigoQuotation: SiigoQuotationService,
     private readonly events: OrderEventPublisher,
+    private readonly trail: OrderEventsService,
   ) {}
 
   async list(query: OrderListQuery) {
@@ -209,6 +212,10 @@ export class OrdersService {
       throw businessError(NotFoundException, 'ORDER_NOT_FOUND', 'La operación no existe.');
     }
     return serializeDetail(operation);
+  }
+
+  activity(id: number, query: OrderActivityQuery) {
+    return this.trail.list(id, query);
   }
 
   /**
@@ -299,6 +306,14 @@ export class OrdersService {
       try {
         const operation = await this.orders.create(operationCode(), createdByUserId, prepared);
         await this.events.operationCreated(operation);
+        await this.trail.recordCreated(
+          {
+            id: operation.id,
+            operationCode: operation.operationCode,
+            customerName: operation.customer.displayName,
+          },
+          createdByUserId,
+        );
         return serializeDetail(operation);
       } catch (error) {
         if (isUniqueConstraintError(error) && attempt < 4) continue;
@@ -312,8 +327,9 @@ export class OrdersService {
     );
   }
 
-  async update(id: number, input: UpdateOrderOperationInput) {
+  async update(id: number, input: UpdateOrderOperationInput, userId: string) {
     const prepared = await this.prepare(input);
+    const before = await this.orders.detail(id);
     const result = await this.orders.updatePending(id, prepared);
     if (result.outcome === 'NOT_FOUND') {
       throw businessError(NotFoundException, 'ORDER_NOT_FOUND', 'La operación no existe.');
@@ -333,6 +349,7 @@ export class OrdersService {
       );
     }
     this.events.operationUpdated(result.operation);
+    if (before) await this.trail.recordUpdated(before, result.operation, userId);
     return serializeDetail(result.operation);
   }
 
@@ -389,6 +406,7 @@ export class OrdersService {
         throw businessError(NotFoundException, 'ORDER_NOT_FOUND', 'La operación no existe.');
       }
       await this.events.siigoQuotationUpdated(updated);
+      await this.trail.recordQuoted(updated, userId);
       return serializeDetail(updated);
     }
     return this.detail(id);
@@ -398,16 +416,17 @@ export class OrdersService {
   siigoQuotationPreview(id: number, userId: string) {
     return this.siigoQuotation.preview(id, userId);
   }
-  async remove(id: number) {
+  async remove(id: number, userId: string) {
     const result = await this.orders.delete(id);
     if (result.outcome === 'NOT_FOUND') {
       throw businessError(NotFoundException, 'ORDER_NOT_FOUND', 'La operación no existe.');
     }
     this.events.operationUpdated(result.operation);
+    await this.trail.recordDeleted(result.operation, userId);
     return serializeDetail(result.operation);
   }
 
-  async complete(id: number) {
+  async complete(id: number, userId: string) {
     const claim = await this.orders.claimCompletion(id);
     if (claim.outcome === 'NOT_FOUND') {
       throw businessError(NotFoundException, 'ORDER_NOT_FOUND', 'La operación no existe.');
@@ -420,18 +439,20 @@ export class OrdersService {
       );
     }
     if (claim.outcome === 'CLAIMED') {
-      await this.outbound.synchronize(claim.orderIds);
+      const outcomes = await this.outbound.synchronize(claim.orderIds);
       const updated = await this.orders.detail(id);
       if (!updated) {
         throw businessError(NotFoundException, 'ORDER_NOT_FOUND', 'La operación no existe.');
       }
       await this.events.operationCompleted(updated);
+      await this.trail.recordCompleted(updated, userId);
+      await this.trail.recordSynced(updated, outcomes, userId);
       return serializeDetail(updated);
     }
     return this.detail(id);
   }
 
-  async retrySync(id: number) {
+  async retrySync(id: number, userId: string) {
     const claim = await this.orders.claimRetry(id);
     if (claim.outcome === 'NOT_FOUND') {
       throw businessError(NotFoundException, 'ORDER_NOT_FOUND', 'La operación no existe.');
@@ -450,15 +471,16 @@ export class OrdersService {
         'La operación no tiene pedidos con error pendientes de reintento.',
       );
     }
-    await this.outbound.synchronize(claim.orderIds);
+    const outcomes = await this.outbound.synchronize(claim.orderIds);
     const updated = await this.orders.detail(id);
     if (!updated)
       throw businessError(NotFoundException, 'ORDER_NOT_FOUND', 'La operación no existe.');
     await this.events.syncUpdated(updated, claim.orderIds);
+    await this.trail.recordSynced(updated, outcomes, userId);
     return serializeDetail(updated);
   }
 
-  async retryOrderSync(id: number) {
+  async retryOrderSync(id: number, userId: string) {
     const claim = await this.orders.claimOrderRetry(id);
     if (claim.outcome === 'NOT_FOUND') {
       throw businessError(NotFoundException, 'ORDER_NOT_FOUND', 'El pedido no existe.');
@@ -477,11 +499,12 @@ export class OrdersService {
         'Este pedido no tiene un error de sincronización pendiente.',
       );
     }
-    await this.outbound.synchronize(claim.orderIds);
+    const outcomes = await this.outbound.synchronize(claim.orderIds);
     const updated = await this.orders.detail(claim.operationId);
     if (!updated)
       throw businessError(NotFoundException, 'ORDER_NOT_FOUND', 'La operación no existe.');
     await this.events.syncUpdated(updated, claim.orderIds);
+    await this.trail.recordSynced(updated, outcomes, userId);
     return serializeDetail(updated);
   }
 

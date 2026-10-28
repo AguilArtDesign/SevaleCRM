@@ -21,6 +21,7 @@ import {
   ArrowRotateRight,
   Box,
   Check,
+  ClockArrowRotateLeft,
   EllipsisVertical,
   Eye,
   FileText,
@@ -56,6 +57,7 @@ import { useFormattedPhone } from '../components/useFormattedPhone';
 import { ShipmentModal } from './ShipmentModal';
 import { ShipmentViewModal } from './ShipmentViewModal';
 import { SiigoQuotationModal } from './SiigoQuotationModal';
+import { OrderActivityModal } from './OrderActivityModal';
 import {
   ordersApi,
   type OrderDetailRecord,
@@ -308,6 +310,10 @@ export function OrdersPage() {
   const [selectedKeys, setSelectedKeys] = useState<Selection>(new Set());
   const [deleteTarget, setDeleteTarget] = useState<OrderListRecord | null>(null);
   const [completeTarget, setCompleteTarget] = useState<OrderListRecord | null>(null);
+  const [activityTarget, setActivityTarget] = useState<{
+    id: number;
+    operationCode: string;
+  } | null>(null);
   const [actionTarget, setActionTarget] = useState<OrderActionTarget | null>(null);
   const actionOperationId = actionTarget?.operationId ?? null;
 
@@ -746,6 +752,11 @@ export function OrdersPage() {
                                 if (key === 'complete') setCompleteTarget(order);
                                 if (key === 'retry') void retryOrderSync(order);
                                 if (key === 'delete') setDeleteTarget(order);
+                                if (key === 'activity')
+                                  setActivityTarget({
+                                    id: order.operationId,
+                                    operationCode: order.operationCode,
+                                  });
                                 if (key === 'siigo-quotation') {
                                   quotation.reset();
                                   setActionTarget({
@@ -836,6 +847,10 @@ export function OrdersPage() {
                                 <>
                                   <Separator />
                                   <Dropdown.Section>
+                                    <Dropdown.Item id="activity" textValue="Actividad del pedido">
+                                      <ClockArrowRotateLeft className="size-4 shrink-0 text-muted" />
+                                      <Label>Actividad</Label>
+                                    </Dropdown.Item>
                                     <Dropdown.Item
                                       id="delete"
                                       textValue="Eliminar pedido"
@@ -1031,6 +1046,8 @@ export function OrdersPage() {
           onSubmit={() => quotation.mutate(actionTarget.operationId)}
         />
       )}
+
+      <OrderActivityModal order={activityTarget} onClose={() => setActivityTarget(null)} />
 
       <AlertDialog
         isOpen={completeTarget !== null}

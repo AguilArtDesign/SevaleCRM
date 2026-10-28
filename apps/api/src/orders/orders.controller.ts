@@ -16,6 +16,7 @@ import {
   customerIdSchema,
   customerOrdersQuerySchema,
   orderIdSchema,
+  orderActivityQuerySchema,
   orderListQuerySchema,
   orderOperationIdSchema,
   updateOrderOperationSchema,
@@ -69,35 +70,36 @@ export class OrdersController {
 
   @Patch(':id')
   @RequirePermissions('orders.update')
-  update(@Param('id') id: string, @Body() body: unknown) {
+  update(@Param('id') id: string, @Body() body: unknown, @Req() request: AuthenticatedRequest) {
     return this.orders.update(
       parseInput(orderOperationIdSchema, id),
       parseInput(updateOrderOperationSchema, body),
+      request.auth.user.id,
     );
   }
 
   @Delete(':id')
   @RequirePermissions('orders.delete')
-  remove(@Param('id') id: string) {
-    return this.orders.remove(parseInput(orderOperationIdSchema, id));
+  remove(@Param('id') id: string, @Req() request: AuthenticatedRequest) {
+    return this.orders.remove(parseInput(orderOperationIdSchema, id), request.auth.user.id);
   }
 
   @Post(':id/complete')
   @RequirePermissions('orders.complete')
-  complete(@Param('id') id: string) {
-    return this.orders.complete(parseInput(orderOperationIdSchema, id));
+  complete(@Param('id') id: string, @Req() request: AuthenticatedRequest) {
+    return this.orders.complete(parseInput(orderOperationIdSchema, id), request.auth.user.id);
   }
 
   @Post(':id/sync')
   @RequirePermissions('orders.sync.retry')
-  retrySync(@Param('id') id: string) {
-    return this.orders.retrySync(parseInput(orderOperationIdSchema, id));
+  retrySync(@Param('id') id: string, @Req() request: AuthenticatedRequest) {
+    return this.orders.retrySync(parseInput(orderOperationIdSchema, id), request.auth.user.id);
   }
 
   @Post('rows/:id/sync')
   @RequirePermissions('orders.sync.retry')
-  retryOrderSync(@Param('id') id: string) {
-    return this.orders.retryOrderSync(parseInput(orderIdSchema, id));
+  retryOrderSync(@Param('id') id: string, @Req() request: AuthenticatedRequest) {
+    return this.orders.retryOrderSync(parseInput(orderIdSchema, id), request.auth.user.id);
   }
 
   @Put(':id/shipment')
@@ -118,6 +120,15 @@ export class OrdersController {
   @RequirePermissions('orders.shipping.update')
   retryShipmentSync(@Param('id') id: string) {
     return this.orders.retryShipmentSync(parseInput(orderOperationIdSchema, id));
+  }
+
+  @Get(':id/activity')
+  @RequirePermissions('orders.activity.read')
+  activity(@Param('id') id: string, @Query() query: unknown) {
+    return this.orders.activity(
+      parseInput(orderOperationIdSchema, id),
+      parseInput(orderActivityQuerySchema, query),
+    );
   }
 
   @Get(':id/siigo-quotation')

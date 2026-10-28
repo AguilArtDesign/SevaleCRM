@@ -11,6 +11,8 @@ import { WooOrderOutboundService } from './woo-order-outbound.service.js';
 import { ShipmentSyncService } from './shipment-sync.service.js';
 import { SiigoQuotationService } from './siigo-quotation.service.js';
 import { OrderEventPublisher } from './order-event-publisher.service.js';
+import { OrderEventsRepository } from './order-events.repository.js';
+import { OrderEventsService } from './order-events.service.js';
 import { LogsModule } from '../integration-logs/logs.module.js';
 import { NotificationsModule } from '../notifications/notifications.module.js';
 import { RealtimeModule } from '../realtime/realtime.module.js';
@@ -28,6 +30,8 @@ import { RealtimeModule } from '../realtime/realtime.module.js';
     ShipmentSyncService,
     SiigoQuotationService,
     OrderEventPublisher,
+    OrderEventsRepository,
+    OrderEventsService,
   ],
 })
 export class OrdersModule {}

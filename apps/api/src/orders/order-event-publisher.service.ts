@@ -3,6 +3,7 @@ import type { Store } from '../generated/prisma/client.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
 import { RealtimeGateway } from '../realtime/realtime.gateway.js';
 import { OrdersRepository, type OrderOperationDetail } from './orders.repository.js';
+import { OrderEventsService } from './order-events.service.js';
 
 @Injectable()
 export class OrderEventPublisher {
@@ -12,6 +13,7 @@ export class OrderEventPublisher {
     private readonly orders: OrdersRepository,
     private readonly notifications: NotificationsService,
     private readonly realtime: RealtimeGateway,
+    private readonly trail: OrderEventsService,
   ) {}
 
   async inboundImported(operationId: number, store: Store, created: boolean) {
@@ -19,6 +21,17 @@ export class OrderEventPublisher {
     if (!operation) return;
     if (created) {
       this.realtime.emitOrderOperationCreated(operation);
+      // El pedido no lo creó nadie del CRM: lo trajo la tienda. La traza lo deja dicho para que el
+      // administrador no busque un responsable comercial que nunca existió.
+      await this.trail.recordCreated(
+        {
+          id: operation.id,
+          operationCode: operation.operationCode,
+          customerName: operation.customer.displayName,
+        },
+        null,
+        store,
+      );
       await this.publish(
         this.notifications.createOrderOperation(operation, 'WOOCOMMERCE', store),
         'pedido WooCommerce recibido',

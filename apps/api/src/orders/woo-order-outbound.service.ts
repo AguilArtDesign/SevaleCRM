@@ -17,6 +17,14 @@ export class WooOrderOutboundError extends Error {
   }
 }
 
+/** Resultado de sincronizar un pedido de tienda, para que la traza pueda dejarlo escrito. */
+export type OrderSyncOutcome = {
+  operationId: number;
+  provider: Store;
+  status: 'SYNCED' | 'ERROR';
+  message: string | null;
+};
+
 function storeLabel(store: Store): string {
   return store === 'SERATUS' ? 'Seratus' : 'Pali';
 }
@@ -239,12 +247,12 @@ export class WooOrderOutboundService {
     private readonly wooCommerce: WooCommerceService,
   ) {}
 
-  async synchronize(orderIds: number[]): Promise<void> {
+  async synchronize(orderIds: number[]): Promise<OrderSyncOutcome[]> {
     const orders = await this.orders.outboundOrders(orderIds);
-    await Promise.all(orders.map((order) => this.synchronizeOrder(order)));
+    return Promise.all(orders.map((order) => this.synchronizeOrder(order)));
   }
 
-  private async synchronizeOrder(order: OutboundOrder): Promise<void> {
+  private async synchronizeOrder(order: OutboundOrder): Promise<OrderSyncOutcome> {
     try {
       const externalCustomerId = customerExternalId(order);
       const key = externalKey(order);
@@ -256,26 +264,35 @@ export class WooOrderOutboundService {
       const result =
         existing ??
         (await this.wooCommerce.createOrder(order.store, orderPayload(order, externalCustomerId)));
-      await this.confirm(order.id, order.store, result);
+      return await this.confirm(order, result);
     } catch (error) {
       const message = safeIntegrationMessage(error, order.store);
       await this.orders.markOrderError(order.id, `${order.store}_ORDER_CREATE_FAILED`, message);
+      return { operationId: order.operationId, provider: order.store, status: 'ERROR', message };
     }
   }
 
   private async confirm(
-    orderId: number,
-    store: Store,
+    order: OutboundOrder,
     result: WooCommerceOrderReference,
-  ): Promise<void> {
+  ): Promise<OrderSyncOutcome> {
+    const synced: OrderSyncOutcome = {
+      operationId: order.operationId,
+      provider: order.store,
+      status: 'SYNCED',
+      message: null,
+    };
     try {
-      await this.orders.markOrderSynced(orderId, result);
+      await this.orders.markOrderSynced(order.id, result);
+      return synced;
     } catch {
+      const message = `${storeLabel(order.store)} creó el pedido, pero el CRM no pudo guardar su identificador. Reintenta la sincronización para recuperarlo.`;
       await this.orders.markOrderError(
-        orderId,
-        `${store}_ORDER_CONFIRMATION_FAILED`,
-        `${storeLabel(store)} creó el pedido, pero el CRM no pudo guardar su identificador. Reintenta la sincronización para recuperarlo.`,
+        order.id,
+        `${order.store}_ORDER_CONFIRMATION_FAILED`,
+        message,
       );
+      return { ...synced, status: 'ERROR', message };
     }
   }
 }

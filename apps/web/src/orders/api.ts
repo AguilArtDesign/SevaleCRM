@@ -277,6 +277,31 @@ export type CustomerOrderRecord = {
   coupons: Array<{ id: number; code: string; discountTotal: string }>;
 };
 
+/** Cada campo que cambió en una edición, con el valor guardado antes y después. */
+export type OrderEventChange = { field: string; from: unknown; to: unknown };
+
+export type OrderEventRecord = {
+  id: number;
+  operationId: number | null;
+  action: 'CREATED' | 'UPDATED' | 'COMPLETED' | 'SYNCED' | 'QUOTED' | 'DELETED';
+  /** `BACKFILL` marca las filas reconstruidas; hoy no se escriben, pero el panel las tolera. */
+  origin: 'LIVE' | 'BACKFILL';
+  actor: { id: string; name: string; email: string } | null;
+  operationCode: string;
+  customerName: string | null;
+  changes: OrderEventChange[];
+  /** `SERATUS` y `PALI` en las sincronizaciones, `SIIGO` en la cotización. */
+  provider: 'SERATUS' | 'PALI' | 'SIIGO' | null;
+  outcome: 'SYNCED' | 'ERROR' | null;
+  message: string | null;
+  createdAt: string;
+};
+
+export type OrderActivityResponse = {
+  data: OrderEventRecord[];
+  pagination: { page: number; pageSize: number; total: number; totalPages: number };
+};
+
 type ApiErrorBody = { message?: string; error?: { message?: string } };
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -314,6 +339,13 @@ export const ordersApi = {
     return request<CustomerOrdersResponse>(`/api/orders/customer/${customerId}?${query}`);
   },
   detail: (id: number) => request<OrderDetailRecord>(`/api/orders/${id}`),
+  activity: (id: number, page = 1, pageSize = 50) =>
+    request<OrderActivityResponse>(
+      `/api/orders/${id}/activity?${new URLSearchParams({
+        page: String(page),
+        pageSize: String(pageSize),
+      })}`,
+    ),
   create: (input: CreateOrderOperationInput) =>
     request<OrderDetailRecord>('/api/orders', { method: 'POST', body: JSON.stringify(input) }),
   update: (id: number, input: UpdateOrderOperationInput) =>
