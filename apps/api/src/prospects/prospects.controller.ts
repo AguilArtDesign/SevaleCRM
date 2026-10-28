@@ -84,10 +84,11 @@ export class ProspectsController {
   // El cuerpo es el mismo que `POST /customers`: la conversión no inventa un contrato paralelo.
   @Post(':id/convert')
   @RequirePermissions('prospects.convert')
-  convert(@Param('id') id: string, @Body() body: unknown) {
+  convert(@Param('id') id: string, @Body() body: unknown, @Req() request: AuthenticatedRequest) {
     return this.prospects.convert(
       parseInput(prospectIdSchema, id),
       parseInput(prospectConvertSchema, body),
+      request.auth.user.id,
     );
   }
 

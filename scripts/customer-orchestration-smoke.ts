@@ -221,6 +221,7 @@ function customerFromState(): CustomerWithIntegrations {
     vatResponsible: false,
     fiscalResponsibilities: ['R-99-PN'],
     active: true,
+    createdByUserId: null,
     createdAt: now,
     updatedAt: now,
     deletedAt: null,

@@ -10,6 +10,8 @@ import { SiigoCustomerService } from './integrations/siigo-customer.service.js';
 import { WooCustomerService } from './integrations/woo-customer.service.js';
 import { CustomersRepository } from './customers.repository.js';
 import { CustomersService } from './customers.service.js';
+import { CustomerEventsRepository } from './customer-events.repository.js';
+import { CustomerEventsService } from './customer-events.service.js';
 import { CustomerDraftResolverService } from './customer-draft-resolver.service.js';
 import { CustomerLocationsService } from './mapping/customer-locations.service.js';
 import { SiigoCustomerMapper } from './mapping/siigo-customer.mapper.js';
@@ -25,6 +27,8 @@ import { WooCustomerMapper } from './mapping/woo-customer.mapper.js';
     CustomerDraftResolverService,
     CustomerIntegrationsRepository,
     CustomerIntegrationService,
+    CustomerEventsRepository,
+    CustomerEventsService,
     CustomerLocationsService,
     SiigoCustomerMapper,
     WooCustomerMapper,

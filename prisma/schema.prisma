@@ -57,6 +57,52 @@ enum CustomerIntegrationStatus {
   ERROR
 }
 
+/// Qué le pasó al cliente en la traza. Es el historial de responsabilidades, no un log técnico: por
+/// eso no incluye reintentos internos ni consultas.
+enum CustomerEventAction {
+  CREATED
+  UPDATED
+  SYNCED
+  DELETED
+}
+
+/// De dónde salió el registro. `BACKFILL` marca lo reconstruido al estrenar la traza: la acción sí
+/// ocurrió, pero no la registró el sistema en su momento y conviene poder distinguirlo.
+enum CustomerEventOrigin {
+  LIVE
+  BACKFILL
+}
+
+/// Resultado de una sincronización, en los valores que ve el panel.
+enum CustomerEventOutcome {
+  SYNCED
+  ERROR
+}
+
+/// Qué le pasó a la operación en la traza. Es el historial de responsabilidades del pedido, no un
+/// log técnico: no incluye ítems ni reintentos internos.
+enum OrderEventAction {
+  CREATED
+  UPDATED
+  COMPLETED
+  SYNCED
+  QUOTED
+  DELETED
+}
+
+/// De dónde salió el registro. `BACKFILL` marca lo reconstruido al estrenar la traza: la acción sí
+/// ocurrió, pero no la registró el sistema en su momento.
+enum OrderEventOrigin {
+  LIVE
+  BACKFILL
+}
+
+/// Resultado de una sincronización o de una cotización, en los valores que ve el panel.
+enum OrderEventOutcome {
+  SYNCED
+  ERROR
+}
+
 enum OrderSource {
   CRM
   WOOCOMMERCE
@@ -105,6 +151,9 @@ model User {
   notificationReads      NotificationRead[]
   productSyncJobs        ProductSyncJob[]
   orderOperations        OrderOperation[]   @relation("OrderOperationCreatedBy")
+  customersCreated       Customer[]         @relation("CustomerCreatedBy")
+  customerEvents         CustomerEvent[]    @relation("CustomerEventActor")
+  orderEvents            OrderEvent[]       @relation("OrderEventActor")
   shipmentEvents         ShipmentEvent[]    @relation("ShipmentEventCreatedBy")
   agreementsCreated      Agreement[]        @relation("AgreementCreatedBy")
   agreementComments      AgreementComment[] @relation("AgreementCommentAuthor")
@@ -186,17 +235,23 @@ model Customer {
   vatResponsible         Boolean               @default(false) @map("vat_responsible")
   fiscalResponsibilities Json                  @map("fiscal_responsibilities")
   active                 Boolean               @default(true)
+  /// Quién dio de alta el cliente. Nulo en los que se importaron desde la tienda sin sesión de
+  /// usuario. `SetNull` para que borrar al usuario no borre al cliente.
+  createdByUserId        String?               @map("created_by_user_id") @db.VarChar(36)
   createdAt              DateTime              @default(now()) @map("created_at")
   updatedAt              DateTime              @updatedAt @map("updated_at")
   deletedAt              DateTime?             @map("deleted_at")
+  createdBy              User?                 @relation("CustomerCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
   agreement              Agreement?            @relation(fields: [agreementId], references: [id], onDelete: SetNull)
   integrations           CustomerIntegration[]
+  events                 CustomerEvent[]
   notifications          Notification[]
   orderOperations        OrderOperation[]
   convertedProspects     Prospect[]            @relation("ProspectConvertedCustomer")
 
   @@unique([documentType, documentNumber])
   @@index([agreementId])
+  @@index([createdByUserId])
   @@index([documentNumber])
   @@index([email])
   @@index([displayName])
@@ -225,6 +280,40 @@ model CustomerIntegration {
   @@unique([provider, externalId])
   @@index([status])
   @@map("customer_integrations")
+}
+
+/// Traza de responsabilidades sobre un cliente: quién lo creó, quién cambió qué y cuándo, y quién
+/// disparó cada sincronización. Es inmutable: se inserta y se lee, nunca se edita ni se borra, ni
+/// siquiera por el administrador, porque su valor es servir de prueba.
+///
+/// El nombre del usuario y del cliente se copian en la fila. Un usuario se borra físicamente y un
+/// cliente también: sin la copia, la traza perdería el nombre de quien actuó justo cuando más hace
+/// falta consultarla.
+model CustomerEvent {
+  id               Int                          @id @default(autoincrement())
+  customerId       Int?                         @map("customer_id")
+  action           CustomerEventAction
+  origin           CustomerEventOrigin          @default(LIVE)
+  userId           String?                      @map("user_id") @db.VarChar(36)
+  /// Nombre del usuario en el momento del evento; sobrevive al borrado de la cuenta.
+  userName         String?                      @map("user_name") @db.VarChar(191)
+  /// Nombre y documento del cliente en el momento del evento; sobreviven al borrado del cliente.
+  customerName     String?                      @map("customer_name") @db.VarChar(255)
+  customerDocument String?                      @map("customer_document") @db.VarChar(20)
+  /// Campos que cambiaron, como `[{ field, from, to }]`. Solo en `UPDATED`.
+  changes          Json?
+  provider         CustomerIntegrationProvider?
+  outcome          CustomerEventOutcome?
+  /// Motivo del fallo de sincronización, para no tener que abrir los logs técnicos.
+  message          String?                      @db.Text
+  createdAt        DateTime                     @default(now()) @map("created_at")
+  customer         Customer?                    @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  user             User?                        @relation("CustomerEventActor", fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([customerId, createdAt])
+  @@index([userId, createdAt])
+  @@index([createdAt])
+  @@map("customer_events")
 }
 
 model Session {
@@ -381,23 +470,23 @@ enum IntegrationLogOutcome {
  * se purga por antigüedad.
  */
 model IntegrationLog {
-  id            Int                  @id @default(autoincrement())
-  integration   String               @db.VarChar(50)
-  operation     String               @db.VarChar(100)
+  id            Int                   @id @default(autoincrement())
+  integration   String                @db.VarChar(50)
+  operation     String                @db.VarChar(100)
   outcome       IntegrationLogOutcome
-  method        String?              @db.VarChar(10)
-  url           String?              @db.Text
-  statusCode    Int?                 @map("status_code")
-  code          String?              @db.VarChar(100)
-  message       String?              @db.Text
-  requestBody   String?              @map("request_body") @db.LongText
-  responseBody  String?              @map("response_body") @db.LongText
-  durationMs    Int?                 @map("duration_ms")
-  referenceType String?              @map("reference_type") @db.VarChar(50)
-  referenceId   String?              @map("reference_id") @db.VarChar(64)
-  userId        String?              @map("user_id") @db.VarChar(36)
-  createdAt     DateTime             @default(now()) @map("created_at")
-  user          User?                @relation(fields: [userId], references: [id], onDelete: SetNull)
+  method        String?               @db.VarChar(10)
+  url           String?               @db.Text
+  statusCode    Int?                  @map("status_code")
+  code          String?               @db.VarChar(100)
+  message       String?               @db.Text
+  requestBody   String?               @map("request_body") @db.LongText
+  responseBody  String?               @map("response_body") @db.LongText
+  durationMs    Int?                  @map("duration_ms")
+  referenceType String?               @map("reference_type") @db.VarChar(50)
+  referenceId   String?               @map("reference_id") @db.VarChar(64)
+  userId        String?               @map("user_id") @db.VarChar(36)
+  createdAt     DateTime              @default(now()) @map("created_at")
+  user          User?                 @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   @@index([createdAt])
   @@index([integration])
@@ -457,6 +546,7 @@ model OrderOperation {
   orders              Order[]
   shipment            Shipment?
   siigoQuotation      SiigoQuotation?
+  events              OrderEvent[]
   notifications       Notification[]
 
   @@index([customerId])
@@ -607,6 +697,41 @@ model SiigoQuotation {
 
   @@index([status])
   @@map("siigo_quotations")
+}
+
+/// Traza de responsabilidades sobre una operación: quién la creó, quién la editó, quién la completó
+/// y qué pasó con cada sincronización y cotización. Inmutable, igual que `CustomerEvent`: se inserta
+/// y se lee, nunca se edita ni se borra.
+///
+/// El código de operación y el nombre del cliente se copian en la fila porque la operación se borra
+/// físicamente; sin la copia la traza no diría de qué pedido hablaba.
+model OrderEvent {
+  id            Int                @id @default(autoincrement())
+  operationId   Int?               @map("operation_id")
+  action        OrderEventAction
+  origin        OrderEventOrigin   @default(LIVE)
+  userId        String?            @map("user_id") @db.VarChar(36)
+  /// Nombre del usuario en el momento del evento; sobrevive al borrado de la cuenta.
+  userName      String?            @map("user_name") @db.VarChar(191)
+  /// Código de la operación en el momento del evento; sobrevive al borrado del pedido.
+  operationCode String             @map("operation_code") @db.VarChar(32)
+  customerName  String?            @map("customer_name") @db.VarChar(255)
+  /// Campos que cambiaron, como `[{ field, from, to }]`. Solo en `UPDATED` y sin ítems.
+  changes       Json?
+  /// Tienda o integración del evento: `SERATUS` y `PALI` en las sincronizaciones, `SIIGO` en la
+  /// cotización.
+  provider      String?            @db.VarChar(20)
+  outcome       OrderEventOutcome?
+  /// Motivo del fallo, para no tener que abrir los logs técnicos.
+  message       String?            @db.Text
+  createdAt     DateTime           @default(now()) @map("created_at")
+  operation     OrderOperation?    @relation(fields: [operationId], references: [id], onDelete: SetNull)
+  user          User?              @relation("OrderEventActor", fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([operationId, createdAt])
+  @@index([userId, createdAt])
+  @@index([createdAt])
+  @@map("order_events")
 }
 
 model WooOrderDelivery {

@@ -65,6 +65,30 @@ export type CustomerListResponse = {
   pagination: { page: number; pageSize: number; total: number; totalPages: number };
 };
 
+/** Cada campo que cambió en una edición, con el valor guardado antes y después. */
+export type CustomerEventChange = { field: string; from: unknown; to: unknown };
+
+export type CustomerEventRecord = {
+  id: number;
+  customerId: number | null;
+  action: 'CREATED' | 'UPDATED' | 'SYNCED' | 'DELETED';
+  /** `BACKFILL` marca las filas reconstruidas para clientes que ya existían; no las creó el panel. */
+  origin: 'LIVE' | 'BACKFILL';
+  actor: { id: string; name: string; email: string } | null;
+  customerName: string | null;
+  customerDocument: string | null;
+  changes: CustomerEventChange[];
+  provider: CustomerIntegration['provider'] | null;
+  outcome: 'SYNCED' | 'ERROR' | null;
+  message: string | null;
+  createdAt: string;
+};
+
+export type CustomerActivityResponse = {
+  data: CustomerEventRecord[];
+  pagination: { page: number; pageSize: number; total: number; totalPages: number };
+};
+
 export type SiigoCustomerDraft = Omit<CreateCustomerInput, 'documentType'> & {
   documentType: CreateCustomerInput['documentType'] | null;
   active: boolean;
@@ -170,6 +194,13 @@ export const customersApi = {
     return apiRequest<CustomerListResponse>(`/api/customers?${query}`);
   },
   detail: (id: number) => apiRequest<CustomerRecord>(`/api/customers/${id}`),
+  activity: (id: number, page = 1, pageSize = 50) =>
+    apiRequest<CustomerActivityResponse>(
+      `/api/customers/${id}/activity?${new URLSearchParams({
+        page: String(page),
+        pageSize: String(pageSize),
+      })}`,
+    ),
   exportCustomers: (ids: number[]) =>
     download('/api/customers/export', { method: 'POST', body: JSON.stringify({ ids }) }),
   resolve: (identification: string, documentType: string) =>

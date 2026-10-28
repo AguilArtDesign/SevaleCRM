@@ -22,6 +22,7 @@ import {
 import {
   ArrowDownToLine,
   ArrowRotateRight,
+  ClockArrowRotateLeft,
   EllipsisVertical,
   Eye,
   PaperPlane,
@@ -52,6 +53,7 @@ import { Select } from '../components/Select';
 import { useFormattedPhone } from '../components/useFormattedPhone';
 import { useCurrentUser } from '../users/useCurrentUser';
 import { CustomerForm } from './CustomerForm';
+import { CustomerActivityModal } from './CustomerActivityModal';
 import { CustomerOrderPanel } from './CustomerOrderPanel';
 import { CustomerOrders } from './CustomerOrders';
 import { customerAvatarClass, customerDisplayName, customerInitials } from './presentation';
@@ -374,6 +376,7 @@ export function CustomersPage() {
   const [selectedOrder, setSelectedOrder] = useState<CustomerOrderRecord | null>(null);
   const [selectedKeys, setSelectedKeys] = useState<Selection>(new Set());
   const [deleteTarget, setDeleteTarget] = useState<CustomerRecord | null>(null);
+  const [activityTarget, setActivityTarget] = useState<CustomerRecord | null>(null);
   const retryingProvidersRef = useRef(new Set<CustomerProvider>());
   const [retryingProviders, setRetryingProviders] = useState<Set<CustomerProvider>>(new Set());
   const [siigoResolutionTarget, setSiigoResolutionTarget] = useState<CustomerRecord | null>(null);
@@ -980,6 +983,9 @@ export function CustomersPage() {
                                 if (String(key) === 'view') setSelectedId(customer.id);
                                 if (String(key) === 'edit' && canManageCustomers)
                                   openEdit(customer);
+                                if (String(key) === 'activity' && isAdmin) {
+                                  setActivityTarget(customer);
+                                }
                                 if (String(key) === 'delete' && isAdmin) {
                                   setDeleteTarget(customer);
                                 }
@@ -1003,6 +1009,13 @@ export function CustomersPage() {
                               {isAdmin && <Separator />}
                               {isAdmin && (
                                 <Dropdown.Section>
+                                  <Dropdown.Item id="activity" textValue="Ver actividad">
+                                    <ClockArrowRotateLeft
+                                      className="size-4 shrink-0 text-muted"
+                                      aria-hidden="true"
+                                    />
+                                    <Label>Actividad</Label>
+                                  </Dropdown.Item>
                                   <Dropdown.Item
                                     id="delete"
                                     textValue="Eliminar cliente"
@@ -1211,6 +1224,10 @@ export function CustomersPage() {
       </Drawer>
 
       <CustomerOrderPanel order={selectedOrder} onClose={() => setSelectedOrder(null)} />
+
+      {isAdmin && (
+        <CustomerActivityModal customer={activityTarget} onClose={() => setActivityTarget(null)} />
+      )}
 
       {isAdmin && (
         <AlertDialog

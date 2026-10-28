@@ -15,6 +15,7 @@ import {
 } from '@nestjs/common';
 import {
   createCustomerSchema,
+  customerActivityQuerySchema,
   customerExportSchema,
   customerIdSchema,
   customerListQuerySchema,
@@ -70,6 +71,15 @@ export class CustomersController {
     return this.customers.resolve(input.identification, input.documentType);
   }
 
+  @Get(':id/activity')
+  @RequirePermissions('customers.activity.read')
+  activity(@Param('id') id: string, @Query() query: unknown) {
+    return this.customers.activity(
+      parseInput(customerIdSchema, id),
+      parseInput(customerActivityQuerySchema, query),
+    );
+  }
+
   @Get(':id')
   @RequirePermissions('customers.read')
   detail(@Param('id') id: string, @Req() request: AuthenticatedRequest) {
@@ -84,6 +94,7 @@ export class CustomersController {
   create(@Body() body: unknown, @Req() request: AuthenticatedRequest) {
     return this.customers.create(
       parseInput(createCustomerSchema, body),
+      request.auth.user.id,
       canViewIntegrationErrors(request),
     );
   }
@@ -94,6 +105,7 @@ export class CustomersController {
     return this.customers.update(
       parseInput(customerIdSchema, id),
       parseInput(updateCustomerSchema, body),
+      request.auth.user.id,
       canViewIntegrationErrors(request),
     );
   }
@@ -103,6 +115,7 @@ export class CustomersController {
   remove(@Param('id') id: string, @Req() request: AuthenticatedRequest) {
     return this.customers.remove(
       parseInput(customerIdSchema, id),
+      request.auth.user.id,
       canViewIntegrationErrors(request),
     );
   }
@@ -126,6 +139,7 @@ export class CustomersController {
     return this.customers.sync(
       parseInput(customerIdSchema, id),
       parseInput(customerSyncSchema, body),
+      request.auth.user.id,
       canViewIntegrationErrors(request),
     );
   }

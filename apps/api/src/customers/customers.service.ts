@@ -11,6 +11,7 @@ import { RealtimeGateway } from '../realtime/realtime.gateway.js';
 import {
   createCustomerSchema,
   type CreateCustomerInput,
+  type CustomerActivityQuery,
   type CustomerListQuery,
   type CustomerSyncInput,
   type N8nCustomerLookupInput,
@@ -39,6 +40,7 @@ import {
 import { CustomersRepository } from './customers.repository.js';
 import { createCustomersWorkbook } from './customer-export.js';
 import { CustomerIntegrationService } from './customer-integration.service.js';
+import { CustomerEventsService } from './customer-events.service.js';
 import { CustomerDraftResolverService } from './customer-draft-resolver.service.js';
 import { documentTypeToWoo } from './customer-document-type.mapping.js';
 import { integrationErrorCode } from '../integrations/integration-http.js';
@@ -277,6 +279,7 @@ export class CustomersService {
     private readonly siigoCustomers: SiigoCustomerService,
     private readonly wooCustomers: WooCustomerService,
     private readonly customerDraftResolver: CustomerDraftResolverService,
+    private readonly events: CustomerEventsService,
   ) {}
 
   async list(query: CustomerListQuery, includeIntegrationErrors = false) {
@@ -301,6 +304,16 @@ export class CustomersService {
     return serializeCustomer(customer, includeIntegrationErrors);
   }
 
+  /**
+   * Traza de la ficha. Se comprueba primero el cliente para no devolver una lista vacía cuando el
+   * identificador no existe: "sin actividad" y "no existe" no significan lo mismo para quien audita.
+   */
+  async activity(id: number, query: CustomerActivityQuery) {
+    const customer = await this.customers.findById(id);
+    if (!customer) throw new NotFoundException('El cliente no existe.');
+    return this.events.list(id, query);
+  }
+
   /** Exporta los clientes seleccionados a un `.xlsx` legible, con nombres en vez de códigos. */
   async export(ids: number[]) {
     const customers = await this.customers.findByIds(ids);
@@ -322,7 +335,11 @@ export class CustomersService {
     return this.customerDraftResolver.resolve(identification, documentType);
   }
 
-  async create(input: CreateCustomerInput, includeIntegrationErrors = false) {
+  async create(
+    input: CreateCustomerInput,
+    userId: string | null,
+    includeIntegrationErrors = false,
+  ) {
     const sanitized = sanitizeCustomerInput(input);
     validateLocation(sanitized);
     await this.validateAgreement(sanitized.agreementId);
@@ -351,6 +368,8 @@ export class CustomersService {
       const customer = await this.customers.create({
         ...sanitized,
         active: siigoMatch?.prefill.active ?? true,
+        // Queda en la ficha y en la traza: es el dato que responde "quién lo dio de alta".
+        createdByUserId: userId,
         fiscalResponsibilities: sanitized.fiscalResponsibilities,
         integrations: {
           create: [
@@ -372,6 +391,7 @@ export class CustomersService {
       for (const integration of customer.integrations) {
         this.realtime.emitCustomerIntegrationUpdated(customer, integration);
       }
+      await this.events.recordCreated(customer, userId);
       return serializeCustomer(customer, includeIntegrationErrors);
     } catch (error) {
       if (isUniqueConstraintError(error)) {
@@ -381,7 +401,12 @@ export class CustomersService {
     }
   }
 
-  async update(id: number, input: UpdateCustomerInput, includeIntegrationErrors = false) {
+  async update(
+    id: number,
+    input: UpdateCustomerInput,
+    userId: string,
+    includeIntegrationErrors = false,
+  ) {
     const current = await this.customers.findById(id);
     if (!current) throw new NotFoundException('El cliente no existe.');
 
@@ -442,6 +467,7 @@ export class CustomersService {
       for (const integration of customer.integrations) {
         this.realtime.emitCustomerIntegrationUpdated(customer, integration);
       }
+      await this.events.recordUpdated(current, customer, userId);
       return serializeCustomer(customer, includeIntegrationErrors);
     } catch (error) {
       if (isUniqueConstraintError(error)) {
@@ -451,7 +477,12 @@ export class CustomersService {
     }
   }
 
-  async sync(id: number, input: CustomerSyncInput, includeIntegrationErrors = false) {
+  async sync(
+    id: number,
+    input: CustomerSyncInput,
+    userId: string | null,
+    includeIntegrationErrors = false,
+  ) {
     const customer = await this.customers.findById(id);
     if (!customer) throw new NotFoundException('El cliente no existe.');
     const providers = input.provider
@@ -472,10 +503,11 @@ export class CustomersService {
     for (const result of results) {
       this.realtime.emitCustomerIntegrationUpdated(synchronized, result);
     }
+    await this.events.recordSynced(synchronized, results, userId);
     return serializeCustomer(synchronized, includeIntegrationErrors);
   }
 
-  async remove(id: number, includeIntegrationErrors = false) {
+  async remove(id: number, userId: string | null, includeIntegrationErrors = false) {
     const customer = await this.customers.findById(id);
     if (!customer) throw new NotFoundException('El cliente no existe.');
     // El bloqueo por pedidos se comprueba antes de tocar las tiendas: si el borrado local va a
@@ -486,6 +518,7 @@ export class CustomersService {
       const deleted = await this.customers.delete(id);
       if (!deleted) throw customerHasOrders();
       this.realtime.emitCustomerDeleted(deleted);
+      await this.events.recordDeleted(customer, userId);
       return serializeCustomer(deleted, includeIntegrationErrors);
     } catch (error) {
       if (isForeignKeyConstraintError(error)) throw customerHasOrders();
@@ -567,6 +600,8 @@ export class CustomersService {
         ? await this.customers.linkIntegrations(customerId, integrations)
         : await this.customers.findById(customerId);
     if (!linked) throw new ConflictException('No pudimos registrar el cliente.');
+    // Sin usuario: el alta la hizo una integración, y la traza lo dice así en vez de inventar autor.
+    if (created) await this.events.recordCreated(created, null);
     return { success: true, created: !existing, customer: serializeCustomer(linked, true) };
   }
 

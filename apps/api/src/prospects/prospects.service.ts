@@ -474,7 +474,7 @@ export class ProspectsService {
 
   // --- Conversión ----------------------------------------------------------------------------
 
-  async convert(id: number, input: ProspectConvertInput) {
+  async convert(id: number, input: ProspectConvertInput, userId: string) {
     const prospect = await this.ensureEditable(id);
     // Convertir exige la ficha completa: si falta algo se dice exactamente qué, en lugar de crear
     // un cliente a medias que nadie terminará de completar.
@@ -488,10 +488,13 @@ export class ProspectsService {
     }
     // El cliente hereda el convenio del prospecto cuando el formulario no eligió otro. Si no, el
     // vínculo se perdería justo al convertir, que es cuando más importa conservarlo.
-    const customer = await this.customers.create({
-      ...input,
-      agreementId: input.agreementId ?? prospect.agreementId,
-    });
+    const customer = await this.customers.create(
+      {
+        ...input,
+        agreementId: input.agreementId ?? prospect.agreementId,
+      },
+      userId,
+    );
     // `CustomersService.create` no acepta una transacción externa y no se refactoriza por esto.
     // Si el marcado fallara, el cliente ya existe: se informa su id para que el reintento lo
     // vincule en lugar de duplicarlo.

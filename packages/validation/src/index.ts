@@ -333,6 +333,16 @@ export const customerExportSchema = z.object({
     .transform((ids) => [...new Set(ids)]),
 });
 
+// Traza de responsabilidades del cliente: quién lo creó, quién cambió qué y quién sincronizó.
+export const customerActivityQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(50),
+});
+
+// Traza de responsabilidades del pedido: quién lo creó, quién lo editó, quién lo completó y qué
+// pasó con cada sincronización y cotización.
+export const orderActivityQuerySchema = customerActivityQuerySchema;
+
 export const customerSiigoLookupSchema = z.object({
   identification: z
     .string()
@@ -1123,6 +1133,8 @@ export type CustomerListQuery = z.infer<typeof customerListQuerySchema>;
 export type CustomerSyncStatusFilter = z.infer<typeof customerSyncStatusFilterSchema>;
 export type CustomerSiigoLookupQuery = z.infer<typeof customerSiigoLookupSchema>;
 export type CustomerResolveQuery = z.infer<typeof customerResolveQuerySchema>;
+export type CustomerActivityQuery = z.infer<typeof customerActivityQuerySchema>;
+export type OrderActivityQuery = z.infer<typeof orderActivityQuerySchema>;
 export type CustomerSyncInput = z.infer<typeof customerSyncSchema>;
 export type CustomerSiigoLocationInput = z.infer<typeof customerSiigoLocationSchema>;
 export type CreateCouponInput = z.infer<typeof createCouponSchema>;

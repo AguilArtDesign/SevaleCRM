@@ -2320,6 +2320,178 @@ select {
   color: var(--foreground);
 }
 
+/* Traza de actividad del cliente. Los eventos se leen como una línea de tiempo: el marcador de la
+   izquierda dice de qué tipo es el movimiento y el cuerpo queda alineado con él. */
+.customer-activity-modal .modal__header {
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--separator);
+}
+
+.customer-activity-modal .modal__header p {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.customer-activity-list {
+  display: grid;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.customer-activity-item {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1.75rem minmax(0, 1fr);
+  gap: 0.75rem;
+  padding-bottom: 1.25rem;
+}
+
+/* La guía vertical une los marcadores y se corta en el último evento. */
+.customer-activity-item::before {
+  position: absolute;
+  top: 1.75rem;
+  bottom: 0;
+  left: 0.86rem;
+  width: 1px;
+  background: var(--separator);
+  content: '';
+}
+
+.customer-activity-item:last-child {
+  padding-bottom: 0;
+}
+
+.customer-activity-item:last-child::before {
+  display: none;
+}
+
+.customer-activity-marker {
+  display: grid;
+  width: 1.75rem;
+  height: 1.75rem;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--surface-secondary);
+  color: var(--muted);
+}
+
+.customer-activity-item--success .customer-activity-marker {
+  background: color-mix(in oklch, var(--success) 20%, transparent);
+  color: var(--success);
+}
+
+.customer-activity-item--warning .customer-activity-marker {
+  background: color-mix(in oklch, var(--warning) 25%, transparent);
+  color: var(--warning-foreground);
+}
+
+.customer-activity-item--danger .customer-activity-marker {
+  background: color-mix(in oklch, var(--danger) 18%, transparent);
+  color: var(--danger);
+}
+
+.customer-activity-body {
+  display: grid;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.customer-activity-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.customer-activity-head strong {
+  font-size: 0.88rem;
+  font-weight: 600;
+}
+
+.customer-activity-head time {
+  color: var(--muted);
+  font-size: 0.76rem;
+  white-space: nowrap;
+}
+
+.customer-activity-action {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.customer-activity-changes {
+  display: grid;
+  gap: 0.25rem;
+  margin: 0.15rem 0 0;
+  padding: 0.5rem 0.65rem;
+  list-style: none;
+  border-radius: var(--radius);
+  background: var(--surface-secondary);
+  font-size: 0.78rem;
+}
+
+.customer-activity-changes li {
+  display: flex;
+  align-items: baseline;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+
+.customer-activity-field {
+  font-weight: 500;
+}
+
+.customer-activity-field::after {
+  content: ':';
+}
+
+.customer-activity-from {
+  color: var(--muted);
+  text-decoration: line-through;
+}
+
+.customer-activity-arrow {
+  color: var(--muted);
+}
+
+.customer-activity-to {
+  font-weight: 500;
+}
+
+.customer-activity-message {
+  margin: 0;
+  color: var(--danger);
+  font-size: 0.78rem;
+  overflow-wrap: anywhere;
+}
+
+/* Una sincronización correcta también puede traer texto —por ejemplo, el número de la cotización o
+   el aviso de un dato reconstruido—. Sin esta variante, todo mensaje se leía como un fallo. */
+.customer-activity-message--info {
+  color: var(--muted);
+}
+
+.customer-activity-page {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+/* Distintivo de dato reconstruido: se lee como etiqueta, no como texto suelto, para que nadie
+   confunda un alta deducida con un alta registrada por el sistema. */
+.customer-activity-flag {
+  padding: 0 0.4rem;
+  border: 1px dashed var(--border);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 0.72rem;
+  line-height: 1.4;
+}
+
 .customer-form-modal .modal__header,
 .user-form-modal .modal__header,
 .customer-detail-drawer .drawer__header {

@@ -16,6 +16,9 @@ export const permissions = [
   'customers.disable',
   'customers.delete',
   'customers.sync',
+  // Traza de responsabilidades del cliente. Solo el administrador: sirve para auditar a los
+  // comerciales y el propio comercial no debería poder consultar ni interpretar ese historial.
+  'customers.activity.read',
   'orders.read',
   'orders.create',
   'orders.update',
@@ -24,6 +27,9 @@ export const permissions = [
   'orders.shipping.update',
   'orders.siigo_quote.create',
   'orders.sync.retry',
+  // Traza de responsabilidades del pedido. Solo el administrador, por la misma razón que la del
+  // cliente: sirve para auditar a los comerciales.
+  'orders.activity.read',
   'coupons.read',
   'coupons.create',
   'coupons.update',
