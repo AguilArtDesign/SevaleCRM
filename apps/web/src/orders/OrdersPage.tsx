@@ -41,6 +41,7 @@ import { OrderForm } from './OrderForm';
 import {
   addressLines,
   allowsShipment,
+  allowsSiigoQuotation,
   formattedDate,
   formattedMoneyWithCode,
   OrderAddress,
@@ -810,13 +811,15 @@ export function OrdersPage() {
                                 <>
                                   <Separator />
                                   <Dropdown.Section>
-                                    <Dropdown.Item
-                                      id="siigo-quotation"
-                                      textValue="Cotización Siigo"
-                                    >
-                                      <FileText className="size-4 shrink-0 text-muted" />
-                                      <Label>Cotización Siigo</Label>
-                                    </Dropdown.Item>
+                                    {allowsSiigoQuotation(order) && (
+                                      <Dropdown.Item
+                                        id="siigo-quotation"
+                                        textValue="Cotización Siigo"
+                                      >
+                                        <FileText className="size-4 shrink-0 text-muted" />
+                                        <Label>Cotización Siigo</Label>
+                                      </Dropdown.Item>
+                                    )}
                                     {/* Todavía sin funcionalidad: se activará más adelante. */}
                                     <Dropdown.Item
                                       id="colombia-points"

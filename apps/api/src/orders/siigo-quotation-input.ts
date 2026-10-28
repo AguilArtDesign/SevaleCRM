@@ -112,6 +112,24 @@ function currencyRule(currency: string): (typeof taxRules)[QuotationCurrency] | 
 }
 
 /**
+ * Estados de WooCommerce con el pedido todavía abierto. Completado, cancelado, reembolsado y fallido
+ * ya cerraron el pedido, así que cotizarlos sería ofrecer algo que ya se vendió o se perdió.
+ */
+const quotableWooStatuses = new Set(['pending', 'processing', 'on-hold']);
+
+/**
+ * Un pedido del CRM que todavía no existe en WooCommerce no tiene estado de tienda: sigue pendiente
+ * y la cotización se arma con los datos del CRM, así que no depende de la tienda.
+ */
+function hasOpenOrder(operation: QuotationOperation): boolean {
+  return operation.orders.some((order) => {
+    const wooStatus = order.wooStatus?.trim().toLocaleLowerCase('en') ?? '';
+    if (!wooStatus) return operation.status === 'PENDING';
+    return quotableWooStatuses.has(wooStatus);
+  });
+}
+
+/**
  * Traduce la operación del CRM al documento que espera Siigo. El cupón del CRM es un porcentaje y
  * Siigo lo aplica por producto, así que se envía el mismo porcentaje a cada ítem. Un producto con
  * precio cambiado a mano queda fuera del cupón: viaja con su precio y sin descuento.
@@ -161,6 +179,17 @@ export function buildQuotation(
     issues.push({
       code: 'SIIGO_QUOTATION_WITHOUT_ITEMS',
       message: 'La operación no contiene productos para cotizar.',
+    });
+  }
+
+  // La cotización solo tiene sentido mientras el pedido sigue abierto en la tienda. El panel aplica
+  // la misma regla para esconder la acción; aquí se vuelve a comprobar porque la ruta se puede
+  // llamar directamente. Basta con que un pedido de la operación siga abierto.
+  if (!hasOpenOrder(operation)) {
+    issues.push({
+      code: 'SIIGO_QUOTATION_ORDER_CLOSED',
+      message:
+        'El pedido ya está cerrado en WooCommerce (completado, cancelado, reembolsado o fallido) y no se puede cotizar.',
     });
   }
   for (const { item } of lines) {

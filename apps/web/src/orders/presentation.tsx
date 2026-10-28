@@ -118,6 +118,30 @@ export function allowsShipment(order: { status: OrderStatus }): boolean {
   return order.status === 'COMPLETED';
 }
 
+/**
+ * Estados de WooCommerce con el pedido todavía abierto: pago pendiente, en preparación o en espera.
+ * Completado, cancelado, reembolsado y fallido ya cerraron el pedido, así que cotizarlos sería
+ * ofrecer algo que ya se vendió o se perdió.
+ */
+const quotableWooStatuses = new Set(['pending', 'processing', 'on-hold']);
+
+/**
+ * La cotización de Siigo solo aplica a un pedido abierto. El backend aplica la misma regla y
+ * rechaza la operación cerrada, por si alguien llega a la ruta sin pasar por el panel.
+ */
+export function allowsSiigoQuotation(order: {
+  status: OrderStatus;
+  wooStatus?: string | null;
+}): boolean {
+  // Una operación cancelada no se cotiza: el backend responde NOT_ALLOWED.
+  if (order.status === 'CANCELLED') return false;
+  const wooStatus = order.wooStatus?.trim().toLocaleLowerCase('en') ?? '';
+  // Un pedido del CRM que todavía no existe en WooCommerce no tiene estado de tienda. Sigue
+  // pendiente, y la cotización se arma con los datos del CRM, así que no depende de la tienda.
+  if (!wooStatus) return order.status === 'PENDING';
+  return quotableWooStatuses.has(wooStatus);
+}
+
 /** Un pedido cuenta como completado si el estado que ve el usuario es "Completado". */
 // WooCommerce devuelve el estado en minúsculas y admite estados propios de plugins: los
 // desconocidos se muestran tal cual, sin inventar una traducción.

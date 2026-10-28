@@ -136,6 +136,7 @@ function operation(overrides: Record<string, unknown> = {}) {
   return {
     id: 1,
     operationCode: 'OP20261027TEST',
+    status: 'PENDING',
     currency: 'COP',
     subtotal: { toNumber: () => 280_000 },
     discountTotal: { toNumber: () => 28_000 },
@@ -147,11 +148,29 @@ function operation(overrides: Record<string, unknown> = {}) {
     siigoQuotation: null,
     customer: linkedCustomer,
     orders: [
-      { store: 'SERATUS', items: [item('SERATUS-SKU', 'Producto Seratus', 2, 100_000)] },
-      { store: 'PALI', items: [item('PALI-SKU', 'Producto Pali', 1, 80_000)] },
+      {
+        store: 'SERATUS',
+        wooStatus: 'pending',
+        items: [item('SERATUS-SKU', 'Producto Seratus', 2, 100_000)],
+      },
+      {
+        store: 'PALI',
+        wooStatus: 'pending',
+        items: [item('PALI-SKU', 'Producto Pali', 1, 80_000)],
+      },
     ],
     ...overrides,
   } as never;
+}
+
+/** Operación con los dos pedidos de la tienda en el mismo estado de WooCommerce. */
+function operationWithWooStatus(wooStatus: string | null, status = 'PENDING') {
+  return operation({
+    status,
+    orders: [
+      { store: 'SERATUS', wooStatus, items: [item('SERATUS-SKU', 'Producto Seratus', 2, 100_000)] },
+    ],
+  });
 }
 
 try {
@@ -297,6 +316,83 @@ try {
     'Un producto sin vínculo debería bloquear la cotización.',
   );
 
+  // Solo se cotiza un pedido abierto en WooCommerce. Completado, cancelado, reembolsado y fallido
+  // ya cerraron el pedido; el panel esconde la acción y aquí se rechaza por si se llama a la ruta.
+  for (const openStatus of ['pending', 'processing', 'on-hold']) {
+    const open = buildQuotation(operationWithWooStatus(openStatus), {
+      seller,
+      exchangeRate: null,
+      exchangeRateDate: null,
+    });
+    assert(
+      !open.preview.issues.some(({ code }) => code === 'SIIGO_QUOTATION_ORDER_CLOSED'),
+      `Un pedido en ${openStatus} debería poder cotizarse.`,
+    );
+    assert(open.input !== null, `Un pedido en ${openStatus} debería generar la cotización.`);
+  }
+  for (const closedStatus of ['completed', 'cancelled', 'refunded', 'failed']) {
+    const closed = buildQuotation(operationWithWooStatus(closedStatus), {
+      seller,
+      exchangeRate: null,
+      exchangeRateDate: null,
+    });
+    assert(
+      closed.preview.issues.some(({ code }) => code === 'SIIGO_QUOTATION_ORDER_CLOSED'),
+      `Un pedido en ${closedStatus} no debería poder cotizarse.`,
+    );
+    assert(closed.input === null, `Un pedido en ${closedStatus} no debería generar la cotización.`);
+  }
+  assert(
+    buildQuotation(operationWithWooStatus('Processing'), {
+      seller,
+      exchangeRate: null,
+      exchangeRateDate: null,
+    }).input !== null,
+    'El estado de WooCommerce debería compararse sin distinguir mayúsculas.',
+  );
+
+  // Un pedido del CRM que todavía no existe en la tienda no tiene estado de WooCommerce: sigue
+  // abierto mientras la operación esté pendiente, y cerrado cuando ya se completó.
+  assert(
+    buildQuotation(operationWithWooStatus(null, 'PENDING'), {
+      seller,
+      exchangeRate: null,
+      exchangeRateDate: null,
+    }).input !== null,
+    'Un pedido del CRM pendiente y sin estado de WooCommerce debería poder cotizarse.',
+  );
+  assert(
+    buildQuotation(operationWithWooStatus(null, 'COMPLETED'), {
+      seller,
+      exchangeRate: null,
+      exchangeRateDate: null,
+    }).input === null,
+    'Un pedido del CRM completado y sin estado de WooCommerce no debería cotizarse.',
+  );
+
+  // Basta con que un pedido de la operación siga abierto: el otro pudo completarse en la tienda.
+  const mixedStoreStatus = buildQuotation(
+    operation({
+      orders: [
+        {
+          store: 'SERATUS',
+          wooStatus: 'completed',
+          items: [item('SERATUS-SKU', 'Producto Seratus', 2, 100_000)],
+        },
+        {
+          store: 'PALI',
+          wooStatus: 'processing',
+          items: [item('PALI-SKU', 'Producto Pali', 1, 80_000)],
+        },
+      ],
+    }),
+    { seller, exchangeRate: null, exchangeRateDate: null },
+  );
+  assert(
+    mixedStoreStatus.input !== null,
+    'Una operación con un pedido todavía abierto debería poder cotizarse.',
+  );
+
   // Contrato real de Siigo: comprobante y centro de costo fijos, impuesto y descuento por ítem, y
   // ninguna consulta de productos porque el código ya viene del inventario.
   const reference = await siigo.createQuotation(quotationInput);
@@ -392,7 +488,7 @@ try {
   );
 
   process.stdout.write(
-    'Siigo quotation smoke: fixed document and cost center, SKU codes, per-currency taxes, tax split, per-product coupon, manual price exclusion, shipping line, TRM cache, blocking issues, discount unit, errors and retry checks passed.\n',
+    'Siigo quotation smoke: fixed document and cost center, SKU codes, per-currency taxes, tax split, per-product coupon, manual price exclusion, shipping line, TRM cache, open-order rule per WooCommerce status, blocking issues, discount unit, errors and retry checks passed.\n',
   );
 } finally {
   for (const [key, value] of Object.entries(previousEnvironment)) {
