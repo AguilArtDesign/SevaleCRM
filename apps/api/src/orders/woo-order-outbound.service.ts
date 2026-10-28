@@ -182,6 +182,9 @@ export function orderPayload(
     status: 'completed',
     ...(operation.paymentMethod ? { payment_method: operation.paymentMethod } : {}),
     ...(operation.paymentMethodTitle ? { payment_method_title: operation.paymentMethodTitle } : {}),
+    // `customer_note` es el campo donde WooCommerce muestra la nota del comprador, tanto en el
+    // admin como en los correos. Solo se envía si el comercial escribió algo.
+    ...(operation.customerNote ? { customer_note: operation.customerNote } : {}),
     set_paid: true,
     billing: compactAddress({
       first_name: operation.billingFirstName,

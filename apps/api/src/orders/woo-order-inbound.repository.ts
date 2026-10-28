@@ -49,6 +49,7 @@ function operationSnapshot(input: NormalizedWooOrderInbound) {
     paymentMethodTitle: input.paymentMethodTitle,
     shippingMethod: input.shippingMethod,
     shippingMethodTitle: input.shippingMethodTitle,
+    customerNote: input.customerNote,
     subtotal: decimal(input.subtotal),
     discountTotal: decimal(input.discountTotal),
     shippingTotal: decimal(input.shippingTotal),

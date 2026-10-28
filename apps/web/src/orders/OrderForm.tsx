@@ -45,6 +45,7 @@ import { Input } from '../components/Input';
 import { Chip } from '../components/Chip';
 import { PhoneInput } from '../components/PhoneInput';
 import { Select } from '../components/Select';
+import { Textarea } from '../components/Textarea';
 import { couponsApi, type CouponRecord } from '../coupons/api';
 import { CustomerAutocomplete } from '../customers/CustomerAutocomplete';
 import { customersApi, type CustomerRecord } from '../customers/api';
@@ -756,6 +757,7 @@ export function OrderForm({
   const [customShippingTotal, setCustomShippingTotal] = useState(
     order?.shippingMethod === 'custom' ? order.shippingTotal : '',
   );
+  const [customerNote, setCustomerNote] = useState(order?.customerNote ?? '');
   const [error, setError] = useState('');
 
   useEffect(() => {
@@ -770,6 +772,7 @@ export function OrderForm({
       setPaymentMethod('');
       setShippingMethod('flat_rate');
       setCustomShippingTotal('');
+      setCustomerNote('');
       return () => {
         active = false;
       };
@@ -798,6 +801,7 @@ export function OrderForm({
     setPaymentMethod(order.paymentMethod ?? '');
     setShippingMethod(order.shippingMethod ?? '');
     setCustomShippingTotal(order.shippingMethod === 'custom' ? order.shippingTotal : '');
+    setCustomerNote(order.customerNote ?? '');
 
     const couponCode = order.couponCode ?? order.orders.flatMap(({ coupons }) => coupons)[0]?.code;
     setSelectedCoupon(null);
@@ -1035,6 +1039,7 @@ export function OrderForm({
       customShippingTotal: selectedShippingMethod.custom_amount
         ? fixed(money(customShippingTotal))
         : null,
+      customerNote: customerNote.trim() || null,
       couponId: selectedCoupon?.id ?? null,
       billing: {
         firstName: nullable(billing.firstName),
@@ -1438,6 +1443,17 @@ export function OrderForm({
                         />
                       </TextField>
                     )}
+
+                    <TextField name="customerNote" className="order-note-field">
+                      <Label>Nota del Pedido</Label>
+                      <Textarea
+                        aria-label="Nota del Pedido"
+                        variant="secondary"
+                        placeholder="Instrucciones de entrega, observaciones del cliente…"
+                        value={customerNote}
+                        onChange={(event) => setCustomerNote(event.target.value)}
+                      />
+                    </TextField>
                   </div>
                 </section>
 

@@ -252,10 +252,21 @@ function OrderDetail({
               </strong>
               <p>{formattedDate(order.createdAt)}</p>
             </div>
-            {order.updatedAt !== order.createdAt && (
+            {/* Solo se dibuja si alguien la modificó de verdad: `updatedAt` cambia con cualquier
+                escritura del sistema y mostraría una fecha que no corresponde a una persona. */}
+            {order.updatedByAt && (
               <div>
                 <span>Última modificación</span>
-                <p>{formattedDate(order.updatedAt)}</p>
+                <strong>{order.updatedBy?.name ?? '--'}</strong>
+                <p>{formattedDate(order.updatedByAt)}</p>
+              </div>
+            )}
+            {/* Ocupa las dos columnas: una nota larga se lee mejor a lo ancho del recibo que
+                partida en la mitad del espacio. */}
+            {order.customerNote?.trim() && (
+              <div className="order-ticket-note">
+                <span>Nota del Pedido</span>
+                <p>{order.customerNote}</p>
               </div>
             )}
           </div>

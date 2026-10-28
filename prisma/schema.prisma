@@ -151,6 +151,7 @@ model User {
   notificationReads      NotificationRead[]
   productSyncJobs        ProductSyncJob[]
   orderOperations        OrderOperation[]   @relation("OrderOperationCreatedBy")
+  orderOperationsUpdated OrderOperation[]   @relation("OrderOperationUpdatedBy")
   customersCreated       Customer[]         @relation("CustomerCreatedBy")
   customerEvents         CustomerEvent[]    @relation("CustomerEventActor")
   orderEvents            OrderEvent[]       @relation("OrderEventActor")
@@ -503,11 +504,19 @@ model OrderOperation {
   status              OperationStatus @default(PENDING)
   customerId          Int             @map("customer_id")
   createdByUserId     String?         @map("created_by_user_id") @db.VarChar(36)
+  /// Quién modificó la operación por última vez y cuándo. Se guarda junto al usuario porque
+  /// `updated_at` cambia con cualquier escritura —también las del sistema— y mostraría una fecha
+  /// que no corresponde a esa persona. Ambos quedan nulos mientras nadie la modifique.
+  updatedByUserId     String?         @map("updated_by_user_id") @db.VarChar(36)
+  updatedByAt         DateTime?       @map("updated_by_at")
   currency            String          @db.Char(3)
   paymentMethod       String?         @map("payment_method") @db.VarChar(191)
   paymentMethodTitle  String?         @map("payment_method_title") @db.VarChar(191)
   shippingMethod      String?         @map("shipping_method") @db.VarChar(191)
   shippingMethodTitle String?         @map("shipping_method_title") @db.VarChar(191)
+  /// Nota que el cliente escribe al hacer el pedido en la tienda, o que el comercial deja en el CRM.
+  /// Viaja a WooCommerce como `customer_note`, que es el campo donde la tienda la muestra.
+  customerNote        String?         @map("customer_note") @db.Text
   couponId            Int?            @map("coupon_id")
   couponCode          String?         @map("coupon_code") @db.VarChar(64)
   couponType          String?         @map("coupon_type") @db.VarChar(32)
@@ -543,6 +552,7 @@ model OrderOperation {
   customer            Customer        @relation(fields: [customerId], references: [id], onDelete: Restrict)
   coupon              Coupon?         @relation(fields: [couponId], references: [id], onDelete: SetNull)
   createdBy           User?           @relation("OrderOperationCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  updatedBy           User?           @relation("OrderOperationUpdatedBy", fields: [updatedByUserId], references: [id], onDelete: SetNull)
   orders              Order[]
   shipment            Shipment?
   siigoQuotation      SiigoQuotation?

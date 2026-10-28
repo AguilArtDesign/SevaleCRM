@@ -36,6 +36,7 @@ export type PreparedOperation = {
   paymentMethodTitle: string | null;
   shippingMethod: string | null;
   shippingMethodTitle: string | null;
+  customerNote: string | null;
   couponId: number | null;
   couponCode: string | null;
   couponType: string | null;

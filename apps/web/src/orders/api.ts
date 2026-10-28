@@ -71,8 +71,14 @@ export type OrderDetailRecord = {
   updatedAt: string;
   customer: OrderCustomerRecord;
   createdBy: { id: string; name: string; email: string } | null;
+  /** Quién modificó la operación por última vez; nulo mientras nadie la haya modificado. */
+  updatedBy: { id: string; name: string; email: string } | null;
+  /** Cuándo fue esa modificación, no la última escritura del sistema. */
+  updatedByAt: string | null;
   paymentMethod: string | null;
   paymentMethodTitle: string | null;
+  /** Nota del comprador: viaja a WooCommerce como `customer_note`. */
+  customerNote: string | null;
   shippingMethod: string | null;
   shippingMethodTitle: string | null;
   couponId: number | null;

@@ -32,6 +32,15 @@ function validDate(value: string): Date | null {
   return parseBogotaDateTime(value);
 }
 
+/**
+ * La nota es texto libre: no se normaliza como un nombre ni se pasa a mayúsculas. Solo se recorta el
+ * espacio de los extremos y se descarta si queda vacía, para no guardar cadenas en blanco.
+ */
+function findCustomerNote(value: string | undefined): string | null {
+  const note = value?.trim();
+  return note ? note : null;
+}
+
 function decimalDifference(first: string, second: string): string {
   return Prisma.Decimal.max(new Prisma.Decimal(first).minus(second), 0).toFixed(2);
 }
@@ -170,6 +179,9 @@ export function normalizeWooOrderInbound(input: WooOrderInboundInput) {
     paymentMethodTitle: normalizeCustomerName(order.payment_method_title),
     shippingMethod: normalizeCustomerName(shippingLine?.method_id),
     shippingMethodTitle: normalizeCustomerName(shippingLine?.method_title),
+    // La nota del cliente se guarda como una sola línea de texto libre: se respetan los saltos que
+    // escribió y solo se recorta el espacio sobrante de los extremos.
+    customerNote: findCustomerNote(order.customer_note),
     billing: { ...billing, email: sanitizeCustomerEmail(order.billing.email) },
     shipping,
     customer: customerDraft(input),

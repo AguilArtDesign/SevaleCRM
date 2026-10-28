@@ -99,6 +99,7 @@ function orderPayload({
       total,
       payment_method: 'bacs',
       payment_method_title: 'Transferencia bancaria',
+      customer_note: 'Dejar en la portería, por favor.',
       billing: {
         first_name: 'ÁNGELA MARÍA',
         last_name: 'PÉREZ LÓPEZ',
@@ -218,10 +219,11 @@ try {
     importedOrder.syncStatus !== 'SYNCED' ||
     importedOrder.items[0]?.productId !== seratus.id ||
     importedOrder.items[0]?.skuSnapshot !== seratusSku ||
+    operation.customerNote !== 'Dejar en la portería, por favor.' ||
     Number(operation.total) !== 195000
   ) {
     throw new Error(
-      `El pedido Woo no conservó Customer, snapshots, mapping o totales: ${JSON.stringify({
+      `El pedido Woo no conservó Customer, snapshots, mapping, nota o totales: ${JSON.stringify({
         source: operation.source,
         status: operation.status,
         operationCode: operation.operationCode,

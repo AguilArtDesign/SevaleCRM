@@ -330,7 +330,7 @@ export class OrdersService {
   async update(id: number, input: UpdateOrderOperationInput, userId: string) {
     const prepared = await this.prepare(input);
     const before = await this.orders.detail(id);
-    const result = await this.orders.updatePending(id, prepared);
+    const result = await this.orders.updatePending(id, prepared, userId);
     if (result.outcome === 'NOT_FOUND') {
       throw businessError(NotFoundException, 'ORDER_NOT_FOUND', 'La operación no existe.');
     }
@@ -427,7 +427,7 @@ export class OrdersService {
   }
 
   async complete(id: number, userId: string) {
-    const claim = await this.orders.claimCompletion(id);
+    const claim = await this.orders.claimCompletion(id, userId);
     if (claim.outcome === 'NOT_FOUND') {
       throw businessError(NotFoundException, 'ORDER_NOT_FOUND', 'La operación no existe.');
     }
@@ -646,6 +646,9 @@ export class OrdersService {
       paymentMethodTitle: paymentMethod.payment_method_title,
       shippingMethod: shippingMethod.shipping_method,
       shippingMethodTitle: shippingMethod.shipping_method_title,
+      // Sin nota se guarda `null` en lugar de cadena vacía: el panel distingue «sin nota» de «nota
+      // en blanco» y la vista no dibuja el bloque si no hay texto.
+      customerNote: input.customerNote?.trim() || null,
       couponId: coupon?.id ?? null,
       couponCode: coupon?.coupon ?? null,
       couponType: coupon?.type ?? null,

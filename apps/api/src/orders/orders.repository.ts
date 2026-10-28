@@ -7,6 +7,7 @@ import type { PreparedOperation, PreparedStoreOrder } from './orders.types.js';
 export const orderDetailInclude = {
   customer: true,
   createdBy: { select: { id: true, name: true, email: true } },
+  updatedBy: { select: { id: true, name: true, email: true } },
   orders: {
     orderBy: { store: 'asc' as const },
     include: {
@@ -401,7 +402,7 @@ export class OrdersRepository {
     return this.prisma.product.findMany({ where: { id: { in: ids } } });
   }
 
-  claimCompletion(id: number): Promise<CompleteClaim> {
+  claimCompletion(id: number, completedByUserId: string): Promise<CompleteClaim> {
     return this.prisma.$transaction(async (transaction) => {
       const operation = await transaction.orderOperation.findFirst({
         where: { id, deletedAt: null },
@@ -415,7 +416,12 @@ export class OrdersRepository {
 
       const completed = await transaction.orderOperation.updateMany({
         where: { id, source: 'CRM', status: 'PENDING', deletedAt: null },
-        data: { status: 'COMPLETED' },
+        data: {
+          status: 'COMPLETED',
+          // Completar también modifica la operación: cuenta como última modificación de esta persona.
+          updatedByUserId: completedByUserId,
+          updatedByAt: new Date(),
+        },
       });
       if (completed.count === 0) return { outcome: 'ALREADY_COMPLETED' };
 
@@ -575,6 +581,11 @@ export class OrdersRepository {
           note: input.note,
           createdByUserId,
         },
+      });
+      // Asignar el envío es una modificación de la operación, así que también firma la ficha.
+      await transaction.orderOperation.update({
+        where: { id: operationId },
+        data: { updatedByUserId: createdByUserId, updatedByAt: new Date() },
       });
       for (const order of operation.orders) {
         const canSynchronize = order.wooOrderId !== null;
@@ -762,7 +773,11 @@ export class OrdersRepository {
     });
   }
 
-  updatePending(id: number, operation: PreparedOperation): Promise<UpdateResult> {
+  updatePending(
+    id: number,
+    operation: PreparedOperation,
+    updatedByUserId: string,
+  ): Promise<UpdateResult> {
     return this.prisma.$transaction(async (transaction) => {
       const current = await transaction.orderOperation.findFirst({
         where: { id, deletedAt: null },
@@ -776,7 +791,13 @@ export class OrdersRepository {
 
       await transaction.orderOperation.update({
         where: { id },
-        data: operationData(operation),
+        data: {
+          ...operationData(operation),
+          // El detalle muestra «Última modificación» con nombre y fecha: se guardan juntos para que
+          // la fecha sea la de esta edición y no la de una sincronización posterior.
+          updatedByUserId,
+          updatedByAt: new Date(),
+        },
       });
 
       const stores = operation.orders.map(({ store }) => store);

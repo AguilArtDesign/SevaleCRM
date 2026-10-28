@@ -486,6 +486,56 @@ try {
     throw new Error('El envío personalizado COP no conservó el valor indicado.');
   }
 
+  // La nota del pedido se guarda tal como se escribió y viaja en el detalle.
+  const notedOrder = await createOrderCase('Pedido con nota del cliente', {
+    paymentMethod: 'cod',
+    shippingMethod: 'free_shipping',
+    customerNote: '  Entregar en portería, llamar antes.\nSegundo piso.  ',
+    items: [{ productId: seratus.id, quantity: 1, unitPrice: '100000' }],
+  });
+  const notedResponse = await api(`/api/orders/${notedOrder.id}`, commercialCookie);
+  expectStatus(notedResponse, 200, 'Detalle del pedido con nota');
+  const notedDetail = (await notedResponse.json()) as {
+    customerNote: string | null;
+    updatedBy: { name: string } | null;
+    updatedByAt: string | null;
+  };
+  if (notedDetail.customerNote !== 'Entregar en portería, llamar antes.\nSegundo piso.') {
+    throw new Error('La nota del pedido no se guardó recortando solo los extremos.');
+  }
+  // Recién creado, nadie la ha modificado: el detalle no debe inventar un autor.
+  if (notedDetail.updatedBy !== null || notedDetail.updatedByAt !== null) {
+    throw new Error('Un pedido recién creado no debe tener autor de última modificación.');
+  }
+
+  // Editar deja firmada la modificación con el usuario y la fecha del cambio.
+  const noteEditResponse = await api(`/api/orders/${notedOrder.id}`, commercialCookie, {
+    method: 'PATCH',
+    body: JSON.stringify({
+      ...basePayload,
+      couponId: null,
+      paymentMethod: 'cod',
+      shippingMethod: 'free_shipping',
+      customerNote: 'Entregar en portería, llamar antes.\nSegundo piso.',
+      items: [{ productId: seratus.id, quantity: 1, unitPrice: '100000' }],
+    }),
+  });
+  expectStatus(noteEditResponse, 200, 'Edición del pedido con nota');
+  const editedDetail = (await noteEditResponse.json()) as {
+    updatedBy: { name: string } | null;
+    updatedByAt: string | null;
+  };
+  if (!editedDetail.updatedBy?.name || !editedDetail.updatedByAt) {
+    throw new Error('La edición no dejó firmada la última modificación con usuario y fecha.');
+  }
+
+  // Sin nota el detalle devuelve null, no cadena vacía: el panel decide con eso si dibuja el bloque.
+  const withoutNoteResponse = await api(`/api/orders/${copFlat.id}`, commercialCookie);
+  const withoutNote = (await withoutNoteResponse.json()) as { customerNote: string | null };
+  if (withoutNote.customerNote !== null) {
+    throw new Error('Un pedido sin nota debe devolver null en el detalle.');
+  }
+
   // Una sola tienda asume el envío completo de la operación.
   const flatDetailResponse = await api(`/api/orders/${copFlat.id}`, commercialCookie);
   expectStatus(flatDetailResponse, 200, 'Detalle del envío con una sola tienda');

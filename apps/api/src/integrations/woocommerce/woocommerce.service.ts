@@ -54,6 +54,8 @@ export type WooCommerceOrderCreatePayload = {
   status: string;
   payment_method?: string;
   payment_method_title?: string;
+  /** Nota del comprador; WooCommerce la muestra en el pedido y en los correos. */
+  customer_note?: string;
   set_paid: true;
   billing: Record<string, string>;
   shipping: Record<string, string>;

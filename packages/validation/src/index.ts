@@ -530,6 +530,10 @@ const orderOperationFieldsSchema = z
     customShippingTotal: z
       .union([orderMoneySchema, z.null(), z.undefined()])
       .transform((value) => value ?? null),
+    customerNote: z
+      .union([z.string().trim().max(5_000, 'La nota del pedido es demasiado larga.'), z.null()])
+      .transform((value) => value || null)
+      .optional(),
     couponId: z
       .union([z.number().int().positive(), z.null(), z.undefined()])
       .transform((value) => value ?? null),
@@ -786,6 +790,8 @@ const wooInboundOrderSchema = z
     total: wooMoneySchema,
     payment_method: wooOptionalTextSchema(191),
     payment_method_title: wooOptionalTextSchema(191),
+    // Nota que el cliente escribe al finalizar la compra en la tienda.
+    customer_note: wooOptionalTextSchema(5_000),
     billing: wooAddressSchema,
     shipping: wooAddressSchema.optional().default({
       first_name: '',

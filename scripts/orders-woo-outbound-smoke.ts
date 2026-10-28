@@ -283,6 +283,7 @@ try {
       shippingMethod: 'free_shipping',
       customShippingTotal: null,
       couponId: null,
+      customerNote: 'Entregar en horario de oficina.',
       billing: { ...addressSnapshot, email: customer.email },
       shipping: addressSnapshot,
       items: [
@@ -421,6 +422,13 @@ try {
   }
   if (metadata?.find(({ key }) => key === 'origen')?.value !== 'CRM') {
     throw new Error('El payload outbound no envió el origen del pedido como CRM.');
+  }
+  // La nota del pedido viaja como `customer_note`, el campo donde WooCommerce la muestra.
+  if (
+    seratusPayload?.customer_note !== 'Entregar en horario de oficina.' ||
+    paliPayload?.customer_note !== 'Entregar en horario de oficina.'
+  ) {
+    throw new Error('El payload outbound no envió la nota del pedido como customer_note.');
   }
   // Las dos líneas de la dirección viajan en mayúsculas sostenidas, en facturación y en envío.
   const seratusBilling = seratusPayload?.billing as Record<string, string> | undefined;

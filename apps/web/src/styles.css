@@ -4264,6 +4264,13 @@ select {
   gap: 0.85rem;
 }
 
+/* La nota es un párrafo, no un dato suelto: arranca con alto de tres líneas para que se vea que
+   admite texto largo. El componente crece igual con el contenido, y el mínimo no se pierde porque
+   `min-height` gana sobre el alto en línea que calcula el autoajuste. */
+.order-note-field textarea {
+  min-height: 5.5rem;
+}
+
 .order-coupon-field {
   display: grid;
   min-width: 0;
@@ -5024,6 +5031,19 @@ select {
   color: var(--foreground);
   font-size: 0.8125rem;
   line-height: 1.35;
+}
+
+/* La nota del pedido rompe la rejilla de dos columnas: ocupa todo el ancho del recibo, porque es
+   texto libre y partirlo en media columna lo haría ilegible. */
+.order-ticket .order-ticket-note {
+  grid-column: 1 / -1;
+}
+
+/* Se respetan los saltos de línea que escribió el cliente; sin esto el navegador los colapsa y el
+   texto se ve como un párrafo corrido. */
+.order-ticket .order-ticket-note p {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 /* Un recibo estrecho no da para dos columnas de direcciones. */
