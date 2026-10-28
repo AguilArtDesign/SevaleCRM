@@ -215,7 +215,13 @@ try {
       method: 'POST',
       body: JSON.stringify({ ...basePayload, couponId: null, ...overrides }),
     });
-    expectStatus(response, 201, label);
+    if (response.status !== 201) {
+      // Sin el cuerpo, un 400 en un caso nuevo obliga a reproducirlo a mano para saber qué campo
+      // rechazó la API.
+      throw new Error(
+        `${label}: se esperaba 201 y se recibió ${response.status}: ${await response.text()}`,
+      );
+    }
     const result = (await response.json()) as {
       id: number;
       subtotal: string;
@@ -524,6 +530,82 @@ try {
     sharedPali?.total !== '28000.00'
   ) {
     throw new Error('El envío de la operación no se repartió entre las dos tiendas.');
+  }
+
+  // Los nombres del pedido se guardan con inicial mayúscula, igual que en Clientes: el pedido los
+  // copia del cliente y los envía a la tienda tal cual, así que escribirlos en mayúsculas no puede
+  // quedar así. Se comprueba en el mismo alta, sin tocar el resto del caso.
+  const upperCaseNames = await createOrderCase('Nombres en mayúsculas', {
+    billing: {
+      ...address,
+      firstName: 'CLIENTE',
+      lastName: 'PEDIDOS API',
+      email: customer.email,
+    },
+    shipping: { ...address, firstName: 'CLIENTE', lastName: 'PEDIDOS API' },
+    items: [{ productId: seratus.id, quantity: 1, unitPrice: '120000' }],
+  });
+  const namesResponse = await api(`/api/orders/${upperCaseNames.id}`, commercialCookie);
+  expectStatus(namesResponse, 200, 'Detalle con nombres normalizados');
+  const namesDetail = (await namesResponse.json()) as {
+    billingFirstName: string | null;
+    billingLastName: string | null;
+    shippingFirstName: string | null;
+    shippingLastName: string | null;
+  };
+  if (
+    namesDetail.billingFirstName !== 'Cliente' ||
+    namesDetail.billingLastName !== 'Pedidos Api' ||
+    namesDetail.shippingFirstName !== 'Cliente' ||
+    namesDetail.shippingLastName !== 'Pedidos Api'
+  ) {
+    throw new Error(
+      `Los nombres del pedido no se normalizaron: facturación=${namesDetail.billingFirstName} ${namesDetail.billingLastName}, envío=${namesDetail.shippingFirstName} ${namesDetail.shippingLastName}.`,
+    );
+  }
+
+  // Un pedido creado antes de normalizar en el alta conserva las mayúsculas en la fila guardada. La
+  // lectura las corrige, así que la ficha, el recibo y el historial del cliente no muestran una
+  // forma distinta a la de un pedido nuevo. Se escribe en la base a propósito para simular esa fila.
+  await prisma.orderOperation.update({
+    where: { id: upperCaseNames.id },
+    data: {
+      billingFirstName: 'JOHN MARIO',
+      billingLastName: 'VEGA HERNANDEZ',
+      shippingFirstName: 'JOHN MARIO',
+      shippingLastName: 'VEGA HERNANDEZ',
+    },
+  });
+  // El cliente también se guardó en mayúsculas en su momento: el nombre visible de la lista se
+  // normaliza al leer, igual que en el panel de Clientes.
+  await prisma.customer.update({
+    where: { id: customer.id },
+    data: { displayName: 'JOHN MARIO VEGA HERNANDEZ' },
+  });
+  const legacyResponse = await api(`/api/orders/${upperCaseNames.id}`, commercialCookie);
+  expectStatus(legacyResponse, 200, 'Detalle de un pedido guardado en mayúsculas');
+  const legacyDetail = (await legacyResponse.json()) as {
+    billingFirstName: string | null;
+    billingLastName: string | null;
+    shippingFirstName: string | null;
+    shippingLastName: string | null;
+  };
+  const legacyListResponse = await api('/api/orders?pageSize=100', commercialCookie);
+  expectStatus(legacyListResponse, 200, 'Listado con un pedido guardado en mayúsculas');
+  const legacyList = (await legacyListResponse.json()) as {
+    data: Array<{ operationId: number; customer: { displayName: string } }>;
+  };
+  const legacyRow = legacyList.data.find(({ operationId }) => operationId === upperCaseNames.id);
+  if (
+    legacyDetail.billingFirstName !== 'John Mario' ||
+    legacyDetail.billingLastName !== 'Vega Hernandez' ||
+    legacyDetail.shippingFirstName !== 'John Mario' ||
+    legacyDetail.shippingLastName !== 'Vega Hernandez' ||
+    legacyRow?.customer.displayName !== 'John Mario Vega Hernandez'
+  ) {
+    throw new Error(
+      `Un pedido guardado en mayúsculas no se normalizó al leer: facturación=${legacyDetail.billingFirstName} ${legacyDetail.billingLastName}, envío=${legacyDetail.shippingFirstName} ${legacyDetail.shippingLastName}, cliente=${legacyRow?.customer.displayName}.`,
+    );
   }
 
   const usdAboveThreshold = await createOrderCase('USD por encima del umbral', {
@@ -1016,7 +1098,7 @@ try {
   }
 
   process.stdout.write(
-    'Orders smoke: payment catalogs, COP/USD shipping thresholds, custom shipping, coupon snapshots, missing coupon rejection, consolidated and per-store discounts, manual price capped at the original value, locked currency on edit, authentication, RBAC, list, create, pending edit and store reconciliation checks passed.\n',
+    'Orders smoke: payment catalogs, COP/USD shipping thresholds, custom shipping, coupon snapshots, missing coupon rejection, consolidated and per-store discounts, manual price capped at the original value, locked currency on edit, name normalization on write and on read, authentication, RBAC, list, create, pending edit and store reconciliation checks passed.\n',
   );
 } finally {
   if (operationIds.length > 0) {
