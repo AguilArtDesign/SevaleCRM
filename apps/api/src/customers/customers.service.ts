@@ -491,7 +491,13 @@ export class CustomersService {
           .filter((integration) => integration.status !== 'SYNCED')
           .map((integration) => integration.provider);
     if (providers.length === 0) return serializeCustomer(customer, includeIntegrationErrors);
-    const results = await this.integrations.synchronize(customer, providers, input.siigoLocation);
+    // El vendedor de Siigo sale de quien sincroniza, no de la ficha: así la tienda sabe a quién
+    // asociar el cliente aunque después lo edite otro comercial.
+    const sellerId = userId ? await this.customers.siigoSellerId(userId) : null;
+    const results = await this.integrations.synchronize(customer, providers, {
+      siigoLocation: input.siigoLocation,
+      sellerId,
+    });
     const siigoResult = results.find(
       (result) => result.provider === 'SIIGO' && result.status === 'SYNCED',
     );

@@ -12,7 +12,6 @@ import {
 } from '../../integrations/integration-http.js';
 import { SiigoTokenService } from '../../integrations/siigo/siigo-token.service.js';
 import type { CustomerMappingSource } from '../mapping/customer-mapping.types.js';
-import type { SiigoLocationSelection } from '../mapping/customer-mapping.types.js';
 import {
   normalizeCustomerName,
   resolveSiigoPhone,
@@ -22,6 +21,7 @@ import {
 } from '../customer-data-sanitizer.js';
 import {
   SiigoCustomerMapper,
+  type SiigoCustomerOptions,
   type SiigoCustomerPayload,
 } from '../mapping/siigo-customer.mapper.js';
 
@@ -256,20 +256,20 @@ export class SiigoCustomerService {
 
   async createCustomer(
     customer: CustomerMappingSource,
-    siigoLocation?: SiigoLocationSelection,
+    options: SiigoCustomerOptions = {},
   ): Promise<SiigoCustomerReference> {
-    const payload = this.mapper.map(customer, siigoLocation);
+    const payload = this.mapper.map(customer, options);
     return this.withAuthenticationRetry((token) => this.requestCreate(payload, token));
   }
 
   async updateCustomer(
     externalId: string,
     customer: CustomerMappingSource,
-    siigoLocation?: SiigoLocationSelection,
+    options: SiigoCustomerOptions = {},
   ): Promise<SiigoCustomerReference> {
     const normalizedExternalId = externalId.trim();
     if (!UUID_PATTERN.test(normalizedExternalId)) throw invalidIntegrationResponse('Siigo');
-    const payload = this.mapper.map(customer, siigoLocation);
+    const payload = this.mapper.map(customer, options);
     return this.withAuthenticationRetry((token) =>
       this.requestUpdate(normalizedExternalId, payload, token),
     );

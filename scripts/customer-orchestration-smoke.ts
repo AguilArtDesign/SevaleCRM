@@ -109,7 +109,9 @@ const repository = {
 const siigoId = '377d11bb-4fce-4e80-bd6d-c593da3fccdb';
 let siigoCreates = 0;
 let lastSiigoLocation: { stateCode: string; cityCode: string } | undefined;
+let lastSiigoSellerId: number | null = null;
 const currentSiigoLocation = () => lastSiigoLocation;
+const currentSiigoSellerId = () => lastSiigoSellerId;
 const siigo = {
   findCustomer: () =>
     Promise.resolve({ id: siigoId, identification: '13832081', personType: 'Person' as const }),
@@ -124,10 +126,11 @@ const siigo = {
   updateCustomer: (
     externalId: string,
     _customer: CustomerWithIntegrations,
-    siigoLocation?: { stateCode: string; cityCode: string },
+    options?: { siigoLocation?: { stateCode: string; cityCode: string }; sellerId?: number | null },
   ) => {
-    lastSiigoLocation = siigoLocation;
-    if (_customer.country !== 'CO' && !siigoLocation) {
+    lastSiigoLocation = options?.siigoLocation;
+    lastSiigoSellerId = options?.sellerId ?? null;
+    if (_customer.country !== 'CO' && !lastSiigoLocation) {
       throw new BadRequestException({
         success: false,
         error: {
@@ -271,8 +274,8 @@ const internationalCustomer = {
 };
 state('SIIGO').externalData = { preserved: { value: true } };
 await service.synchronize(internationalCustomer, ['SIIGO'], {
-  stateCode: '05',
-  cityCode: '0501',
+  siigoLocation: { stateCode: '05', cityCode: '0501' },
+  sellerId: 820,
 });
 const selectedSiigoLocation = currentSiigoLocation();
 const storedSiigoData = state('SIIGO').externalData as {
@@ -282,6 +285,7 @@ const storedSiigoData = state('SIIGO').externalData as {
 if (
   selectedSiigoLocation?.stateCode !== '05' ||
   selectedSiigoLocation.cityCode !== '0501' ||
+  currentSiigoSellerId() !== 820 ||
   storedSiigoData.preserved?.value !== true ||
   storedSiigoData.siigoLocation?.target?.stateCode !== '05' ||
   storedSiigoData.siigoLocation.target.cityCode !== '0501'

@@ -13,8 +13,18 @@ import { SiigoCustomerService } from './integrations/siigo-customer.service.js';
 import { WooCustomerService } from './integrations/woo-customer.service.js';
 import type { CustomerMappingSource } from './mapping/customer-mapping.types.js';
 import type { SiigoLocationSelection } from './mapping/customer-mapping.types.js';
+import type { SiigoCustomerOptions } from './mapping/siigo-customer.mapper.js';
 
 export const customerIntegrationProviders = ['SIIGO', 'SERATUS', 'PALI'] as const;
+
+/**
+ * Lo que la sincronización necesita saber de quien la ejecuta y que no está en la ficha del
+ * cliente: la ubicación elegida para el exterior y el vendedor de Siigo que quedará asociado.
+ */
+export type CustomerSyncOptions = {
+  siigoLocation?: SiigoLocationSelection;
+  sellerId?: number | null;
+};
 
 export type CustomerIntegrationResult = {
   provider: CustomerIntegrationProvider;
@@ -120,11 +130,11 @@ export class CustomerIntegrationService {
   async synchronize(
     customer: CustomerWithIntegrations,
     providers: readonly CustomerIntegrationProvider[],
-    siigoLocation?: SiigoLocationSelection,
+    options: CustomerSyncOptions = {},
   ): Promise<CustomerIntegrationResult[]> {
     const source = mappingSource(customer);
     const settled = await Promise.allSettled(
-      providers.map((provider) => this.withLock(customer, source, provider, siigoLocation)),
+      providers.map((provider) => this.withLock(customer, source, provider, options)),
     );
     return settled.map((result, index) => {
       if (result.status === 'fulfilled') return result.value;
@@ -144,17 +154,20 @@ export class CustomerIntegrationService {
     customer: CustomerWithIntegrations,
     source: CustomerMappingSource,
     provider: CustomerIntegrationProvider,
-    siigoLocation?: SiigoLocationSelection,
+    options: CustomerSyncOptions,
   ): Promise<CustomerIntegrationResult> {
     const key = `${customer.id}:${provider}`;
+    // El vendedor entra en la huella: dos usuarios con vendedores distintos producen payloads
+    // distintos y no deben compartir la misma sincronización en vuelo.
     const fingerprint = JSON.stringify({
       source,
-      siigoLocation: provider === 'SIIGO' ? siigoLocation : undefined,
+      siigoLocation: provider === 'SIIGO' ? options.siigoLocation : undefined,
+      sellerId: provider === 'SIIGO' ? options.sellerId : undefined,
     });
     const current = this.inFlight.get(key);
     if (current?.fingerprint === fingerprint) return current.promise;
 
-    const synchronize = () => this.synchronizeProvider(customer, source, provider, siigoLocation);
+    const synchronize = () => this.synchronizeProvider(customer, source, provider, options);
     const operation = current ? current.promise.then(synchronize, synchronize) : synchronize();
     const entry = { fingerprint, promise: operation };
     this.inFlight.set(key, entry);
@@ -169,7 +182,7 @@ export class CustomerIntegrationService {
     customer: CustomerWithIntegrations,
     source: CustomerMappingSource,
     provider: CustomerIntegrationProvider,
-    siigoLocation?: SiigoLocationSelection,
+    options: CustomerSyncOptions,
   ): Promise<CustomerIntegrationResult> {
     const attemptedAt = new Date();
     const integration = customer.integrations.find((item) => item.provider === provider);
@@ -180,15 +193,12 @@ export class CustomerIntegrationService {
       const effectiveSiigoLocation = await this.resolveSiigoLocation(
         customer,
         provider,
-        siigoLocation,
+        options.siigoLocation,
       );
-      const sent = await this.send(
-        provider,
-        source,
-        externalId,
-        customer.id,
-        effectiveSiigoLocation,
-      );
+      const sent = await this.send(provider, source, externalId, customer.id, {
+        siigoLocation: effectiveSiigoLocation,
+        sellerId: options.sellerId,
+      });
       externalId = sent.externalId;
       const syncedAt = new Date();
       await this.integrations.markSynced(customer.id, provider, externalId, syncedAt);
@@ -262,11 +272,15 @@ export class CustomerIntegrationService {
     customer: CustomerMappingSource,
     externalId: string | null,
     customerId: number,
-    siigoLocation?: SiigoLocationSelection,
+    options: CustomerSyncOptions = {},
   ): Promise<CustomerIntegrationSendResult> {
     if (provider === 'SIIGO') {
+      const siigo: SiigoCustomerOptions = {
+        siigoLocation: options.siigoLocation,
+        sellerId: options.sellerId,
+      };
       if (externalId) {
-        const updated = await this.siigo.updateCustomer(externalId, customer, siigoLocation);
+        const updated = await this.siigo.updateCustomer(externalId, customer, siigo);
         return { externalId: updated.id, checkDigit: updated.checkDigit };
       }
       const existing = await this.siigo.findCustomer(customer.documentNumber);
@@ -274,10 +288,10 @@ export class CustomerIntegrationService {
         const expectedType = customer.personType === 'PERSON' ? 'Person' : 'Company';
         if (existing.personType !== expectedType) throw this.conflict('Siigo');
         await this.integrations.rememberExternalId(customerId, provider, existing.id);
-        const updated = await this.siigo.updateCustomer(existing.id, customer, siigoLocation);
+        const updated = await this.siigo.updateCustomer(existing.id, customer, siigo);
         return { externalId: updated.id, checkDigit: updated.checkDigit };
       }
-      const created = await this.siigo.createCustomer(customer, siigoLocation);
+      const created = await this.siigo.createCustomer(customer, siigo);
       return { externalId: created.id, checkDigit: created.checkDigit };
     }
 

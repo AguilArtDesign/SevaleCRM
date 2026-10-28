@@ -34,6 +34,23 @@ export type SiigoCustomerPayload = {
     email: string;
     phone?: { indicative: string; number: string };
   }>;
+  /**
+   * A quién queda asociado el cliente dentro de Siigo. Solo viaja `seller_id`: quien mira la ficha
+   * en Siigo ve qué usuario del CRM la creó o la modificó por última vez. `collector_id` se omite a
+   * propósito porque es el responsable de cartera y no tiene que ser el mismo vendedor.
+   */
+  related_users?: { seller_id: number };
+};
+
+/**
+ * Contexto que no sale de la ficha del cliente sino de quién ejecuta la sincronización. Se agrupa
+ * para no encadenar parámetros posicionales en el mapper.
+ */
+export type SiigoCustomerOptions = {
+  /** Ubicación del catálogo de Siigo; solo hace falta cuando el cliente es del exterior. */
+  siigoLocation?: SiigoLocationSelection;
+  /** Vendedor de Siigo del usuario que sincroniza. Se omite si no lo tiene configurado. */
+  sellerId?: number | null;
 };
 
 function cleanAddress(line1: string | null | undefined, line2: string | null | undefined): string {
@@ -87,12 +104,9 @@ function siigoLocationError(code: string, message: string): BadRequestException 
 export class SiigoCustomerMapper {
   constructor(private readonly locations: CustomerLocationsService) {}
 
-  map(
-    customer: CustomerMappingSource,
-    siigoSelection?: SiigoLocationSelection,
-  ): SiigoCustomerPayload {
+  map(customer: CustomerMappingSource, options: SiigoCustomerOptions = {}): SiigoCustomerPayload {
     requireSiigoData(customer);
-    const location = this.resolveLocation(customer, siigoSelection);
+    const location = this.resolveLocation(customer, options.siigoLocation);
     const phone = customer.phone ? mapPhoneToSiigo(customer.phone, customer.country) : null;
     if (customer.phone && !phone) {
       throw new BadRequestException({
@@ -115,6 +129,9 @@ export class SiigoCustomerMapper {
     const normalizedPhone = customer.phone
       ? normalizePhoneE164(customer.phone, customer.country)
       : null;
+    // Un id de vendedor tiene que ser positivo: 0 y null significan "sin vendedor" en el CRM y
+    // mandarlos haría que Siigo rechazara el cliente por una referencia que no existe.
+    const sellerId = options.sellerId;
 
     return {
       type: 'Customer',
@@ -151,6 +168,9 @@ export class SiigoCustomerMapper {
               },
             ],
           }
+        : {}),
+      ...(typeof sellerId === 'number' && sellerId > 0
+        ? { related_users: { seller_id: sellerId } }
         : {}),
     };
   }

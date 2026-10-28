@@ -187,6 +187,19 @@ export class CustomersRepository {
   }
 
   /**
+   * Vendedor de Siigo del usuario que ejecuta la sincronización, para enviarlo como `seller_id` en
+   * `related_users`. Es opcional en Siigo: quien no tenga vendedor configurado sincroniza igual, solo
+   * que el cliente no queda asociado a nadie en la tienda.
+   */
+  async siigoSellerId(userId: string): Promise<number | null> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { sellerId: true },
+    });
+    return user?.sellerId ?? null;
+  }
+
+  /**
    * Operaciones que impiden borrar al cliente. Se consulta antes de borrarlo en las tiendas: el
    * borrado local puede rechazarse por tener pedidos, y en ese caso no debe haberse borrado nada en
    * remoto.

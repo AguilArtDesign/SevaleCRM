@@ -120,6 +120,15 @@ function requestBody(body: BodyInit | null | undefined): Record<string, unknown>
   return JSON.parse(body) as Record<string, unknown>;
 }
 
+/** Vendedor que viajó en la última petición del método indicado. */
+function relatedSellerId(method: string): number | undefined {
+  const request = requests.find((item) => (item.init?.method ?? 'GET').toUpperCase() === method);
+  if (!request) throw new Error(`No se registró ninguna petición ${method} a Siigo.`);
+  const related = requestBody(request.init?.body).related_users as
+    { seller_id?: number } | undefined;
+  return related?.seller_id;
+}
+
 globalThis.fetch = (input: string | URL | Request, init?: RequestInit) => {
   requests.push({ url: requestUrl(input), init });
   const response = responses.shift();
@@ -186,13 +195,27 @@ const company: CreateCustomerInput = {
   fiscalResponsibilities: ['R-99-PN'],
 };
 
-const created = await service.createCustomer(company);
+const created = await service.createCustomer(company, { sellerId: 820 });
 if (created.id !== companyId || created.personType !== 'Company' || created.checkDigit !== '4') {
   throw new Error('createCustomer no conservó el UUID confirmado por Siigo.');
 }
-const updated = await service.updateCustomer(companyId, company);
+if (relatedSellerId('POST') !== 820) {
+  throw new Error('createCustomer no envió related_users.seller_id desde el vendedor del usuario.');
+}
+const updated = await service.updateCustomer(companyId, company, { sellerId: 820 });
 if (updated.id !== companyId || updated.checkDigit !== '4') {
   throw new Error('updateCustomer no confirmó el mismo UUID externo.');
+}
+if (relatedSellerId('PUT') !== 820) {
+  throw new Error('updateCustomer no envió el vendedor al editar el cliente en Siigo.');
+}
+// Sin vendedor configurado el campo se omite: mandar 0 o null haría que Siigo rechazara el cliente
+// por una referencia que no existe.
+if ('related_users' in mapper.map(company)) {
+  throw new Error('El payload envió related_users sin vendedor configurado.');
+}
+if ('related_users' in mapper.map(company, { sellerId: 0 })) {
+  throw new Error('El payload envió related_users con un identificador de vendedor inválido.');
 }
 if ((await service.findCustomer('000000000')) !== null) {
   throw new Error('findCustomer debe devolver null cuando Siigo no encuentra coincidencias.');

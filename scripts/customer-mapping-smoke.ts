@@ -258,7 +258,7 @@ const siigoPanama = siigoMapper.map(
     cityCode: null,
     cityName: 'Ciudad de Panamá',
   },
-  { stateCode: '05', cityCode: '0501' },
+  { siigoLocation: { stateCode: '05', cityCode: '0501' } },
 );
 if (
   siigoPanama.address.city.country_code !== 'Pa' ||
@@ -280,7 +280,7 @@ const siigoUnitedStates = siigoMapper.map(
     addressLine1: '1230 N. BEACHWOOD DR',
     addressLine2: 'APT 1/8',
   },
-  { stateCode: '05', cityCode: '01' },
+  { siigoLocation: { stateCode: '05', cityCode: '01' } },
 );
 if (
   // La dirección viaja en mayúsculas también para clientes internacionales.
@@ -326,7 +326,7 @@ try {
       cityCode: null,
       cityName: 'Ciudad de Panamá',
     },
-    { stateCode: '01', cityCode: '0501' },
+    { siigoLocation: { stateCode: '01', cityCode: '0501' } },
   );
 } catch (error) {
   const response = error instanceof BadRequestException ? error.getResponse() : null;
@@ -351,7 +351,7 @@ try {
       cityCode: null,
       cityName: 'Andorra la Vieja',
     },
-    { stateCode: '01', cityCode: '0101' },
+    { siigoLocation: { stateCode: '01', cityCode: '0101' } },
   );
 } catch (error) {
   const response = error instanceof BadRequestException ? error.getResponse() : null;
