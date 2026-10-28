@@ -6,11 +6,11 @@ import {
   Briefcase,
   Gear,
   LayoutSideContentLeft,
-  ListCheck,
   Persons,
   PersonsLock,
   PersonMagnifier,
   ShoppingCart,
+  Terminal,
   Ticket,
   Xmark,
 } from '@gravity-ui/icons';
@@ -201,7 +201,7 @@ export function AppShell() {
         {
           to: '/logs',
           label: 'Logs',
-          icon: <ListCheck />,
+          icon: <Terminal />,
           when: can('logs.read'),
         },
       ],
