@@ -35,43 +35,60 @@ Todas se configuran en xCloud; no crear ni subir `.env` de producción.
 
 El archivo `.env.production.example` contiene únicamente placeholders y sirve como checklist. No debe renombrarse y completarse dentro del repositorio; los valores reales se cargan directamente en el panel de variables de xCloud.
 
-| Variable                                                       | Requerida             | Uso                                                  |
-| -------------------------------------------------------------- | --------------------- | ---------------------------------------------------- |
-| `NODE_ENV=production`                                          | Sí                    | Activa cookies seguras y validaciones de producción. |
-| `PORT`                                                         | Sí                    | Puerto asignado por la plataforma.                   |
-| `TRUST_PROXY`                                                  | Sí                    | Confianza explícita en el proxy inverso.             |
-| `FRONTEND_URL`                                                 | Sí                    | Origen HTTPS autorizado.                             |
-| `BETTER_AUTH_URL`                                              | Sí                    | URL HTTPS pública de autenticación.                  |
-| `DATABASE_URL`                                                 | Sí                    | Conexión MySQL de producción con contraseña.         |
-| `BETTER_AUTH_SECRET`                                           | Sí                    | Secreto aleatorio de al menos 32 caracteres.         |
-| `VITE_TURNSTILE_SITE_KEY`                                      | Sí                    | Clave pública real incluida durante el build.        |
-| `TURNSTILE_SECRET_KEY`                                         | Sí                    | Clave privada real, solo backend.                    |
-| `SMTP_HOST`                                                    | Sí                    | Servidor de correo para OTP.                         |
-| `SMTP_PORT`                                                    | Sí                    | Puerto SMTP.                                         |
-| `SMTP_SECURE`                                                  | Sí                    | `false` para STARTTLS/587; `true` para TLS/465.      |
-| `SMTP_USER`                                                    | Sí                    | Usuario SMTP.                                        |
-| `SMTP_PASSWORD`                                                | Sí                    | Credencial SMTP privada.                             |
-| `SMTP_FROM`                                                    | Sí                    | Remitente de los códigos OTP.                        |
-| `SIIGO_API_URL`                                                | Sí                    | Base HTTPS de Siigo.                                 |
-| `SIIGO_USERNAME`                                               | Sí                    | Usuario de autenticación Siigo.                      |
-| `SIIGO_ACCESS_KEY`                                             | Sí                    | Credencial privada Siigo.                            |
-| `SIIGO_PARTNER_ID`                                             | Sí                    | Identificador requerido por Siigo.                   |
-| `SERATUS_API_URL`                                              | Sí                    | Base HTTPS de WooCommerce Seratus.                   |
-| `WOOCOMMERCE_SERATUS_CK`                                       | Sí                    | Consumer key privada.                                |
-| `WOOCOMMERCE_SERATUS_CS`                                       | Sí                    | Consumer secret privado.                             |
-| `PALI_API_URL`                                                 | Sí                    | Base HTTPS de WooCommerce Pali.                      |
-| `WOOCOMMERCE_PALI_CK`                                          | Sí                    | Consumer key privada.                                |
-| `WOOCOMMERCE_PALI_CS`                                          | Sí                    | Consumer secret privado.                             |
-| `WOOCOMMERCE_USERNAME`                                         | Sí                    | Usuario de WordPress del endpoint propio de Sevale.  |
-| `SERATUS_PASSWORD`                                             | Sí                    | Contraseña del endpoint propio en Seratus.           |
-| `PALI_PASSWORD`                                                | Sí                    | Contraseña del endpoint propio en Pali.              |
-| `N8N_API_KEY`                                                  | Sí                    | API key aleatoria de al menos 32 caracteres.         |
-| `INITIAL_ADMIN_EMAIL`                                          | Solo seed inicial     | Correo del administrador inicial.                    |
-| `INITIAL_ADMIN_PASSWORD`                                       | Opcional y temporal   | Contraseña inicial; retirarla después del seed.      |
-| `VITE_API_URL`                                                 | No en un solo dominio | URL pública de API para una topología separada.      |
-| `REDIS_HOST`, `REDIS_PORT`, `REDIS_USERNAME`, `REDIS_PASSWORD` | No                    | Reservadas; V1 no utiliza Redis.                     |
+| Variable                                                       | Requerida             | Uso                                                   |
+| -------------------------------------------------------------- | --------------------- | ----------------------------------------------------- |
+| `NODE_ENV=production`                                          | Sí                    | Activa cookies seguras y validaciones de producción.  |
+| `PORT`                                                         | Sí                    | Puerto asignado por la plataforma.                    |
+| `TRUST_PROXY`                                                  | Sí                    | Confianza explícita en el proxy inverso.              |
+| `FRONTEND_URL`                                                 | Sí                    | Origen HTTPS autorizado.                              |
+| `BETTER_AUTH_URL`                                              | Sí                    | URL HTTPS pública de autenticación.                   |
+| `DATABASE_URL`                                                 | Sí                    | Conexión MySQL de producción con contraseña.          |
+| `BETTER_AUTH_SECRET`                                           | Sí                    | Secreto aleatorio de al menos 32 caracteres.          |
+| `VITE_TURNSTILE_SITE_KEY`                                      | Sí                    | Clave pública real incluida durante el build.         |
+| `TURNSTILE_SECRET_KEY`                                         | Sí                    | Clave privada real, solo backend.                     |
+| `SMTP_HOST`                                                    | Sí                    | Servidor de correo para OTP.                          |
+| `SMTP_PORT`                                                    | Sí                    | Puerto SMTP.                                          |
+| `SMTP_SECURE`                                                  | Sí                    | `false` para STARTTLS/587; `true` para TLS/465.       |
+| `SMTP_USER`                                                    | Sí                    | Usuario SMTP.                                         |
+| `SMTP_PASSWORD`                                                | Sí                    | Credencial SMTP privada.                              |
+| `SMTP_FROM`                                                    | Sí                    | Remitente de los códigos OTP.                         |
+| `SIIGO_API_URL`                                                | Sí                    | Base HTTPS de Siigo.                                  |
+| `SIIGO_USERNAME`                                               | Sí                    | Usuario de autenticación Siigo.                       |
+| `SIIGO_ACCESS_KEY`                                             | Sí                    | Credencial privada Siigo.                             |
+| `SIIGO_PARTNER_ID`                                             | Sí                    | Identificador requerido por Siigo.                    |
+| `SIIGO_QUOTATION_DOCUMENT_ID`                                  | No                    | Comprobante de cotización; por defecto `8652`.        |
+| `SIIGO_COST_CENTER_ID`                                         | No                    | Centro de costo de la cotización; por defecto `1388`. |
+| `TRM_API_URL`                                                  | No                    | Fuente de la TRM; solo se usa al cotizar en dólares.  |
+| `SERATUS_API_URL`                                              | Sí                    | Base HTTPS de WooCommerce Seratus.                    |
+| `WOOCOMMERCE_SERATUS_CK`                                       | Sí                    | Consumer key privada.                                 |
+| `WOOCOMMERCE_SERATUS_CS`                                       | Sí                    | Consumer secret privado.                              |
+| `PALI_API_URL`                                                 | Sí                    | Base HTTPS de WooCommerce Pali.                       |
+| `WOOCOMMERCE_PALI_CK`                                          | Sí                    | Consumer key privada.                                 |
+| `WOOCOMMERCE_PALI_CS`                                          | Sí                    | Consumer secret privado.                              |
+| `WOOCOMMERCE_USERNAME`                                         | Sí                    | Usuario de WordPress del endpoint propio de Sevale.   |
+| `SERATUS_PASSWORD`                                             | Sí                    | Contraseña del endpoint propio en Seratus.            |
+| `PALI_PASSWORD`                                                | Sí                    | Contraseña del endpoint propio en Pali.               |
+| `N8N_API_KEY`                                                  | Sí                    | API key aleatoria de al menos 32 caracteres.          |
+| `INITIAL_ADMIN_EMAIL`                                          | Solo seed inicial     | Correo del administrador inicial.                     |
+| `INITIAL_ADMIN_PASSWORD`                                       | Opcional y temporal   | Contraseña inicial; retirarla después del seed.       |
+| `VITE_API_URL`                                                 | No en un solo dominio | URL pública de API para una topología separada.       |
+| `REDIS_HOST`, `REDIS_PORT`, `REDIS_USERNAME`, `REDIS_PASSWORD` | No                    | Reservadas; V1 no utiliza Redis.                      |
 
 No usar las credenciales de prueba de Turnstile en producción. El backend rechaza el arranque si detecta claves de prueba, HTTP, SMTP incompleto, integraciones incompletas o secretos principales débiles.
+
+### Variables opcionales de Siigo
+
+Las tres son opcionales porque el código trae un valor por defecto. Configurarlas solo documenta el valor real y permite cambiarlo sin desplegar:
+
+```env
+SIIGO_QUOTATION_DOCUMENT_ID=8652
+SIIGO_COST_CENTER_ID=1388
+TRM_API_URL=https://www.datos.gov.co/resource/32sa-8pi3.json
+```
+
+El valor por defecto se aplica cuando la variable no existe, viene vacía o no es un entero positivo. Un valor verosímil pero equivocado, por ejemplo `865`, **no** cae al valor por defecto: se envía así y Siigo lo rechaza. Conviene copiar los valores del panel de Siigo tal cual.
+
+`TRM_API_URL` solo se consulta al cotizar en dólares. Si todas las cotizaciones son en pesos, no se usa.
 
 ### Gmail SMTP
 
@@ -119,4 +136,4 @@ Nunca ejecutar `prisma migrate reset`, `prisma migrate dev` ni `DROP DATABASE` e
 7. Comprobar `/api/health`, login, Socket.IO y una lectura de inventario.
 8. Mantener el CRM WordPress y los webhooks actuales activos durante la transición.
 
-El despliegue no debe continuar mientras `npm audit` siga reportando la versión vulnerable de MariaDB fijada por Prisma, salvo que exista una actualización estable compatible o una aceptación formal y documentada del riesgo.
+El despliegue no debe continuar mientras `npm audit --omit=dev --audit-level=critical` falle. Hoy no reporta ninguna vulnerabilidad crítica: la de MariaDB se corrigió al subir Prisma y el adaptador, y la de `better-auth` al subir el paquete y su adaptador. Quedan avisos sin versión corregida publicada (`brace-expansion`, `fast-uri`, `ip-address`); no bloquean el despliegue y se revisan cuando la librería publique el arreglo.
