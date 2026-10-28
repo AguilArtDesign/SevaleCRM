@@ -13,7 +13,8 @@ Al terminar un cambio:
 
 1. Dejarlo en el árbol de trabajo, sin commitear.
 2. Validarlo con `npm run format:check`, `npm run lint`, `npm run typecheck` y `npm run build`.
-3. Preguntar si se debe commitear, y esperar la respuesta.
+3. Comprobar que el entorno local sigue en pie (ver `entorno-local.instructions.md`). `npm run build` detiene la API en watch, así que hay que levantarla otra vez.
+4. Preguntar si se debe commitear, y esperar la respuesta.
 
 ### Correcto
 
