@@ -107,6 +107,9 @@ export function ProspectDetail({
           <DetailRow label="Convenio" value={prospect.agreement?.companyName} />
           <DetailRow label="Origen" value={prospectSourceMeta[prospect.source]} />
           <DetailRow label="Comercial" value={prospect.assignedUser?.name ?? 'Sin asignar'} />
+          {/* La importación es una carga masiva sin autor por fila: se dice para que nadie busque
+              un comercial que nunca la creó. */}
+          <DetailRow label="Creado por" value={prospect.createdBy?.name ?? 'Importación'} />
           <DetailRow label="Actualizado" value={dateTime(prospect.updatedAt)} />
         </dl>
         <div className="prospect-detail-tags">
