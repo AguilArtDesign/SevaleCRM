@@ -32,6 +32,16 @@ export class NotificationsRepository {
         take: query.pageSize,
         include: {
           product: { select: { sku: true, productName: true, imageUrl: true, store: true } },
+          // El avatar del aviso sale del cliente: sirve igual para un pedido y para un alta.
+          customer: {
+            select: {
+              id: true,
+              personType: true,
+              firstName: true,
+              lastName: true,
+              displayName: true,
+            },
+          },
           orderOperation: {
             select: {
               operationCode: true,
@@ -66,6 +76,14 @@ export class NotificationsRepository {
       where: { id, ...this.visibleTo(requiredPermissions) },
       select: { id: true },
     });
+  }
+
+  /**
+   * Nombre de quien originó el aviso. Se copia en el mensaje al crear la notificación: un usuario se
+   * borra físicamente y, sin la copia, el aviso perdería el nombre justo cuando hay que leerlo.
+   */
+  userName(id: string) {
+    return this.prisma.user.findUnique({ where: { id }, select: { name: true } });
   }
 
   markRead(notificationId: number, userId: string) {

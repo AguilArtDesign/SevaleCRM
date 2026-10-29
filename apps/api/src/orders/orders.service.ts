@@ -321,7 +321,7 @@ export class OrdersService {
     for (let attempt = 0; attempt < 5; attempt += 1) {
       try {
         const operation = await this.orders.create(operationCode(), createdByUserId, prepared);
-        await this.events.operationCreated(operation);
+        await this.events.operationCreated(operation, createdByUserId);
         await this.trail.recordCreated(
           {
             id: operation.id,
@@ -392,7 +392,7 @@ export class OrdersService {
     const updated = await this.orders.detail(id);
     if (!updated)
       throw businessError(NotFoundException, 'ORDER_NOT_FOUND', 'La operación no existe.');
-    await this.events.shipmentUpdated(updated, false);
+    this.events.shipmentUpdated(updated);
     return serializeDetail(updated);
   }
 
@@ -425,7 +425,7 @@ export class OrdersService {
       if (!updated) {
         throw businessError(NotFoundException, 'ORDER_NOT_FOUND', 'La operación no existe.');
       }
-      await this.events.siigoQuotationUpdated(updated);
+      this.events.siigoQuotationUpdated(updated);
       await this.trail.recordQuoted(updated, userId);
       return serializeDetail(updated);
     }
@@ -464,7 +464,7 @@ export class OrdersService {
       if (!updated) {
         throw businessError(NotFoundException, 'ORDER_NOT_FOUND', 'La operación no existe.');
       }
-      await this.events.operationCompleted(updated);
+      this.events.operationCompleted(updated);
       await this.trail.recordCompleted(updated, userId);
       await this.trail.recordSynced(updated, outcomes, userId);
       return serializeDetail(updated);
@@ -495,7 +495,7 @@ export class OrdersService {
     const updated = await this.orders.detail(id);
     if (!updated)
       throw businessError(NotFoundException, 'ORDER_NOT_FOUND', 'La operación no existe.');
-    await this.events.syncUpdated(updated, claim.orderIds);
+    this.events.syncUpdated(updated);
     await this.trail.recordSynced(updated, outcomes, userId);
     return serializeDetail(updated);
   }
@@ -523,7 +523,7 @@ export class OrdersService {
     const updated = await this.orders.detail(claim.operationId);
     if (!updated)
       throw businessError(NotFoundException, 'ORDER_NOT_FOUND', 'La operación no existe.');
-    await this.events.syncUpdated(updated, claim.orderIds);
+    this.events.syncUpdated(updated);
     await this.trail.recordSynced(updated, outcomes, userId);
     return serializeDetail(updated);
   }
@@ -545,7 +545,7 @@ export class OrdersService {
     const updated = await this.orders.detail(id);
     if (!updated)
       throw businessError(NotFoundException, 'ORDER_NOT_FOUND', 'La operación no existe.');
-    await this.events.shipmentUpdated(updated, true);
+    this.events.shipmentUpdated(updated);
     return serializeDetail(updated);
   }
 

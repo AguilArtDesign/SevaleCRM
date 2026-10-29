@@ -180,43 +180,43 @@ try {
     },
   });
   operationId = operation.id;
-  const orderNotification = await notifications.createOrderOperation(operation, 'CRM');
+  const orderNotification = await notifications.createOrderOperation(
+    operation,
+    'CRM',
+    users[0]?.id ?? null,
+  );
   orderNotificationId = orderNotification.id;
-  const completedNotification = await notifications.createOrderCompleted(operation);
-  const syncNotifications = await notifications.createOrderSyncResults(
+  if (
+    orderNotification.title !== 'Nuevo Pedido' ||
+    !orderNotification.message.startsWith(`${users[0]?.name} ha creado un nuevo pedido `) ||
+    !orderNotification.message.endsWith(operation.operationCode)
+  ) {
+    throw new Error('La notificación de pedido no atribuye el alta a quien la hizo.');
+  }
+  const importedNotification = await notifications.createOrderOperation(
     operation,
-    [
-      { store: Store.PALI, syncStatus: 'SYNCED' },
-      { store: Store.SERATUS, syncStatus: 'ERROR' },
-    ],
-    false,
+    'WOOCOMMERCE',
+    null,
   );
-  const shipmentNotification = await notifications.createOrderShipmentUpdated(operation);
-  const quotationCreated = await notifications.createOrderSiigoQuotationUpdated(
-    operation,
-    'SYNCED',
+  notificationIds.push(importedNotification.id);
+  if (
+    importedNotification.title !== 'Nuevo Pedido' ||
+    importedNotification.message !==
+      `WooCommerce ha enviado un nuevo pedido ${operation.operationCode}`
+  ) {
+    throw new Error('La notificación de un pedido de la tienda no la atribuye a WooCommerce.');
+  }
+  const customerNotification = await notifications.createCustomerCreated(
+    customer,
+    users[0]?.id ?? null,
   );
-  const quotationError = await notifications.createOrderSiigoQuotationUpdated(operation, 'ERROR');
-  const phaseEightNotifications = [
-    completedNotification,
-    ...syncNotifications,
-    shipmentNotification,
-    quotationCreated,
-    quotationError,
-  ];
-  notificationIds.push(...phaseEightNotifications.map(({ id }) => id));
-  const phaseEightTypes = new Set(phaseEightNotifications.map(({ type }) => type));
-  for (const expectedType of [
-    'ORDER_OPERATION_COMPLETED',
-    'ORDER_SYNC_PARTIAL',
-    'ORDER_SYNC_ERROR_SERATUS',
-    'ORDER_SHIPMENT_UPDATED',
-    'ORDER_SIIGO_QUOTATION_CREATED',
-    'ORDER_SIIGO_QUOTATION_ERROR',
-  ]) {
-    if (!phaseEightTypes.has(expectedType)) {
-      throw new Error(`No se generó la notificación de pedidos ${expectedType}.`);
-    }
+  notificationIds.push(customerNotification.id);
+  if (
+    customerNotification.title !== 'Nuevo Cliente' ||
+    customerNotification.message !==
+      `${users[0]?.name} ha creado un nuevo cliente ➝ ${customer.displayName}`
+  ) {
+    throw new Error('La notificación de cliente nuevo no describe quién lo creó y cuál es.');
   }
 
   const expiredNotification = await prisma.notification.create({

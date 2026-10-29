@@ -33,7 +33,7 @@ export class OrderEventPublisher {
         store,
       );
       await this.publish(
-        this.notifications.createOrderOperation(operation, 'WOOCOMMERCE', store),
+        this.notifications.createOrderOperation(operation, 'WOOCOMMERCE', null),
         'pedido WooCommerce recibido',
       );
       return;
@@ -42,11 +42,11 @@ export class OrderEventPublisher {
     this.emitSyncUpdated(operation);
   }
 
-  async operationCreated(operation: OrderOperationDetail) {
+  async operationCreated(operation: OrderOperationDetail, actorUserId: string) {
     this.realtime.emitOrderOperationCreated(operation);
     await this.publish(
-      this.notifications.createOrderOperation(operation, 'CRM'),
-      'creación de operación',
+      this.notifications.createOrderOperation(operation, 'CRM', actorUserId),
+      'creación de pedido',
     );
   }
 
@@ -54,57 +54,35 @@ export class OrderEventPublisher {
     this.realtime.emitOrderOperationUpdated(operation);
   }
 
-  async operationCompleted(operation: OrderOperationDetail) {
+  /**
+   * Del pedido completado en adelante solo se avisa en tiempo real: la sincronización con las
+   * tiendas, el envío y la cotización quedan en la actividad del pedido, con su autor y su
+   * resultado. Repetirlos como notificación llenaba la campana sin decir nada que no estuviera ya
+   * en la traza.
+   */
+  operationCompleted(operation: OrderOperationDetail) {
     this.realtime.emitOrderOperationUpdated(operation);
     this.emitSyncUpdated(operation);
-    await Promise.all([
-      this.publish(this.notifications.createOrderCompleted(operation), 'operación completada'),
-      this.publish(
-        this.notifications.createOrderSyncResults(operation, operation.orders, false),
-        'sincronización de operación',
-      ),
-    ]);
   }
 
-  async syncUpdated(operation: OrderOperationDetail, retriedOrderIds: number[]) {
+  syncUpdated(operation: OrderOperationDetail) {
     this.emitSyncUpdated(operation);
-    await this.publish(
-      this.notifications.createOrderSyncResults(
-        operation,
-        operation.orders.filter(({ id }) => retriedOrderIds.includes(id)),
-        true,
-      ),
-      'reintento de sincronización',
-    );
   }
 
-  async shipmentUpdated(operation: OrderOperationDetail, notify: boolean) {
+  shipmentUpdated(operation: OrderOperationDetail) {
     if (!operation.shipment) return;
     this.realtime.emitOrderShipmentUpdated(operation, {
       status: operation.shipment.status,
       trackingNumber: operation.shipment.trackingNumber,
     });
-    if (notify) {
-      await this.publish(
-        this.notifications.createOrderShipmentUpdated(operation),
-        'actualización de envío',
-      );
-    }
   }
 
-  async siigoQuotationUpdated(operation: OrderOperationDetail) {
+  siigoQuotationUpdated(operation: OrderOperationDetail) {
     if (!operation.siigoQuotation) return;
     this.realtime.emitOrderSiigoQuotationUpdated(operation, {
       status: operation.siigoQuotation.status,
       externalId: operation.siigoQuotation.externalId,
     });
-    await this.publish(
-      this.notifications.createOrderSiigoQuotationUpdated(
-        operation,
-        operation.siigoQuotation.status,
-      ),
-      'cotización Siigo',
-    );
   }
 
   private emitSyncUpdated(operation: OrderOperationDetail) {

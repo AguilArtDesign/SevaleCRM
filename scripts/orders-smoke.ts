@@ -320,6 +320,23 @@ try {
     throw new Error('La creación no calculó o agrupó correctamente la operación local.');
   }
 
+  // Un pedido avisa una sola vez, al crearse, y con el nombre de quien lo creó. Completarlo,
+  // sincronizarlo o cotizarlo no vuelve a sonar: eso queda en la actividad del pedido.
+  const createdNotification = await prisma.notification.findFirst({
+    where: { orderOperationId: created.id },
+    orderBy: { id: 'desc' },
+  });
+  if (
+    createdNotification?.type !== 'ORDER_OPERATION_CREATED' ||
+    createdNotification.title !== 'Nuevo Pedido' ||
+    !/ ha creado un nuevo pedido $/.test(
+      createdNotification.message.replace(created.operationCode, ''),
+    ) ||
+    !createdNotification.message.endsWith(created.operationCode)
+  ) {
+    throw new Error(`Notificación de pedido inesperada: ${createdNotification?.message}`);
+  }
+
   await prisma.coupon.update({ where: { id: coupon.id }, data: { amount: 15 } });
   const historicalResponse = await api(`/api/orders/${created.id}`, commercialCookie);
   expectStatus(historicalResponse, 200, 'Snapshot histórico del cupón');

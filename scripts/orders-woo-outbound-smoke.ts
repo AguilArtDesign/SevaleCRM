@@ -319,6 +319,20 @@ try {
   if (posts.get('SERATUS') !== 1 || posts.get('PALI') !== 1) {
     throw new Error('La finalización no creó exactamente un pedido por tienda.');
   }
+  // Completar sincroniza las tiendas, pero no vuelve a avisar: el único aviso del pedido es su alta.
+  // Lo que pasó con cada tienda queda en la actividad del pedido.
+  const completedNotifications = await prisma.notification.findMany({
+    where: { orderOperationId: local.id },
+    select: { type: true },
+  });
+  if (
+    completedNotifications.length !== 1 ||
+    completedNotifications[0]?.type !== 'ORDER_OPERATION_CREATED'
+  ) {
+    throw new Error(
+      `Completar el pedido generó avisos de más: ${completedNotifications.map(({ type }) => type).join(', ')}.`,
+    );
+  }
 
   expectStatus(
     await api(`/api/orders/${local.id}/complete`, commercialCookie, { method: 'POST' }),

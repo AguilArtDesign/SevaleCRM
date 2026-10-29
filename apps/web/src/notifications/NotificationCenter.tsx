@@ -24,9 +24,6 @@ function capitalize(value: string) {
 }
 
 function notificationDescription(notification: NotificationRecord) {
-  if (notification.type.startsWith('ORDER_') && notification.orderOperation) {
-    return `${notification.orderOperation.customer.displayName} · ${notification.orderOperation.operationCode}`;
-  }
   if (
     notification.type === 'SIIGO_PRODUCT_UPDATED' ||
     notification.type === 'PRODUCT_LINK_UPDATED'
@@ -36,6 +33,12 @@ function notificationDescription(notification: NotificationRecord) {
   if (notification.type === 'PRODUCT_LINKED' && notification.product) {
     return notification.product.productName;
   }
+  // Los avisos de pedido anteriores a la reducción guardaron solo el código en el mensaje; el
+  // cliente sigue estando en la operación, así que se muestra en vez de dejar la fila a medias.
+  const order = notification.orderOperation;
+  if (order && notification.message.trim() === order.operationCode) {
+    return `${order.customer.displayName} · ${order.operationCode}`;
+  }
   return notification.message;
 }
 
@@ -43,32 +46,6 @@ function notificationChanges(notification: NotificationRecord) {
   if (notification.type !== 'PRODUCT_LINK_UPDATED') return null;
   const [, ...changes] = notification.message.split('\n');
   return changes.join('\n') || null;
-}
-
-type SyncProvider = 'SIIGO' | 'PALI' | 'SERATUS';
-
-const providerLabels: Record<SyncProvider, string> = {
-  SIIGO: 'Siigo',
-  PALI: 'Pali',
-  SERATUS: 'Seratus',
-};
-
-function notificationProvider(notification: NotificationRecord): SyncProvider | null {
-  const providerFromType = notification.type.match(/_(SIIGO|PALI|SERATUS)$/)?.[1] as
-    SyncProvider | undefined;
-  if (providerFromType) return providerFromType;
-
-  const details = notification.message.split('\n').slice(1).join(' ');
-  return (
-    (Object.keys(providerLabels) as SyncProvider[]).find((provider) =>
-      details.toLocaleLowerCase('es-CO').includes(providerLabels[provider].toLowerCase()),
-    ) ?? null
-  );
-}
-
-function orderNotificationProvider(notification: NotificationRecord): SyncProvider | null {
-  if (!notification.type.startsWith('ORDER_')) return null;
-  return notificationProvider(notification);
 }
 
 export function NotificationCenter() {
@@ -111,14 +88,13 @@ export function NotificationCenter() {
           <strong>{status === 'unread' ? 'Todo está al día' : 'Sin notificaciones leídas'}</strong>
           <span>
             {status === 'unread'
-              ? 'Las novedades del inventario y de los pedidos aparecerán aquí.'
+              ? 'Los clientes y pedidos nuevos, y las novedades del inventario, aparecerán aquí.'
               : 'Las notificaciones que marques como leídas aparecerán aquí.'}
           </span>
         </div>
       ) : (
         notificationsQuery.data.data.map((notification) => {
-          const orderProvider = orderNotificationProvider(notification);
-          const relatedCustomer = notification.orderOperation?.customer;
+          const relatedCustomer = notification.orderOperation?.customer ?? notification.customer;
           return (
             <article
               className={`notification-item${notification.readAt ? '' : ' notification-item-unread'}`}
@@ -128,7 +104,7 @@ export function NotificationCenter() {
               {relatedCustomer ? (
                 <Avatar
                   size="md"
-                  className={`notification-customer-avatar ${customerAvatarClass(notification.orderOperation?.customer.id ?? notification.id)}`}
+                  className={`notification-customer-avatar ${customerAvatarClass(relatedCustomer.id)}`}
                   aria-hidden="true"
                 >
                   <Avatar.Fallback>{customerInitials(relatedCustomer)}</Avatar.Fallback>
@@ -163,14 +139,6 @@ export function NotificationCenter() {
                         </Chip>
                       )}
                     </>
-                  )}
-                  {orderProvider && (
-                    <Chip
-                      className={`notification-provider-chip--${orderProvider.toLowerCase()}`}
-                      color="default"
-                    >
-                      {providerLabels[orderProvider]}
-                    </Chip>
                   )}
                 </div>
                 <p>{notificationDescription(notification)}</p>

@@ -15,6 +15,15 @@ export type NotificationRecord = {
     store: 'PALI' | 'SERATUS';
   } | null;
   orderOperationId: number | null;
+  /** Cliente del aviso: da el avatar tanto en un pedido como en un alta. */
+  customerId: number | null;
+  customer: {
+    id: number;
+    personType: 'PERSON' | 'COMPANY';
+    firstName: string | null;
+    lastName: string | null;
+    displayName: string;
+  } | null;
   orderOperation: {
     operationCode: string;
     source: 'CRM' | 'WOOCOMMERCE';
