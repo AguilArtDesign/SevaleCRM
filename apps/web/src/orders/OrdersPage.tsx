@@ -25,7 +25,6 @@ import {
   EllipsisVertical,
   Eye,
   FileText,
-  Gift,
   Pencil,
   Plus,
   ShoppingCart,
@@ -848,7 +847,12 @@ export function OrdersPage() {
                                       textValue="Puntos Colombia"
                                       isDisabled
                                     >
-                                      <Gift className="size-4 shrink-0 text-muted" />
+                                      <img
+                                        className="order-brand-icon"
+                                        src="/img/puntos-colombia.svg"
+                                        alt=""
+                                        aria-hidden="true"
+                                      />
                                       <Label>Puntos Colombia</Label>
                                     </Dropdown.Item>
                                   </Dropdown.Section>
