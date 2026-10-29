@@ -1,3 +1,5 @@
+import { userAvatarGradient } from '../users/presentation';
+
 type CustomerName = {
   displayName: string;
   firstName?: string | null;
@@ -41,4 +43,13 @@ export function customerInitials(customer: CustomerName) {
 
 export function customerAvatarClass(customerId: number) {
   return `customer-table-avatar customer-table-avatar--${customerId % 6}`;
+}
+
+/**
+ * Color del avatar de un cliente con el mismo generador que el sidebar, sembrado por el correo: la
+ * misma persona no aparece de un color en su perfil y de otro en la campana de notificaciones.
+ * Los avatares de las tablas conservan su paleta fija, que allí ayuda a distinguir filas.
+ */
+export function customerAvatarStyle(customer: { id: number; email?: string | null }) {
+  return userAvatarGradient(customer.email || String(customer.id));
 }

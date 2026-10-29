@@ -15,7 +15,7 @@ export type NotificationRecord = {
     store: 'PALI' | 'SERATUS';
   } | null;
   orderOperationId: number | null;
-  /** Cliente del aviso: da el avatar tanto en un pedido como en un alta. */
+  /** Cliente del aviso: da el avatar de un alta de cliente. */
   customerId: number | null;
   customer: {
     id: number;
@@ -24,6 +24,8 @@ export type NotificationRecord = {
     lastName: string | null;
     displayName: string;
   } | null;
+  /** Quién hizo la acción del aviso; nulo cuando la hizo la tienda. */
+  actor: { id: string; name: string; email: string } | null;
   orderOperation: {
     operationCode: string;
     source: 'CRM' | 'WOOCOMMERCE';

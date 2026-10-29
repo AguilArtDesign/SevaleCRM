@@ -32,7 +32,9 @@ export class NotificationsRepository {
         take: query.pageSize,
         include: {
           product: { select: { sku: true, productName: true, imageUrl: true, store: true } },
-          // El avatar del aviso sale del cliente: sirve igual para un pedido y para un alta.
+          // El avatar del aviso es el de quien hizo la acción, que es a quien nombra el mensaje. Se
+          // toma de `createdBy` del pedido o del cliente según de qué hable el aviso, para que la
+          // misma persona salga del mismo color aquí, en el sidebar y en Usuarios.
           customer: {
             select: {
               id: true,
@@ -40,6 +42,7 @@ export class NotificationsRepository {
               firstName: true,
               lastName: true,
               displayName: true,
+              createdBy: { select: { id: true, name: true, email: true } },
             },
           },
           orderOperation: {
@@ -47,6 +50,7 @@ export class NotificationsRepository {
               operationCode: true,
               source: true,
               status: true,
+              createdBy: { select: { id: true, name: true, email: true } },
               customer: {
                 select: {
                   id: true,
@@ -54,7 +58,6 @@ export class NotificationsRepository {
                   firstName: true,
                   lastName: true,
                   displayName: true,
-                  email: true,
                 },
               },
             },

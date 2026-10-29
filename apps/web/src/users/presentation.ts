@@ -30,8 +30,13 @@ export function userInitials(name?: string): string {
     .join('');
 }
 
+/**
+ * Semilla del color del avatar. El correo va primero porque es el único dato que comparten un
+ * usuario y su ficha de cliente: así la misma persona sale del mismo color en el sidebar, en
+ * Usuarios y en las notificaciones.
+ */
 export function userAvatarSeed(
   user?: { id?: string; email?: string; name?: string } | null,
 ): string {
-  return user?.id || user?.email || user?.name || 'SevaleCRM';
+  return user?.email || user?.id || user?.name || 'SevaleCRM';
 }

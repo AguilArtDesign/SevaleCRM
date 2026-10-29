@@ -3,7 +3,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Avatar, Button, Popover, Skeleton, Tabs } from '@heroui/react';
 import { Bell, Boxes3, Check, CheckDouble, ShoppingCart } from '@gravity-ui/icons';
 import { Chip } from '../components/Chip';
-import { customerAvatarClass, customerInitials } from '../customers/presentation';
+import { customerAvatarStyle, customerInitials } from '../customers/presentation';
+import { userAvatarGradient, userAvatarSeed, userInitials } from '../users/presentation';
 import { notificationsApi, type NotificationRecord, type NotificationStatus } from './api';
 
 const relativeTime = new Intl.RelativeTimeFormat('es', { numeric: 'auto' });
@@ -94,25 +95,39 @@ export function NotificationCenter() {
         </div>
       ) : (
         notificationsQuery.data.data.map((notification) => {
-          const relatedCustomer = notification.orderOperation?.customer ?? notification.customer;
+          const actor = notification.actor;
           return (
             <article
               className={`notification-item${notification.readAt ? '' : ' notification-item-unread'}`}
               key={notification.id}
             >
               <span className="notification-dot" aria-hidden="true" />
-              {relatedCustomer ? (
-                <Avatar
-                  size="md"
-                  className={`notification-customer-avatar ${customerAvatarClass(relatedCustomer.id)}`}
-                  aria-hidden="true"
-                >
-                  <Avatar.Fallback>{customerInitials(relatedCustomer)}</Avatar.Fallback>
+              {/* El avatar es el de quien hizo la acción: es a quien nombra el mensaje y así la
+                  misma persona sale del mismo color aquí, en el sidebar y en Usuarios. Un pedido
+                  que trajo la tienda no tiene autor, y uno de inventario no tiene persona: cada uno
+                  conserva su propio icono. */}
+              {actor ? (
+                <Avatar size="md" className="notification-customer-avatar" aria-hidden="true">
+                  <Avatar.Fallback
+                    className="user-avatar-fallback"
+                    style={userAvatarGradient(userAvatarSeed(actor))}
+                  >
+                    {userInitials(actor.name)}
+                  </Avatar.Fallback>
                 </Avatar>
               ) : notification.orderOperation ? (
                 <span className="notification-product-image" aria-hidden="true">
                   <ShoppingCart width={20} height={20} />
                 </span>
+              ) : notification.customer ? (
+                <Avatar size="md" className="notification-customer-avatar" aria-hidden="true">
+                  <Avatar.Fallback
+                    className="user-avatar-fallback"
+                    style={customerAvatarStyle(notification.customer)}
+                  >
+                    {customerInitials(notification.customer)}
+                  </Avatar.Fallback>
+                </Avatar>
               ) : (
                 <span className="notification-product-image" aria-hidden="true">
                   {notification.product?.imageUrl ? (

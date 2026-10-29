@@ -19,6 +19,23 @@ function permissionsFor(role: unknown): readonly Permission[] {
   return validRole ? rolePermissions[validRole] : [];
 }
 
+type NotificationActor = { id: string; name: string; email: string };
+
+/**
+ * Quién hizo la acción del aviso. Un aviso de pedido lo firma quien creó el pedido —nadie, cuando lo
+ * trajo la tienda— y uno de cliente, quien creó la ficha. Mostrar en su lugar al cliente del pedido
+ * pintaba el avatar con el color de otra persona.
+ */
+function notificationActor(notification: {
+  orderOperationId: number | null;
+  customer: { createdBy: NotificationActor | null } | null;
+  orderOperation: { createdBy: NotificationActor | null } | null;
+}): NotificationActor | null {
+  return notification.orderOperationId
+    ? (notification.orderOperation?.createdBy ?? null)
+    : (notification.customer?.createdBy ?? null);
+}
+
 @Injectable()
 export class NotificationsService {
   constructor(
@@ -44,6 +61,8 @@ export class NotificationsService {
         customer: notification.customer,
         orderOperationId: notification.orderOperationId,
         orderOperation: notification.orderOperation,
+        /** Quién hizo la acción que cuenta el aviso; nulo cuando la hizo la tienda. */
+        actor: notificationActor(notification),
         createdAt: notification.createdAt,
         readAt: notification.reads[0]?.readAt ?? null,
       })),

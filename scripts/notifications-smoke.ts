@@ -55,6 +55,7 @@ let productId: number | null = null;
 let customerId: number | null = null;
 let restrictedNotificationId: number | null = null;
 let operationId: number | null = null;
+let importedOperationId: number | null = null;
 let orderNotificationId: number | null = null;
 const notificationIds: number[] = [];
 
@@ -144,6 +145,8 @@ try {
       cityCode: '05001',
       addressLine1: 'Dirección de prueba',
       fiscalResponsibilities: ['R-99-PN'],
+      // Quien hizo el alta: es el avatar que muestra el aviso.
+      createdByUserId: users[0]?.id ?? null,
     },
   });
   customerId = customer.id;
@@ -177,9 +180,22 @@ try {
       status: OperationStatus.PENDING,
       customerId: customer.id,
       currency: 'COP',
+      // Quien creó la operación: el aviso lo muestra como autor de la acción.
+      createdByUserId: users[0]?.id ?? null,
     },
   });
   operationId = operation.id;
+  // Una operación de la tienda no tiene autor: la trajo WooCommerce.
+  const importedOperation = await prisma.orderOperation.create({
+    data: {
+      operationCode: `OP-NOTIFY-W-${runId.slice(0, 6)}`,
+      source: OrderSource.WOOCOMMERCE,
+      status: OperationStatus.PENDING,
+      customerId: customer.id,
+      currency: 'COP',
+    },
+  });
+  importedOperationId = importedOperation.id;
   const orderNotification = await notifications.createOrderOperation(
     operation,
     'CRM',
@@ -194,7 +210,7 @@ try {
     throw new Error('La notificación de pedido no atribuye el alta a quien la hizo.');
   }
   const importedNotification = await notifications.createOrderOperation(
-    operation,
+    importedOperation,
     'WOOCOMMERCE',
     null,
   );
@@ -202,7 +218,7 @@ try {
   if (
     importedNotification.title !== 'Nuevo Pedido' ||
     importedNotification.message !==
-      `WooCommerce ha enviado un nuevo pedido ${operation.operationCode}`
+      `WooCommerce ha enviado un nuevo pedido ${importedOperation.operationCode}`
   ) {
     throw new Error('La notificación de un pedido de la tienda no la atribuye a WooCommerce.');
   }
@@ -269,6 +285,21 @@ try {
     orderItem.orderOperation.customer.displayName !== customer.displayName
   ) {
     throw new Error('La notificación de pedido no devolvió la operación y cliente relacionados.');
+  }
+
+  // El avatar del aviso es el de quien hizo la acción. Si viniera del cliente del pedido, saldría
+  // con el color de otra persona.
+  type ActorItem = { id: number; actor: { id: string; email: string } | null };
+  const actorOf = (id: number) =>
+    (unreadA.data as unknown as ActorItem[]).find((notification) => notification.id === id);
+  if (actorOf(orderNotificationId)?.actor?.id !== users[0]?.id) {
+    throw new Error('El aviso de pedido no devolvió como actor a quien lo creó.');
+  }
+  if (actorOf(importedNotification.id)?.actor !== null) {
+    throw new Error('El aviso de un pedido de la tienda no debería tener actor humano.');
+  }
+  if (actorOf(customerNotification.id)?.actor?.id !== users[0]?.id) {
+    throw new Error('El aviso de cliente nuevo no devolvió como actor a quien lo creó.');
   }
 
   const logisticsUnreadResponse = await api('/api/notifications?status=unread', logisticsCookie);
@@ -345,6 +376,9 @@ try {
   }
   if (operationId !== null) {
     await prisma.orderOperation.deleteMany({ where: { id: operationId } });
+  }
+  if (importedOperationId !== null) {
+    await prisma.orderOperation.deleteMany({ where: { id: importedOperationId } });
   }
   if (customerId !== null) await prisma.customer.deleteMany({ where: { id: customerId } });
   if (productId !== null) await prisma.product.deleteMany({ where: { id: productId } });
