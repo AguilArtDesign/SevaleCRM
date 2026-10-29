@@ -1798,7 +1798,7 @@ select {
 .modal__body {
   min-height: 0;
   margin-block: 0;
-  overflow: visible;
+  overflow-y: auto;
   flex: 1;
   font-size: var(--text-sm);
   line-height: 1.43;
@@ -5158,7 +5158,6 @@ select {
 }
 
 .siigo-quotation-modal .siigo-quotation-subtitle {
-  margin: 0.3rem 0 0;
   color: var(--muted);
   font-size: 0.78rem;
 }
@@ -5339,9 +5338,9 @@ select {
    deben competir en la misma línea. */
 .siigo-quotation-sync-date {
   margin: 0;
-  color: var(--muted);
-  font-size: 0.75rem;
-  font-weight: 400;
+  color: var(--foreground);
+  font-size: 0.8125rem;
+  line-height: 1.35;
 }
 
 .siigo-quotation-issues {

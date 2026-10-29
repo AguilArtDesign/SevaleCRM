@@ -49,6 +49,7 @@ import {
   OrderStatusChip,
   OrderSourceChip,
   ProductThumb,
+  quotationActionLabel,
   StoreChip,
   syncStatusMeta,
 } from './presentation';
@@ -835,10 +836,10 @@ export function OrdersPage() {
                                     {allowsSiigoQuotation(order) && (
                                       <Dropdown.Item
                                         id="siigo-quotation"
-                                        textValue="Cotización Siigo"
+                                        textValue={quotationActionLabel(order.quotationAction)}
                                       >
                                         <FileText className="size-4 shrink-0 text-muted" />
-                                        <Label>Cotización Siigo</Label>
+                                        <Label>{quotationActionLabel(order.quotationAction)}</Label>
                                       </Dropdown.Item>
                                     )}
                                     {/* Todavía sin funcionalidad: se activará más adelante. */}

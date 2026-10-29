@@ -191,7 +191,8 @@ export type SiigoQuotationClaim =
   | { outcome: 'NOT_ALLOWED' }
   | { outcome: 'ALREADY_SYNCED' }
   | { outcome: 'IN_PROGRESS' }
-  | { outcome: 'CLAIMED'; quotationId: number };
+  /** `update` indica que la cotización ya existe en Siigo y hay que actualizarla, no crearla. */
+  | { outcome: 'CLAIMED'; quotationId: number; update: boolean };
 
 /**
  * Orden del panel. "createdAt" es la fecha de creación del pedido y no la de la operación: la que
@@ -315,6 +316,11 @@ export class OrdersRepository {
               currency: true,
               createdAt: true,
               updatedAt: true,
+              // El resumen de la cotización decide qué dice la acción de la fila: crear, actualizar
+              // o ver. `externalId` distingue una cotización que ya vive en Siigo.
+              siigoQuotation: {
+                select: { status: true, externalId: true },
+              },
               customer: {
                 select: {
                   id: true,
@@ -676,7 +682,12 @@ export class OrdersRepository {
     });
   }
 
-  claimSiigoQuotation(operationId: number): Promise<SiigoQuotationClaim> {
+  /**
+   * Toma la cotización para sincronizarla. Si ya existe en Siigo pero el pedido cambió desde
+   * entonces —la huella guardada no coincide con la actual—, se reclama para actualizarla en vez de
+   * darla por buena: la cotización de Siigo seguiría con los productos anteriores.
+   */
+  claimSiigoQuotation(operationId: number, fingerprint: string): Promise<SiigoQuotationClaim> {
     return this.prisma.$transaction(async (transaction) => {
       const operation = await transaction.orderOperation.findFirst({
         where: { id: operationId, deletedAt: null },
@@ -684,21 +695,24 @@ export class OrdersRepository {
       });
       if (!operation) return { outcome: 'NOT_FOUND' };
       if (operation.status === 'CANCELLED') return { outcome: 'NOT_ALLOWED' };
-      if (operation.siigoQuotation?.externalId) return { outcome: 'ALREADY_SYNCED' };
       if (operation.siigoQuotation?.status === 'SYNCING') return { outcome: 'IN_PROGRESS' };
+      const update = Boolean(operation.siigoQuotation?.externalId);
+      if (update && operation.siigoQuotation?.quotedFingerprint === fingerprint) {
+        return { outcome: 'ALREADY_SYNCED' };
+      }
 
       const quotation = await transaction.siigoQuotation.upsert({
         where: { operationId },
         create: { operationId, status: 'SYNCING' },
         update: { status: 'SYNCING', errorCode: null, errorMessage: null },
       });
-      return { outcome: 'CLAIMED', quotationId: quotation.id };
+      return { outcome: 'CLAIMED', quotationId: quotation.id, update };
     });
   }
 
   siigoQuotationJob(id: number): Promise<SiigoQuotationJob | null> {
     return this.prisma.siigoQuotation.findFirst({
-      where: { id, status: 'SYNCING', externalId: null },
+      where: { id, status: 'SYNCING' },
       include: siigoQuotationJobInclude,
     });
   }
@@ -707,6 +721,18 @@ export class OrdersRepository {
   quotationOperation(id: number): Promise<QuotationOperation | null> {
     return this.prisma.orderOperation.findFirst({
       where: { id, deletedAt: null },
+      include: quotationOperationInclude,
+    });
+  }
+
+  /**
+   * Varias operaciones de una misma página con los mismos datos de cotización. Es una sola consulta
+   * para no repetirla por fila cuando el panel necesita saber cuáles quedaron desactualizadas.
+   */
+  quotationOperations(ids: number[]): Promise<QuotationOperation[]> {
+    if (ids.length === 0) return Promise.resolve([]);
+    return this.prisma.orderOperation.findMany({
+      where: { id: { in: ids }, deletedAt: null },
       include: quotationOperationInclude,
     });
   }
@@ -730,17 +756,22 @@ export class OrdersRepository {
       sellerId: string;
       exchangeRate: number | null;
     },
+    fingerprint: string,
   ) {
     return this.prisma.siigoQuotation.updateMany({
-      where: { id, status: 'SYNCING', externalId: null },
+      where: { id, status: 'SYNCING' },
       data: {
         externalId: result.id,
         number: result.number,
         name: result.name,
-        url: result.publicUrl,
+        // Si la respuesta de una actualización no trae el enlace, se conserva el que ya había.
+        ...(result.publicUrl === null ? {} : { url: result.publicUrl }),
         sellerId: result.sellerId,
         status: 'SYNCED',
         syncedAt: new Date(),
+        // La huella se guarda con lo que efectivamente viajó: es contra ella que se compara el
+        // pedido la próxima vez para decidir si hay que actualizar la cotización.
+        quotedFingerprint: fingerprint,
         ...(result.exchangeRate === null ? {} : { exchangeRate: result.exchangeRate }),
         errorCode: null,
         errorMessage: null,
@@ -750,7 +781,7 @@ export class OrdersRepository {
 
   markSiigoQuotationError(id: number, code: string, message: string) {
     return this.prisma.siigoQuotation.updateMany({
-      where: { id, status: 'SYNCING', externalId: null },
+      where: { id, status: 'SYNCING' },
       data: {
         status: 'ERROR',
         errorCode: code,

@@ -2,7 +2,10 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import { SiigoService } from '../apps/api/src/integrations/siigo/siigo.service.js';
 import { ExchangeRateService } from '../apps/api/src/integrations/trm/trm.service.js';
 import { SiigoQuotationService } from '../apps/api/src/orders/siigo-quotation.service.js';
-import { buildQuotation } from '../apps/api/src/orders/siigo-quotation-input.js';
+import {
+  buildQuotation,
+  quotationFingerprint,
+} from '../apps/api/src/orders/siigo-quotation-input.js';
 import type { IntegrationLogsService } from '../apps/api/src/integration-logs/integration-logs.service.js';
 import type { OrderEventsRepository } from '../apps/api/src/orders/order-events.repository.js';
 
@@ -35,6 +38,8 @@ async function requestBody(request: IncomingMessage): Promise<Record<string, unk
 let discountType: 'Value' | 'Percentage' = 'Percentage';
 let capturedPayload: Record<string, unknown> | null = null;
 const requestedPaths: string[] = [];
+const updatedQuotationIds: string[] = [];
+let createdQuotations = 0;
 const trmHits = { count: 0 };
 
 const server = createServer((request, response) => {
@@ -74,9 +79,23 @@ const server = createServer((request, response) => {
       });
     }
     if (request.method === 'POST' && url.pathname.endsWith('/quotations')) {
+      createdQuotations += 1;
       capturedPayload = await requestBody(request);
       return json(response, 201, {
         id: 'quotation-external-id',
+        number: 81,
+        name: 'C-1-81',
+        seller: 820,
+        public_url: 'https://publicview.siigo.com/document?data=test',
+      });
+    }
+    // Actualizar una cotización existente: mismo cuerpo que el alta, sobre el documento ya creado.
+    const existingQuotation = /\/quotations\/([^/]+)$/.exec(url.pathname);
+    if (request.method === 'PUT' && existingQuotation) {
+      capturedPayload = await requestBody(request);
+      updatedQuotationIds.push(decodeURIComponent(existingQuotation[1] ?? ''));
+      return json(response, 200, {
+        id: decodeURIComponent(existingQuotation[1] ?? ''),
         number: 81,
         name: 'C-1-81',
         seller: 820,
@@ -490,8 +509,53 @@ try {
     'El reintento no reenvió la operación completa.',
   );
 
+  // Con la cotización ya creada en Siigo, el pedido editado se reenvía sobre ese mismo documento
+  // (PUT con su UUID) en lugar de abrir una segunda cotización, y la huella guardada es la del
+  // contenido que efectivamente viajó: es contra ella que se detecta el próximo cambio.
+  let storedFingerprint: string | null = null;
+  const createdBeforeUpdate = createdQuotations;
+  const updateService = new SiigoQuotationService(
+    {
+      siigoQuotationJob: () =>
+        Promise.resolve({
+          id: 9,
+          operation: operation({ siigoQuotation: { externalId: 'quotation-uuid' } }),
+        }),
+      quotationSeller: () => Promise.resolve(seller),
+      markSiigoQuotationSynced: (_quotationId: number, _result: unknown, fingerprint: string) => {
+        storedFingerprint = fingerprint;
+        return Promise.resolve({ count: 1 });
+      },
+      markSiigoQuotationError: () => Promise.resolve({ count: 1 }),
+    } as never,
+    siigo,
+    rates,
+    { record: () => Promise.resolve() } as unknown as IntegrationLogsService,
+    { latestQuoted: () => Promise.resolve(null) } as unknown as OrderEventsRepository,
+  );
+  await updateService.synchronize(9, 'user-id');
+  assert(
+    updatedQuotationIds.length === 1 && updatedQuotationIds[0] === 'quotation-uuid',
+    'La cotización existente no se actualizó en Siigo por su UUID.',
+  );
+  assert(
+    createdQuotations === createdBeforeUpdate,
+    'Un pedido ya cotizado intentó crear una segunda cotización.',
+  );
+  assert(
+    storedFingerprint ===
+      quotationFingerprint(
+        buildQuotation(operation(), {
+          seller,
+          exchangeRate: null,
+          exchangeRateDate: null,
+        }).preview,
+      ),
+    'La huella guardada no corresponde al contenido enviado.',
+  );
+
   process.stdout.write(
-    'Siigo quotation smoke: fixed document and cost center, SKU codes, per-currency taxes, tax split, per-product coupon, manual price exclusion, shipping line, TRM cache, open-order rule per WooCommerce status, blocking issues, discount unit, errors and retry checks passed.\n',
+    'Siigo quotation smoke: fixed document and cost center, SKU codes, per-currency taxes, tax split, per-product coupon, manual price exclusion, shipping line, TRM cache, open-order rule per WooCommerce status, blocking issues, discount unit, update of an already created quotation, errors and retry checks passed.\n',
   );
 } finally {
   for (const [key, value] of Object.entries(previousEnvironment)) {

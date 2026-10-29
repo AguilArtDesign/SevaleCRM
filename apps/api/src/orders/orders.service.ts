@@ -179,6 +179,12 @@ export class OrdersService {
 
   async list(query: OrderListQuery) {
     const [orders, total] = await this.orders.list(query);
+    // Solo las operaciones con una cotización ya sincronizada pueden estar desactualizadas: las
+    // demás todavía no se enviaron a Siigo. Se consultan de una vez, no fila por fila.
+    const synced = orders
+      .filter(({ operation }) => operation.siigoQuotation?.status === 'SYNCED')
+      .map(({ operation }) => operation.id);
+    const outdated = await this.siigoQuotation.outdatedQuotations(synced);
     return {
       data: orders.map(({ operation, ...order }) => ({
         ...order,
@@ -190,6 +196,16 @@ export class OrdersService {
         createdAt: operation.createdAt,
         updatedAt: operation.updatedAt,
         customer: withNormalizedCustomer(operation.customer),
+        /**
+         * Qué ofrece la acción de la fila. "Ver" cuando Siigo ya tiene exactamente este pedido;
+         * "Actualizar" cuando la cotización existe pero el pedido cambió después; "Crear" mientras
+         * no haya nada enviado.
+         */
+        quotationAction: !operation.siigoQuotation?.externalId
+          ? ('CREATE' as const)
+          : outdated.has(operation.id)
+            ? ('UPDATE' as const)
+            : ('VIEW' as const),
         wooOrderId: order.wooOrderId?.toString() ?? null,
         wooStatus: order.wooStatus,
         subtotal: money(order.subtotal),
@@ -381,7 +397,7 @@ export class OrdersService {
   }
 
   async createSiigoQuotation(id: number, userId: string) {
-    const claim = await this.orders.claimSiigoQuotation(id);
+    const claim = await this.siigoQuotation.claim(id);
     if (claim.outcome === 'NOT_FOUND') {
       throw businessError(NotFoundException, 'ORDER_NOT_FOUND', 'La operación no existe.');
     }
@@ -398,6 +414,10 @@ export class OrdersService {
         'SIIGO_QUOTATION_IN_PROGRESS',
         'La cotización ya se está creando en Siigo.',
       );
+    }
+    if (claim.outcome === 'ALREADY_SYNCED') {
+      // El pedido no cambió desde la última vez: Siigo ya tiene exactamente esto.
+      return this.detail(id);
     }
     if (claim.outcome === 'CLAIMED') {
       await this.siigoQuotation.synchronize(claim.quotationId, userId);

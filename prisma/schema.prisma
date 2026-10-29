@@ -689,21 +689,24 @@ model ShipmentEvent {
 }
 
 model SiigoQuotation {
-  id           Int            @id @default(autoincrement())
-  operationId  Int            @unique @map("operation_id")
-  externalId   String?        @unique @map("external_id") @db.VarChar(191)
-  number       String?        @db.VarChar(100)
-  name         String?        @db.VarChar(191)
-  url          String?        @db.Text
-  sellerId     String?        @map("seller_id") @db.VarChar(191)
-  status       String?        @db.VarChar(100)
-  syncedAt     DateTime?      @map("synced_at")
-  exchangeRate Decimal?       @map("exchange_rate") @db.Decimal(18, 6)
-  errorCode    String?        @map("error_code") @db.VarChar(100)
-  errorMessage String?        @map("error_message") @db.Text
-  createdAt    DateTime       @default(now()) @map("created_at")
-  updatedAt    DateTime       @updatedAt @map("updated_at")
-  operation    OrderOperation @relation(fields: [operationId], references: [id], onDelete: Cascade)
+  id                Int            @id @default(autoincrement())
+  operationId       Int            @unique @map("operation_id")
+  externalId        String?        @unique @map("external_id") @db.VarChar(191)
+  number            String?        @db.VarChar(100)
+  name              String?        @db.VarChar(191)
+  url               String?        @db.Text
+  sellerId          String?        @map("seller_id") @db.VarChar(191)
+  status            String?        @db.VarChar(100)
+  syncedAt          DateTime?      @map("synced_at")
+  /// Huella del contenido que se cotizó. Si el pedido cambia después, la huella guardada deja de
+  /// coincidir con la actual y la cotización se muestra como pendiente de actualizar en Siigo.
+  quotedFingerprint String?        @map("quoted_fingerprint") @db.VarChar(64)
+  exchangeRate      Decimal?       @map("exchange_rate") @db.Decimal(18, 6)
+  errorCode         String?        @map("error_code") @db.VarChar(100)
+  errorMessage      String?        @map("error_message") @db.Text
+  createdAt         DateTime       @default(now()) @map("created_at")
+  updatedAt         DateTime       @updatedAt @map("updated_at")
+  operation         OrderOperation @relation(fields: [operationId], references: [id], onDelete: Cascade)
 
   @@index([status])
   @@map("siigo_quotations")

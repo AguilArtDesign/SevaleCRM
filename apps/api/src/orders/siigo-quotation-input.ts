@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { customerDocumentTypes } from '@sevale/validation';
 import type { SiigoQuotationCreateInput } from '../integrations/siigo/siigo.service.js';
 import type { QuotationOperation, QuotationSeller } from './orders.repository.js';
@@ -82,6 +83,30 @@ export type QuotationDraft = {
   preview: QuotationPreview;
   input: SiigoQuotationCreateInput | null;
 };
+
+/**
+ * Huella del contenido comercial que viaja a Siigo: cliente, moneda e ítems con su precio, cantidad,
+ * descuento e impuesto. Se guarda al cotizar y se vuelve a calcular al abrir el panel; si no coincide,
+ * el pedido cambió después de la cotización y hay que actualizarla.
+ *
+ * Quedan fuera la TRM, el vendedor y el tipo de documento a propósito: cambian por razones ajenas al
+ * pedido —la TRM se mueve a diario— y marcarlo desactualizado sin que nadie tocara nada sería ruido.
+ */
+export function quotationFingerprint(preview: QuotationPreview): string {
+  const content = JSON.stringify({
+    currency: preview.currency,
+    customer: preview.customer.documentNumber,
+    items: preview.items.map((item) => [
+      item.kind,
+      item.code,
+      item.quantity,
+      item.price,
+      item.discount,
+      item.taxId,
+    ]),
+  });
+  return createHash('sha256').update(content).digest('hex');
+}
 
 const documentTypeLabels = new Map<string, string>(
   customerDocumentTypes.map(({ value, label }) => [value, label] as const),

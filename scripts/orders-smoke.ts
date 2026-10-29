@@ -1042,8 +1042,12 @@ try {
     403,
     'Cotización Siigo sin permiso de logística',
   );
-  const initialQuotationClaim = await ordersRepository.claimSiigoQuotation(completed.id);
-  if (initialQuotationClaim.outcome !== 'CLAIMED') {
+  const quotationFingerprint = `smoke-${runId}`;
+  const initialQuotationClaim = await ordersRepository.claimSiigoQuotation(
+    completed.id,
+    quotationFingerprint,
+  );
+  if (initialQuotationClaim.outcome !== 'CLAIMED' || initialQuotationClaim.update) {
     throw new Error('No se reservó la primera cotización Siigo.');
   }
   await ordersRepository.markSiigoQuotationError(
@@ -1051,22 +1055,46 @@ try {
     'SIIGO_QUOTATION_CREATE_FAILED',
     'Fallo controlado para probar el reintento.',
   );
-  const retryQuotationClaim = await ordersRepository.claimSiigoQuotation(completed.id);
+  const retryQuotationClaim = await ordersRepository.claimSiigoQuotation(
+    completed.id,
+    quotationFingerprint,
+  );
   if (retryQuotationClaim.outcome !== 'CLAIMED') {
     throw new Error('La cotización con error no quedó disponible para reintento.');
   }
-  await ordersRepository.markSiigoQuotationSynced(retryQuotationClaim.quotationId, {
-    id: randomUUID(),
-    number: '999',
-    name: 'C-1-999',
-    publicUrl: 'https://publicview.siigo.com/document?data=smoke',
-    sellerId: '629',
-    exchangeRate: null,
-  });
-  const duplicateQuotationClaim = await ordersRepository.claimSiigoQuotation(completed.id);
+  await ordersRepository.markSiigoQuotationSynced(
+    retryQuotationClaim.quotationId,
+    {
+      id: randomUUID(),
+      number: '999',
+      name: 'C-1-999',
+      publicUrl: 'https://publicview.siigo.com/document?data=smoke',
+      sellerId: '629',
+      exchangeRate: null,
+    },
+    quotationFingerprint,
+  );
+  const duplicateQuotationClaim = await ordersRepository.claimSiigoQuotation(
+    completed.id,
+    quotationFingerprint,
+  );
   if (duplicateQuotationClaim.outcome !== 'ALREADY_SYNCED') {
     throw new Error('La operación permitió duplicar una cotización ya sincronizada.');
   }
+  // El pedido cambió después de cotizar: se vuelve a reclamar para actualizar la cotización que ya
+  // existe en Siigo, no para crear otra.
+  const staleQuotationClaim = await ordersRepository.claimSiigoQuotation(
+    completed.id,
+    `${quotationFingerprint}-editado`,
+  );
+  if (staleQuotationClaim.outcome !== 'CLAIMED' || !staleQuotationClaim.update) {
+    throw new Error('Un pedido modificado no volvió a quedar pendiente de sincronizar.');
+  }
+  await ordersRepository.markSiigoQuotationError(
+    staleQuotationClaim.quotationId,
+    'SIIGO_QUOTATION_CREATE_FAILED',
+    'Fallo controlado tras la edición del pedido.',
+  );
   const shipmentResponse = await api(`/api/orders/${completed.id}/shipment`, logisticsCookie, {
     method: 'PUT',
     body: JSON.stringify({

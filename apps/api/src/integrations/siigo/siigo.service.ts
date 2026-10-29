@@ -3,6 +3,7 @@ import {
   IntegrationAuthenticationException,
   integrationGet,
   integrationPost,
+  integrationPut,
   integrationUrl,
   invalidIntegrationResponse,
   requireIntegrationValue,
@@ -50,6 +51,15 @@ export type SiigoQuotationReference = {
   sellerId: string;
   exchangeRate: number | null;
 };
+
+/**
+ * Lo que el CRM ya sabe del documento. Si Siigo responde a una actualización sin el cuerpo completo,
+ * estos datos se conservan en vez de dar por fallida una cotización que sí se actualizó.
+ */
+export type SiigoQuotationKnown = Pick<
+  SiigoQuotationReference,
+  'id' | 'number' | 'name' | 'publicUrl'
+>;
 
 type QuotationDocument = {
   id: number;
@@ -183,6 +193,20 @@ export class SiigoService {
     return this.withAuthenticationRetry((token) => this.requestCreateQuotation(input, token));
   }
 
+  /**
+   * Actualiza una cotización existente. Se reenvía el documento completo —no un parche— porque es
+   * como Siigo espera el cuerpo: la lista de ítems reemplaza la anterior por completo.
+   */
+  async updateQuotation(
+    externalId: string,
+    input: SiigoQuotationCreateInput,
+    known: SiigoQuotationKnown,
+  ): Promise<SiigoQuotationReference> {
+    return this.withAuthenticationRetry((token) =>
+      this.requestCreateQuotation(input, token, { externalId, known }),
+    );
+  }
+
   private async requestProductBySku(sku: string, token: string): Promise<SiigoProduct | null> {
     const baseUrl = requireIntegrationValue('SIIGO_API_URL', 'Siigo');
     const partnerId = requireIntegrationValue('SIIGO_PARTNER_ID', 'Siigo');
@@ -212,6 +236,7 @@ export class SiigoService {
   private async requestCreateQuotation(
     input: SiigoQuotationCreateInput,
     token: string,
+    existing?: { externalId: string; known: SiigoQuotationKnown },
   ): Promise<SiigoQuotationReference> {
     const baseUrl = requireIntegrationValue('SIIGO_API_URL', 'Siigo');
     const partnerId = requireIntegrationValue('SIIGO_PARTNER_ID', 'Siigo');
@@ -268,13 +293,17 @@ export class SiigoService {
         };
       }),
     };
-    const response = await integrationPost(
-      integrationUrl(baseUrl, 'quotations'),
-      headers,
-      payload,
-      'Siigo',
-    );
-    return this.normalizeQuotationResponse(response, input.sellerId);
+    // La actualización reenvía el documento completo con la misma forma que el alta: Siigo espera el
+    // cuerpo entero y reemplaza la lista de ítems por la que llega.
+    const response = existing
+      ? await integrationPut(
+          integrationUrl(baseUrl, `quotations/${encodeURIComponent(existing.externalId)}`),
+          headers,
+          payload,
+          'Siigo',
+        )
+      : await integrationPost(integrationUrl(baseUrl, 'quotations'), headers, payload, 'Siigo');
+    return this.normalizeQuotationResponse(response, input.sellerId, existing?.known);
   }
 
   private resolveQuotationDocument(payload: unknown, expectedId: number): QuotationDocument {
@@ -316,15 +345,27 @@ export class SiigoService {
     };
   }
 
-  private normalizeQuotationResponse(payload: unknown, sellerId: number): SiigoQuotationReference {
-    if (!isRecord(payload)) throw invalidIntegrationResponse('Siigo');
+  private normalizeQuotationResponse(
+    payload: unknown,
+    sellerId: number,
+    known?: SiigoQuotationKnown,
+  ): SiigoQuotationReference {
+    if (!isRecord(payload)) {
+      // Una actualización puede volver sin cuerpo: el documento existe y ya se conoce, así que se
+      // conserva lo que había en vez de dar por fallido un envío que Siigo sí aplicó.
+      if (known) return { ...known, sellerId: String(sellerId), exchangeRate: null };
+      throw invalidIntegrationResponse('Siigo');
+    }
     const id = typeof payload.id === 'string' ? payload.id.trim() : '';
     const number = positiveInteger(payload.number);
     const name = typeof payload.name === 'string' ? payload.name.trim() : '';
     const publicUrl = safeSiigoPublicUrl(payload.public_url);
     const currency = isRecord(payload.currency) ? payload.currency : null;
     const exchangeRate = currency ? finiteNumber(currency.exchange_rate) : null;
-    if (!id || !number || !name) throw invalidIntegrationResponse('Siigo');
+    if (!id || !number || !name) {
+      if (known) return { ...known, sellerId: String(sellerId), exchangeRate };
+      throw invalidIntegrationResponse('Siigo');
+    }
     return {
       id,
       number: String(number),

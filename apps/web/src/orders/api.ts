@@ -33,6 +33,8 @@ export type OrderListRecord = {
   total: string;
   createdAt: string;
   updatedAt: string;
+  /** Qué ofrece la acción de la fila: crear la cotización, actualizarla o abrir la que ya existe. */
+  quotationAction: 'CREATE' | 'UPDATE' | 'VIEW';
   customer: Pick<
     CustomerRecord,
     'id' | 'displayName' | 'personType' | 'documentType' | 'documentNumber' | 'email'
@@ -195,6 +197,8 @@ export type SiigoQuotationPreviewRecord = {
     store: ProductStore | null;
   }>;
   issues: Array<{ code: string; message: string }>;
+  /** Ya se cotizó, pero el pedido cambió después: Siigo sigue con la versión anterior. */
+  quotationOutdated: boolean;
   quotation: {
     status: string | null;
     number: string | null;

@@ -230,7 +230,9 @@ export class OrderEventsService {
           outcome: quotation.status === 'SYNCED' ? 'SYNCED' : 'ERROR',
           message:
             quotation.status === 'SYNCED'
-              ? (quotation.number ?? quotation.name ?? null)
+              ? // El nombre completo (`C-1-846`) y no el consecutivo suelto: es como se busca la
+                // cotización en Siigo, así que es el dato que sirve en la traza.
+                (quotation.name ?? quotation.number ?? null)
               : (quotation.errorMessage ?? null),
         }),
       'cotización Siigo',

@@ -142,6 +142,16 @@ export function allowsSiigoQuotation(order: {
   return quotableWooStatuses.has(wooStatus);
 }
 
+/**
+ * Texto de la acción de la fila. No dice "Siigo": quien cotiza ya sabe qué hace ese botón, y el
+ * nombre del documento solo alargaba el menú.
+ */
+export function quotationActionLabel(action: 'CREATE' | 'UPDATE' | 'VIEW'): string {
+  if (action === 'VIEW') return 'Ver Cotización';
+  if (action === 'UPDATE') return 'Actualizar Cotización';
+  return 'Crear Cotización';
+}
+
 /** Un pedido cuenta como completado si el estado que ve el usuario es "Completado". */
 // WooCommerce devuelve el estado en minúsculas y admite estados propios de plugins: los
 // desconocidos se muestran tal cual, sin inventar una traducción.

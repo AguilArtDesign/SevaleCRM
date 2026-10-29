@@ -16,9 +16,24 @@ const quotationStatusMeta = {
 };
 
 function quotationStatus(preview: SiigoQuotationPreviewRecord) {
+  // Si el pedido cambió después de cotizar, Siigo se quedó con la versión anterior: para el panel
+  // vuelve a estar pendiente, porque hay algo que reenviar.
+  if (preview.quotationOutdated) return quotationStatusMeta.PENDING;
   const status = preview.quotation?.status;
   if (status === 'SYNCED' || status === 'ERROR') return quotationStatusMeta[status];
   return quotationStatusMeta.PENDING;
+}
+
+/** Una cotización ya creada no se vuelve a crear: se actualiza con el pedido actual. */
+function submitLabel(preview: SiigoQuotationPreviewRecord | undefined, isPending: boolean) {
+  if (isPending) return preview?.quotationOutdated ? 'Actualizando' : 'Sincronizando';
+  if (isUpToDate(preview)) return 'Sincronizado';
+  return preview?.quotationOutdated ? 'Actualizar Cotización' : 'Sincronizar Cotización';
+}
+
+/** Ya está en Siigo tal como está el pedido: no hay nada que reenviar. */
+function isUpToDate(preview: SiigoQuotationPreviewRecord | undefined) {
+  return Boolean(preview && preview.quotation?.status === 'SYNCED' && !preview.quotationOutdated);
 }
 
 function productCount(preview: SiigoQuotationPreviewRecord): string {
@@ -36,6 +51,16 @@ function exchangeRateLabel(preview: SiigoQuotationPreviewRecord): string {
 }
 
 type PreviewItem = SiigoQuotationPreviewRecord['items'][number];
+
+/**
+ * Lo que se muestra en el campo Cotización. Se prefiere `name` —el nombre completo, `C-1-846`— y no
+ * `number` —el consecutivo suelto, `846`—: Siigo busca por el nombre, así que es el dato que sirve
+ * para encontrar la cotización allá. `number` queda de respaldo por si una respuesta antigua no
+ * trajo nombre.
+ */
+function quotationLabel(preview: SiigoQuotationPreviewRecord): string | null {
+  return preview.quotation?.name || preview.quotation?.number || null;
+}
 
 /** Lo que se paga por unidad después del descuento porcentual que viaja a Siigo. */
 function payablePrice(item: PreviewItem): number {
@@ -137,19 +162,19 @@ export function SiigoQuotationModal({
                       <div>
                         <dt>Cotización</dt>
                         <dd>
-                          {preview.quotation?.number ? (
-                            preview.quotation.url ? (
+                          {quotationLabel(preview) ? (
+                            preview.quotation?.url ? (
                               <a
                                 href={preview.quotation.url}
                                 target="_blank"
                                 rel="noreferrer"
                                 className="siigo-quotation-link"
                               >
-                                {preview.quotation.number}
+                                {quotationLabel(preview)}
                                 <ArrowUpRightFromSquare width={13} height={13} />
                               </a>
                             ) : (
-                              preview.quotation.number
+                              quotationLabel(preview)
                             )
                           ) : (
                             '—'
@@ -301,13 +326,13 @@ export function SiigoQuotationModal({
               <Button
                 variant="primary"
                 isPending={isSubmitting}
-                isDisabled={!preview || blocked || previewQuery.isPending}
+                isDisabled={!preview || blocked || previewQuery.isPending || isUpToDate(preview)}
                 onPress={onSubmit}
               >
                 {({ isPending }) => (
                   <>
                     {isPending ? <Spinner color="current" size="sm" /> : <PaperPlane width={17} />}
-                    {isPending ? 'Sincronizando' : 'Sincronizar Cotización'}
+                    {submitLabel(preview, isPending)}
                   </>
                 )}
               </Button>
