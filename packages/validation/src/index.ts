@@ -291,7 +291,59 @@ function validateCustomerIdentity(
   }
 }
 
+/**
+ * Los datos de contacto y ubicación que el panel exige. Un cliente guardado desde Clientes tiene que
+ * estar completo: con el panel de Prospectos cubriendo la ficha a medias, una ficha incompleta en
+ * Clientes solo estorba al cotizar y al sincronizar. Las integraciones siguen usando
+ * `createCustomerSchema`: un pedido de la tienda puede traer un cliente sin región ni dirección, y
+ * rechazarlo sería perder la venta.
+ */
+function validateCustomerContact(
+  input: z.infer<typeof customerFieldsSchema>,
+  context: z.RefinementCtx,
+) {
+  if (!input.email) {
+    context.addIssue({
+      code: 'custom',
+      path: ['email'],
+      message: 'Ingresa el correo electrónico.',
+    });
+  }
+  if (!input.phone) {
+    context.addIssue({ code: 'custom', path: ['phone'], message: 'Ingresa el teléfono.' });
+  }
+  if (!input.country) {
+    context.addIssue({ code: 'custom', path: ['country'], message: 'Selecciona el país.' });
+  }
+  if (!input.region) {
+    context.addIssue({
+      code: 'custom',
+      path: ['region'],
+      message: 'Selecciona la región o provincia.',
+    });
+  }
+  // Colombia elige la ciudad del catálogo; fuera de Colombia no hay catálogo y se escribe a mano.
+  if (input.country === 'CO') {
+    if (!input.cityCode) {
+      context.addIssue({ code: 'custom', path: ['cityCode'], message: 'Selecciona la ciudad.' });
+    }
+  } else if (input.country && !input.cityName) {
+    context.addIssue({ code: 'custom', path: ['cityName'], message: 'Ingresa la ciudad.' });
+  }
+  if (!input.addressLine1) {
+    context.addIssue({
+      code: 'custom',
+      path: ['addressLine1'],
+      message: 'Ingresa la dirección.',
+    });
+  }
+}
+
 export const createCustomerSchema = customerFieldsSchema.superRefine(validateCustomerIdentity);
+
+/** Alta o edición desde el panel: la identidad y además el contacto y la ubicación. */
+export const completeCustomerSchema = createCustomerSchema.superRefine(validateCustomerContact);
+
 export const updateCustomerSchema = customerFieldsSchema
   .partial()
   .refine((data) => Object.keys(data).length > 0, 'Debes enviar al menos un cambio.');
@@ -1329,8 +1381,9 @@ export const prospectListQuerySchema = z.object({
 });
 
 // La conversión reutiliza el mismo contrato que el alta de Clientes: si Clientes cambia, la
-// conversión cambia con él y no hay dos validaciones que se desincronicen.
-export const prospectConvertSchema = createCustomerSchema;
+// conversión cambia con él y no hay dos validaciones que se desincronicen. Como un prospecto solo
+// pasa a cliente cuando está completo, se exigen los datos de contacto y ubicación.
+export const prospectConvertSchema = completeCustomerSchema;
 
 /** La importación comparte el límite con la de productos: 800 KB de texto caben en un POST. */
 export const prospectImportCsvSchema = z.object({

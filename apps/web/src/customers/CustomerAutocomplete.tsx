@@ -11,6 +11,7 @@ export function CustomerAutocomplete({
   placeholder,
   value,
   options,
+  clearOption,
   isDisabled = false,
   isInvalid = false,
   isRequired = false,
@@ -21,12 +22,20 @@ export function CustomerAutocomplete({
   placeholder: string;
   value: string;
   options: CustomerAutocompleteOption[];
+  /**
+   * Texto de la opción que deja el campo vacío. Sin ella un selector de un solo valor no se puede
+   * deshacer: una vez elegido, no hay forma de volver a «sin nada».
+   */
+  clearOption?: string;
   isDisabled?: boolean;
   isInvalid?: boolean;
   isRequired?: boolean;
   onChange: (value: string) => void;
 }) {
   const { contains } = useFilter({ sensitivity: 'base' });
+  // La opción de vaciar es un elemento más de la lista: react-aria no permite deseleccionar en un
+  // selector de un solo valor, así que el «sin nada» viaja con un identificador propio.
+  const clearId = clearOption ? '__clear__' : null;
 
   return (
     <Autocomplete
@@ -38,9 +47,11 @@ export function CustomerAutocomplete({
       isInvalid={isInvalid}
       isRequired={isRequired}
       placeholder={placeholder}
-      value={value || null}
+      value={value || clearId}
       variant="secondary"
-      onChange={(selected) => onChange(selected === null ? '' : String(selected))}
+      onChange={(selected) =>
+        onChange(selected === null || selected === clearId ? '' : String(selected))
+      }
     >
       {label && <Label>{label}</Label>}
       <Autocomplete.Trigger>
@@ -63,6 +74,12 @@ export function CustomerAutocomplete({
               </EmptyState>
             )}
           >
+            {clearId && clearOption && (
+              <ListBox.Item id={clearId} textValue={clearOption}>
+                {clearOption}
+                <ListBox.ItemIndicator />
+              </ListBox.Item>
+            )}
             {options.map((option) => (
               <ListBox.Item key={option.id} id={option.id} textValue={option.name}>
                 {option.name}

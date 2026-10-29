@@ -14,7 +14,7 @@ import {
   StreamableFile,
 } from '@nestjs/common';
 import {
-  createCustomerSchema,
+  completeCustomerSchema,
   customerActivityQuerySchema,
   customerExportSchema,
   customerIdSchema,
@@ -93,7 +93,7 @@ export class CustomersController {
   @RequirePermissions('customers.create')
   create(@Body() body: unknown, @Req() request: AuthenticatedRequest) {
     return this.customers.create(
-      parseInput(createCustomerSchema, body),
+      parseInput(completeCustomerSchema, body),
       request.auth.user.id,
       canViewIntegrationErrors(request),
     );

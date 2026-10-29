@@ -745,21 +745,6 @@ select {
   background: var(--siigo-bg);
 }
 
-.notification-provider-chip--siigo {
-  color: var(--siigo-text);
-  background: var(--siigo-bg);
-}
-
-.notification-provider-chip--pali {
-  color: var(--pali-text);
-  background: var(--pali-bg);
-}
-
-.notification-provider-chip--seratus {
-  color: var(--seratus-text);
-  background: var(--seratus-bg);
-}
-
 .notification-item strong {
   color: var(--foreground);
   font-size: 0.9rem;
@@ -2670,6 +2655,14 @@ select {
   display: grid;
   align-content: start;
   gap: var(--spacing);
+}
+
+/* El teléfono no usa el contenedor de Hero UI, así que la marca de obligatorio se dibuja aquí con
+   el mismo asterisco que el resto del formulario. */
+.customer-field-required label::after {
+  content: '*';
+  margin-left: 2px;
+  color: var(--danger);
 }
 
 .customer-person-type-options {

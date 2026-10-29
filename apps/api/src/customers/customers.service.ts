@@ -9,7 +9,7 @@ import {
 import { Prisma } from '../generated/prisma/client.js';
 import { RealtimeGateway } from '../realtime/realtime.gateway.js';
 import {
-  createCustomerSchema,
+  completeCustomerSchema,
   type CreateCustomerInput,
   type CustomerActivityQuery,
   type CustomerListQuery,
@@ -41,6 +41,7 @@ import { CustomersRepository } from './customers.repository.js';
 import { createCustomersWorkbook } from './customer-export.js';
 import { CustomerIntegrationService } from './customer-integration.service.js';
 import { CustomerEventsService } from './customer-events.service.js';
+import { NotificationsService } from '../notifications/notifications.service.js';
 import { CustomerDraftResolverService } from './customer-draft-resolver.service.js';
 import { documentTypeToWoo } from './customer-document-type.mapping.js';
 import { integrationErrorCode } from '../integrations/integration-http.js';
@@ -280,6 +281,7 @@ export class CustomersService {
     private readonly wooCustomers: WooCustomerService,
     private readonly customerDraftResolver: CustomerDraftResolverService,
     private readonly events: CustomerEventsService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   async list(query: CustomerListQuery, includeIntegrationErrors = false) {
@@ -392,6 +394,7 @@ export class CustomersService {
         this.realtime.emitCustomerIntegrationUpdated(customer, integration);
       }
       await this.events.recordCreated(customer, userId);
+      await this.notifyCustomerCreated(customer, userId);
       return serializeCustomer(customer, includeIntegrationErrors);
     } catch (error) {
       if (isUniqueConstraintError(error)) {
@@ -420,7 +423,9 @@ export class CustomersService {
     const documentType = input.documentType ?? current.documentType;
     const documentTypeChanged = documentType !== current.documentType;
 
-    const merged = createCustomerSchema.safeParse({
+    // El panel edita la ficha completa, así que se valida contra el mismo contrato que el alta: una
+    // ficha antigua a la que le faltaba el contacto o la ubicación se completa al guardarla.
+    const merged = completeCustomerSchema.safeParse({
       personType: input.personType ?? current.personType,
       firstName: input.firstName === undefined ? current.firstName : input.firstName,
       lastName: input.lastName === undefined ? current.lastName : input.lastName,
@@ -629,6 +634,24 @@ export class CustomersService {
         ],
       },
     });
+  }
+
+  /**
+   * El alta se avisa una sola vez. Si la notificación falla, el cliente ya existe y no se deshace:
+   * queda en el log en vez de devolver un error por algo que ya se guardó.
+   */
+  private async notifyCustomerCreated(
+    customer: { id: number; displayName: string },
+    userId: string | null,
+  ) {
+    try {
+      await this.notifications.createCustomerCreated(customer, userId);
+    } catch (error) {
+      this.logger.warn(
+        `No se pudo registrar la notificación del cliente ${customer.id}.`,
+        error instanceof Error ? error.stack : undefined,
+      );
+    }
   }
 
   /** El convenio se elige en el formulario, así que un id inexistente se rechaza antes de guardar. */

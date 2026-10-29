@@ -1,6 +1,7 @@
 import '../apps/api/src/config/load-environment.js';
 import { BadRequestException } from '@nestjs/common';
 import {
+  completeCustomerSchema,
   createCustomerSchema,
   customerSyncSchema,
   customerDocumentError,
@@ -171,6 +172,58 @@ const incompleteCustomer = createCustomerSchema.safeParse({
 });
 if (!incompleteCustomer.success) {
   throw new Error('El esquema local rechazó un cliente válido con datos opcionales ausentes.');
+}
+
+// El panel de Clientes sí exige el contacto y la ubicación; las integraciones no, porque un pedido
+// de la tienda puede llegar sin dirección y rechazarlo sería perder la venta.
+const completeAccepted = completeCustomerSchema.safeParse(customer);
+if (!completeAccepted.success) {
+  throw new Error('El contrato de Clientes rechazó una ficha completa.');
+}
+// El contrato del panel suma reglas a las de identidad; las dos tienen que seguir vigentes.
+const completeWithoutName = completeCustomerSchema.safeParse({ ...customer, firstName: null });
+if (
+  completeWithoutName.success ||
+  completeWithoutName.error.issues.find((issue) => issue.path[0] === 'firstName')?.message !==
+    'Ingresa los nombres.'
+) {
+  throw new Error('El contrato de Clientes perdió la validación de identidad.');
+}
+const requiredForPanel: Array<[string, Partial<CreateCustomerInput>, string]> = [
+  ['email', { email: null }, 'Ingresa el correo electrónico.'],
+  ['phone', { phone: null }, 'Ingresa el teléfono.'],
+  ['country', { country: null }, 'Selecciona el país.'],
+  ['region', { region: null }, 'Selecciona la región o provincia.'],
+  ['cityCode', { cityCode: null }, 'Selecciona la ciudad.'],
+  ['addressLine1', { addressLine1: null }, 'Ingresa la dirección.'],
+];
+for (const [field, override, message] of requiredForPanel) {
+  const result = completeCustomerSchema.safeParse({ ...customer, ...override });
+  const issue = result.success
+    ? undefined
+    : result.error.issues.find((candidate) => candidate.path[0] === field);
+  if (!issue || issue.message !== message) {
+    throw new Error(`El contrato de Clientes no exigió ${field} con su mensaje.`);
+  }
+  // Las integraciones siguen aceptando la ficha sin ese dato.
+  if (!createCustomerSchema.safeParse({ ...customer, ...override }).success) {
+    throw new Error(`El contrato de integraciones rechazó un cliente sin ${field}.`);
+  }
+}
+// Fuera de Colombia no hay catálogo: la ciudad se escribe y es la que se exige.
+const abroadWithoutCity = completeCustomerSchema.safeParse({
+  ...customer,
+  country: 'US',
+  region: 'CA',
+  cityCode: null,
+  cityName: null,
+});
+if (
+  abroadWithoutCity.success ||
+  abroadWithoutCity.error.issues.find((issue) => issue.path[0] === 'cityName')?.message !==
+    'Ingresa la ciudad.'
+) {
+  throw new Error('El contrato de Clientes no exigió la ciudad escrita fuera de Colombia.');
 }
 
 let incompleteSiigoRejected = false;

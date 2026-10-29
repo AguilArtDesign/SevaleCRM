@@ -109,11 +109,20 @@ async function json<T>(response: Response, context: string, status = 200): Promi
   return (await response.json()) as T;
 }
 
-async function expectError(response: Response, status: number, code: string, context: string) {
+async function expectError(
+  response: Response,
+  status: number,
+  code: string,
+  context: string,
+  message?: string,
+) {
   await expectStatus(response, status, context);
-  const body = (await response.json()) as { error?: { code?: string } };
+  const body = (await response.json()) as { error?: { code?: string; message?: string } };
   if (body.error?.code !== code) {
     throw new Error(`${context}: se esperaba el código ${code} y llegó ${body.error?.code}.`);
+  }
+  if (message && body.error.message !== message) {
+    throw new Error(`${context}: se esperaba "${message}" y llegó "${body.error.message}".`);
   }
 }
 
@@ -700,8 +709,8 @@ try {
     'VALIDATION_ERROR',
     'Conversión sin los datos que exige Clientes',
   );
-  // El cuerpo puede ser válido para Clientes y aun así no servir: un prospecto solo pasa a cliente
-  // cuando la ficha está completa.
+  // El cuerpo puede ser válido como datos y aun así no servir: un prospecto solo pasa a cliente
+  // cuando la ficha está completa, y la respuesta nombra el primer campo que falta.
   await expectError(
     await api(`/api/prospects/${minimal.id}/convert`, commercialCookie, {
       method: 'POST',
@@ -726,8 +735,9 @@ try {
       }),
     }),
     400,
-    'PROSPECT_INCOMPLETE',
+    'VALIDATION_ERROR',
     'Conversión con ficha incompleta',
+    'Selecciona la región o provincia.',
   );
 
   // --- Conversión a cliente nuevo -----------------------------------------------------------

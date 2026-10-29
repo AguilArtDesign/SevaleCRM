@@ -219,9 +219,9 @@ type CompletenessSource = {
 };
 
 /**
- * Requisitos para convertir. Coinciden con lo que exige `createCustomerSchema` más la ubicación y
- * la dirección, que Clientes acepta vacías pero que aquí sí se exigen: un prospecto solo pasa a
- * cliente cuando está completo, para no llenar el panel de Clientes de fichas a medias.
+ * Requisitos para convertir. Coinciden con los de `completeCustomerSchema`, que es lo que exige el
+ * alta de Clientes; se mantienen aquí para poder decir en la ficha qué falta antes de convertir, en
+ * lugar de esperar al rechazo del alta.
  */
 function completenessOf(prospect: CompletenessSource) {
   const missing: string[] = [];
@@ -476,16 +476,8 @@ export class ProspectsService {
 
   async convert(id: number, input: ProspectConvertInput, userId: string) {
     const prospect = await this.ensureEditable(id);
-    // Convertir exige la ficha completa: si falta algo se dice exactamente qué, en lugar de crear
-    // un cliente a medias que nadie terminará de completar.
-    const { missing } = completenessOf(input);
-    if (missing.length) {
-      throw prospectError(
-        BadRequestException,
-        'PROSPECT_INCOMPLETE',
-        'Completa los datos del cliente antes de convertir el prospecto.',
-      );
-    }
+    // La ficha completa la exige el contrato de alta de Clientes (`completeCustomerSchema`), que es
+    // el mismo que valida esta ruta: si falta algo, la respuesta ya nombra el campo exacto.
     // El cliente hereda el convenio del prospecto cuando el formulario no eligió otro. Si no, el
     // vínculo se perdería justo al convertir, que es cuando más importa conservarlo.
     const customer = await this.customers.create(

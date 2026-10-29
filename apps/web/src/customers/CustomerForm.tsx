@@ -16,7 +16,7 @@ import {
 } from '@heroui/react';
 import { CircleCheck, CircleXmark, MapPin, PersonPlus } from '@gravity-ui/icons';
 import {
-  createCustomerSchema,
+  completeCustomerSchema,
   customerDocumentTypes,
   customerFiscalResponsibilities,
   type CreateCustomerInput,
@@ -167,22 +167,6 @@ function CustomerSourceChips({ sources }: { sources: CustomerIntegration['provid
       ))}
     </span>
   );
-}
-
-/** Campos que la conversión de un prospecto exige por encima de lo que ya pide Clientes. */
-function missingForConversion(value: CreateCustomerInput): string[] {
-  const missing: string[] = [];
-  if (!value.firstName) missing.push('nombres');
-  if (!value.lastName) missing.push('apellidos');
-  if (value.personType === 'COMPANY' && !value.company) missing.push('empresa');
-  if (!value.email) missing.push('correo');
-  if (!value.phone) missing.push('teléfono');
-  if (!value.country) missing.push('país');
-  if (!value.region) missing.push('departamento o región');
-  if (!value.cityCode && value.country === 'CO') missing.push('ciudad');
-  if (!value.cityName && value.country && value.country !== 'CO') missing.push('ciudad');
-  if (!value.addressLine1) missing.push('dirección');
-  return missing;
 }
 
 export function CustomerForm({
@@ -341,7 +325,9 @@ export function CustomerForm({
       setError('Selecciona o edita los datos que presentan conflicto antes de crear el cliente.');
       return;
     }
-    const parsed = createCustomerSchema.safeParse(value);
+    // El mismo contrato que aplica la API: identidad, contacto y ubicación. Convertir un prospecto
+    // pide exactamente esto, así que no hay una segunda lista de requisitos que se desincronice.
+    const parsed = completeCustomerSchema.safeParse(value);
     if (!parsed.success) {
       const nextDocumentErrors: DocumentFieldErrors = {};
       for (const issue of parsed.error.issues) {
@@ -360,17 +346,10 @@ export function CustomerForm({
       setError(formIssue?.message ?? '');
       return;
     }
-    if (mode === 'convert') {
-      const missing = missingForConversion(parsed.data);
-      if (missing.length > 0) {
-        setError(`Completa ${missing.join(', ')} para convertir el prospecto en cliente.`);
-        return;
-      }
-    }
     const normalizedPhone = parsed.data.phone
       ? await normalizePhoneE164Lazy(parsed.data.phone, parsed.data.country ?? '')
       : null;
-    if (parsed.data.phone && !normalizedPhone) {
+    if (!normalizedPhone) {
       setError(
         parsed.data.country
           ? 'El teléfono no es válido para el país seleccionado.'
@@ -703,7 +682,7 @@ export function CustomerForm({
                 <section className="customer-form-section">
                   <h3>Contacto y dirección</h3>
                   <div className="customer-form-grid">
-                    <TextField type="email">
+                    <TextField isRequired type="email">
                       <Label>Correo electrónico</Label>
                       <Input
                         variant="secondary"
@@ -712,7 +691,7 @@ export function CustomerForm({
                         onChange={text('email', true, 'email')}
                       />
                     </TextField>
-                    <div className="customer-field">
+                    <div className="customer-field customer-field-required">
                       <Label>Teléfono</Label>
                       <PhoneInput
                         country={value.country ?? 'CO'}
@@ -783,6 +762,7 @@ export function CustomerForm({
                       )}
                     <CustomerAutocomplete
                       ariaLabel="País"
+                      isRequired
                       label="País"
                       placeholder="Seleccionar"
                       value={value.country ?? ''}
@@ -805,6 +785,7 @@ export function CustomerForm({
                       <CustomerAutocomplete
                         key={`region:${value.country}`}
                         ariaLabel={isColombia ? 'Departamento' : 'Región o provincia'}
+                        isRequired
                         label={isColombia ? 'Departamento' : 'Región / Provincia'}
                         placeholder="Seleccionar"
                         value={value.region ?? ''}
@@ -824,7 +805,7 @@ export function CustomerForm({
                         }}
                       />
                     ) : (
-                      <TextField>
+                      <TextField isRequired>
                         <Label>Región / Provincia</Label>
                         <Input
                           variant="secondary"
@@ -847,6 +828,7 @@ export function CustomerForm({
                       <CustomerAutocomplete
                         key={`city:${value.country}:${value.region}`}
                         ariaLabel="Ciudad o municipio"
+                        isRequired
                         label="Ciudad / Municipio"
                         placeholder="Seleccionar"
                         value={value.cityCode ?? ''}
@@ -865,7 +847,7 @@ export function CustomerForm({
                         }}
                       />
                     ) : (
-                      <TextField>
+                      <TextField isRequired>
                         <Label>Ciudad</Label>
                         <Input
                           variant="secondary"
@@ -891,7 +873,7 @@ export function CustomerForm({
                         onChange={text('postalCode', true, 'address')}
                       />
                     </TextField>
-                    <TextField className="customer-field-full">
+                    <TextField isRequired className="customer-field-full">
                       <Label>Dirección</Label>
                       <Input
                         variant="secondary"
@@ -961,6 +943,7 @@ export function CustomerForm({
                   <div className="customer-form-grid">
                     <CustomerAutocomplete
                       ariaLabel="Convenio"
+                      clearOption="Sin convenio"
                       label="Convenio"
                       placeholder="Sin convenio"
                       value={value.agreementId ? String(value.agreementId) : ''}

@@ -427,6 +427,8 @@ try {
   });
   expectStatus(internalEmail, 400, 'Email interno descartado');
 
+  // El panel de Clientes exige la ficha completa: el alta a medias tiene su lugar en Prospectos, así
+  // que aquí se rechaza diciendo qué falta en vez de guardar una ficha vacía.
   const incompleteResponse = await api('/api/customers', adminCookie, {
     method: 'POST',
     body: JSON.stringify({
@@ -443,24 +445,16 @@ try {
       fiscalResponsibilities: [],
     }),
   });
-  expectStatus(incompleteResponse, 201, 'Cliente local incompleto');
-  const incompleteCustomer = (await incompleteResponse.json()) as {
-    id: number;
-    displayName: string;
-    email: string | null;
-    country: string | null;
-    addressLine1: string | null;
-    fiscalResponsibilities: string[];
+  expectStatus(incompleteResponse, 400, 'Cliente local incompleto');
+  const incompleteBody = (await incompleteResponse.json()) as {
+    error?: { code?: string; message?: string };
   };
-  customerIds.push(incompleteCustomer.id);
   if (
-    incompleteCustomer.displayName !== 'Marcos Castillo' ||
-    incompleteCustomer.email !== null ||
-    incompleteCustomer.country !== null ||
-    incompleteCustomer.addressLine1 !== null ||
-    incompleteCustomer.fiscalResponsibilities.length !== 0
+    incompleteBody.error?.code !== 'VALIDATION_ERROR' ||
+    incompleteBody.error.message !== 'Ingresa el correo electrónico.' ||
+    (await prisma.customer.count({ where: { documentNumber: incompleteDocumentNumber } })) !== 0
   ) {
-    throw new Error('El CRM inventó o conservó datos inválidos en un cliente incompleto.');
+    throw new Error('La API no explicó qué falta para guardar un cliente completo.');
   }
 
   const createResponse = await api('/api/customers', adminCookie, {
@@ -470,6 +464,7 @@ try {
   expectStatus(createResponse, 201, 'Creación local');
   const created = (await createResponse.json()) as {
     id: number;
+    displayName: string;
     phone: string | null;
     postalCode: string | null;
     location: { cityName: string };
@@ -485,6 +480,27 @@ try {
     }>;
   };
   customerIds.push(created.id);
+
+  // El alta se anuncia una sola vez y con el nombre de quien la hizo: es lo único que se avisa de un
+  // cliente, porque la sincronización con las tiendas ya queda en su actividad.
+  const createdNotification = await prisma.notification.findFirst({
+    where: { customerId: created.id },
+    orderBy: { id: 'desc' },
+  });
+  if (!createdNotification) {
+    throw new Error(
+      `El alta no generó notificación. Hay ${await prisma.notification.count()} en total.`,
+    );
+  }
+  if (
+    createdNotification.type !== 'CUSTOMER_CREATED' ||
+    createdNotification.title !== 'Nuevo Cliente' ||
+    !createdNotification.message.startsWith('Customers Smoke') ||
+    // El nombre se compara con el que quedó guardado: al leer se normaliza la capitalización.
+    !createdNotification.message.endsWith(`ha creado un nuevo cliente ➝ ${created.displayName}`)
+  ) {
+    throw new Error(`Notificación de alta inesperada: ${createdNotification.message}`);
+  }
 
   const localResolveResponse = await api(
     `/api/customers/resolve?identification=${documentNumber}&documentType=13`,
@@ -595,6 +611,21 @@ try {
     400,
     'Cambio de documento bloqueado',
   );
+  // Editar aplica el mismo contrato que el alta: la ficha no puede quedar a medias por un cambio.
+  const incompleteUpdate = await api(`/api/customers/${created.id}`, adminCookie, {
+    method: 'PATCH',
+    body: JSON.stringify({ email: null, addressLine1: null }),
+  });
+  expectStatus(incompleteUpdate, 400, 'Edición que dejaría la ficha incompleta');
+  const incompleteUpdateBody = (await incompleteUpdate.json()) as {
+    error?: { code?: string; message?: string };
+  };
+  if (
+    incompleteUpdateBody.error?.code !== 'CUSTOMER_VALIDATION_ERROR' ||
+    incompleteUpdateBody.error.message !== 'Ingresa el correo electrónico.'
+  ) {
+    throw new Error('La edición no explicó qué dato obligatorio faltaba.');
+  }
 
   const updateResponse = await api(`/api/customers/${created.id}`, adminCookie, {
     method: 'PATCH',
