@@ -6757,3 +6757,38 @@ select {
 .prospect-conversion p {
   margin: 0;
 }
+
+/* --- Panel de Puntos Colombia ---------------------------------------------------------------- */
+
+.points-invoice-copy {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+/* Solo el mensaje de error del último intento: la tabla no es el lugar para el diagnóstico. */
+.points-invoice-error {
+  margin: 0.25rem 0 0;
+  color: var(--danger);
+  font-size: 0.75rem;
+}
+
+.points-date-range {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: var(--muted);
+}
+
+.points-date-range .input {
+  width: 9.5rem;
+}
+
+.points-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  color: var(--muted);
+  font-size: 0.8125rem;
+}

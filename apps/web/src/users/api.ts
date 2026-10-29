@@ -1,3 +1,4 @@
+import type { CreateUserInput, UpdateUserInput } from '@sevale/validation';
 import { apiUrl } from '../config/api-url';
 
 export type UserRole = 'ADMIN' | 'COMMERCIAL' | 'LOGISTICS';
@@ -7,6 +8,8 @@ export type UserRecord = {
   name: string;
   email: string;
   sellerId: number | null;
+  /** Prefijo con el que se arma el nombre de la factura en Siigo (`FV-2-`). */
+  siigoInvoicePrefix: string | null;
   role: UserRole;
   active: boolean;
   createdAt: string;
@@ -56,17 +59,9 @@ export const usersApi = {
     if (input.role) query.set('role', input.role);
     return apiRequest<UserListResponse>(`/api/users?${query}`);
   },
-  create: (input: {
-    name: string;
-    email: string;
-    sellerId: number;
-    role: UserRole;
-    active: boolean;
-  }) => apiRequest<UserRecord>('/api/users', { method: 'POST', body: JSON.stringify(input) }),
-  update: (
-    id: string,
-    input: { name?: string; sellerId?: number; role?: UserRole; active?: boolean },
-  ) =>
+  create: (input: CreateUserInput) =>
+    apiRequest<UserRecord>('/api/users', { method: 'POST', body: JSON.stringify(input) }),
+  update: (id: string, input: UpdateUserInput) =>
     apiRequest<UserRecord>(`/api/users/${id}`, {
       method: 'PATCH',
       body: JSON.stringify(input),

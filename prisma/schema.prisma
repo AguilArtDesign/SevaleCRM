@@ -139,6 +139,9 @@ model User {
   name                   String             @db.VarChar(191)
   email                  String             @unique @db.VarChar(191)
   sellerId               Int?               @unique @map("seller_id")
+  /// Prefijo con el que se arma el nombre de la factura que se busca en Siigo (`FV-2-`). No es
+  /// único: en oficina varios comerciales comparten prefijo y se distinguen por el seller.
+  siigoInvoicePrefix     String?            @map("siigo_invoice_prefix") @db.VarChar(20)
   emailVerified          Boolean            @default(false) @map("email_verified")
   image                  String?            @db.Text
   role                   Role               @default(COMMERCIAL)
@@ -163,6 +166,8 @@ model User {
   prospectsAssigned      Prospect[]         @relation("ProspectAssignee")
   prospectsCreated       Prospect[]         @relation("ProspectCreator")
   integrationLogs        IntegrationLog[]
+  pointsInvoicesCreated  PointsInvoice[]    @relation("PointsInvoiceCreatedBy")
+  pointsAccruals         PointsAccrual[]    @relation("PointsAccrualActor")
 
   @@map("users")
 }
@@ -976,4 +981,93 @@ model ProspectTag {
   @@id([prospectId, tagId])
   @@index([tagId])
   @@map("prospect_tags")
+}
+
+enum PointsInvoiceSource {
+  SIIGO
+  UAT_SEED
+}
+
+/// Estados del panel de Puntos Colombia. `UNVERIFIED` existe para el caso ambiguo —timeout o 5xx
+/// después de enviar— donde no se sabe si Puntos Colombia acreditó: se bloquea el reenvío hasta
+/// conciliar, porque repetir con otro identificador podría acumular dos veces.
+enum PointsInvoiceStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+  UNVERIFIED
+}
+
+enum PointsAccrualStatus {
+  PROCESSING
+  COMPLETED
+  FAILED
+  UNVERIFIED
+}
+
+/// Factura que se sigue desde el panel. La real de Siigo se identifica por su UUID externo; la de
+/// UAT lo deja nulo y se marca con `source`, para no atribuirle un identificador inventado.
+model PointsInvoice {
+  id                     Int                 @id @default(autoincrement())
+  source                 PointsInvoiceSource @default(SIIGO)
+  siigoInvoiceId         String?             @unique @map("siigo_invoice_id") @db.VarChar(64)
+  /// Nombre completo de la factura, `FV-2-789`. Es la clave con la que se consulta en Siigo.
+  name                   String              @unique @db.VarChar(64)
+  invoiceDate            DateTime            @map("invoice_date") @db.Date
+  /// Seller de Siigo: gobierna quién puede ver y operar la factura cuando se habiliten comerciales.
+  sellerId               Int?                @map("seller_id")
+  customerIdentification String              @map("customer_identification") @db.VarChar(32)
+  /// Solo la traen las facturas del seed; en las de Siigo el tipo se elige al acumular.
+  customerDocumentType   String?             @map("customer_document_type") @db.VarChar(4)
+  /// Importe original: nunca se sobrescribe con el valor redondeado de la presentación.
+  total                  Decimal             @db.Decimal(18, 2)
+  /// Cantidad de líneas de `items`, no la suma de cantidades.
+  itemCount              Int                 @map("item_count")
+  /// Puntos que corresponden al total, calculados al registrar la factura.
+  points                 Int
+  status                 PointsInvoiceStatus @default(PENDING)
+  createdByUserId        String?             @map("created_by_user_id") @db.VarChar(36)
+  completedAt            DateTime?           @map("completed_at")
+  createdAt              DateTime            @default(now()) @map("created_at")
+  updatedAt              DateTime            @updatedAt @map("updated_at")
+  createdBy              User?               @relation("PointsInvoiceCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  accruals               PointsAccrual[]
+
+  @@index([status])
+  @@index([invoiceDate])
+  @@index([sellerId])
+  @@map("points_invoices")
+}
+
+/// Un intento de acumulación. Se guarda aparte de la factura para conservar la trazabilidad de cada
+/// envío, incluido el `transactionIdentifier` exacto que viajó a Puntos Colombia.
+model PointsAccrual {
+  id                    Int                 @id @default(autoincrement())
+  invoiceId             Int                 @map("invoice_id")
+  userId                String              @map("user_id") @db.VarChar(36)
+  /// Documento y tipo usados en el envío; pueden diferir del que traía la factura si el operador
+  /// corrigió el precargado durante la consulta.
+  documentNumber        String              @map("document_number") @db.VarChar(32)
+  documentType          String              @map("document_type") @db.VarChar(4)
+  pointsRequested       Int                 @map("points_requested")
+  pointsEarned          Int?                @map("points_earned")
+  pointsBalance         Int?                @map("points_balance")
+  approbationNumber     String?             @map("approbation_number") @db.VarChar(128)
+  transactionIdentifier Json                @map("transaction_identifier")
+  status                PointsAccrualStatus @default(PROCESSING)
+  errorCode             String?             @map("error_code") @db.VarChar(100)
+  errorMessage          String?             @map("error_message") @db.Text
+  /// Saldo en pesos de la consulta posterior. Puede faltar sin invalidar el éxito de la acumulación.
+  balanceValueInMoney   Decimal?            @map("balance_value_in_money") @db.Decimal(18, 2)
+  balanceCheckedAt      DateTime?           @map("balance_checked_at")
+  completedAt           DateTime?           @map("completed_at")
+  createdAt             DateTime            @default(now()) @map("created_at")
+  updatedAt             DateTime            @updatedAt @map("updated_at")
+  invoice               PointsInvoice       @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  user                  User                @relation("PointsAccrualActor", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([invoiceId])
+  @@index([status])
+  @@map("points_accruals")
 }

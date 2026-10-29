@@ -186,7 +186,9 @@ export function AppShell() {
           // Logo de marca servido desde `public/img`: no es un ícono de la librería y sus colores
           // son los de la marca, así que no se recolorea con el tema.
           icon: <img className="sidebar-brand-icon" src="/img/puntos-colombia.svg" alt="" />,
-          when: can('loyalty.read'),
+          // El panel se opera; `loyalty.read` solo dejaba verlo. Mientras se certifica con el
+          // proveedor, operarlo es exclusivo del administrador.
+          when: can('loyalty.accrue'),
         },
       ],
     },

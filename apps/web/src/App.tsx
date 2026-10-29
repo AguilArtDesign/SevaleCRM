@@ -80,7 +80,8 @@ export function App() {
         <Route
           path="/points-colombia"
           element={
-            <PermissionRoute permission="loyalty.read">
+            // Operar el panel es exclusivo del administrador mientras se certifica con el proveedor.
+            <PermissionRoute permission="loyalty.accrue">
               <PointsColombiaPage />
             </PermissionRoute>
           }

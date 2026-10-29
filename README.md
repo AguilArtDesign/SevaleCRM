@@ -141,6 +141,31 @@ El tipo de documento es el único campo que no se guarda tal como llega: el CRM 
 
 Los duplicados se detectan por **documento** o, cuando la fila no trae documento, por **correo**. El teléfono queda fuera a propósito: no identifica a una persona y una base de convenio repite números con frecuencia, así que usarlo como clave descartaría registros legítimos. La comparación se hace contra la base y dentro del propio archivo, y las filas repetidas se **omiten** en lugar de bloquear: el resumen indica cuántas se agregarán y cuántas ya existen. Volver a subir el mismo archivo no crea filas repetidas.
 
+## Registro de integraciones
+
+Cada llamada a una API externa queda en `integration_logs` y se consulta desde **Logs**, disponible solo para `ADMIN`.
+
+El registro nunca guarda credenciales. Hay dos capas:
+
+1. **Las llamadas de autenticación no guardan cuerpos.** Se reconocen por la ruta (`/auth`, `/oauth`, `/token`, `/login`, `/session`) y no por una bandera en cada llamada, de modo que una integración nueva queda cubierta sin que nadie tenga que acordarse. De esa llamada se conservan la fecha, la duración, el estado y la ruta sin query; el cuerpo enviado, la respuesta y cualquier parámetro de la URL se descartan. Aplica a Siigo, Puntos Colombia y a cualquier proveedor futuro.
+2. **El resto de cuerpos se enmascara.** Toda clave que coincida con `token`, `password`, `secret`, `authorization` o `access_key` se guarda como `[omitido]`, incluso si el cuerpo llegó como cadena ya serializada. Los datos legítimos se conservan.
+
+`GET` con cuerpo no existe, y las cabeceras nunca se registran, así que un `Authorization` de WooCommerce no llega al panel.
+
+Las filas escritas antes de que existiera esta regla conservan lo que se guardó entonces. Para limpiarlas en una base ya desplegada:
+
+```sql
+UPDATE integration_logs
+SET request_body = NULL,
+    response_body = NULL,
+    url = CONCAT(SUBSTRING_INDEX(url, '?', 1))
+WHERE operation LIKE '%/auth%'
+   OR operation LIKE '%/oauth%'
+   OR operation LIKE '%/token%';
+```
+
+Conviene revisar después con `SELECT id, integration, operation FROM integration_logs WHERE request_body LIKE '%access_key%';` que no quede ninguna credencial.
+
 ## Integraciones de lectura
 
 La API encapsula consultas externas de solo lectura a Siigo, WooCommerce Seratus y WooCommerce Pali. Todas las credenciales permanecen en variables de entorno del backend; React nunca consulta directamente a los proveedores ni recibe sus credenciales.
@@ -304,6 +329,50 @@ El borrado se propaga a las dos tiendas **antes** de eliminar el registro local.
 
 Como el precio manual nunca puede superar el valor original, toda modificación es por definición una baja: `price_modified` es verdadero exactamente en los productos que quedan fuera de la base del cupón. `npm run test:orders` verifica ese límite exacto, el rechazo por excederlo y la exclusión del cupón.
 
+## Puntos Colombia
+
+El panel de Puntos Colombia permite buscar una factura de Siigo por su número, registrarla en el CRM y acumular los puntos del cliente en el programa. Mientras el proveedor certifica, el módulo es exclusivo de `ADMIN`: lo cierran el permiso `loyalty.accrue`, la bandera `PCO_ADMIN_ONLY` y la propia pantalla.
+
+Cada usuario comercial configura su prefijo de facturación en Usuarios (`siigo_invoice_prefix`, por ejemplo `FV-1-`). El comercial solo escribe el número; el backend compone el nombre completo (`FV-1-` + `846` = `FV-1-846`) y comprueba que el `seller` que devuelve Siigo sea el suyo. Compartir prefijo no da acceso a las facturas de otro seller.
+
+Los puntos se calculan sobre el total original de la factura, sin redondear la cifra que se muestra: un peso por cada mil, con piso. `$110.999,99` son 110 puntos y `$999,99` son 0.
+
+### Variables de entorno
+
+```dotenv
+PCO_BASE_URL=https://apinp.puntoscolombia.com
+PCO_CLIENT_ID=
+PCO_CLIENT_SECRET=
+PCO_PARTNER_CODE=901647454
+PCO_LOCATION_CODE=PDVBRA0001
+PCO_CA_CHANNEL=V
+PCO_REMOTE_IPV4=
+PCO_TERMINAL_ID=PCAliados-01
+PCO_CASHIER_ID=Yohander-01
+PCO_ADMIN_ONLY=true
+```
+
+`PCO_CLIENT_ID` y `PCO_CLIENT_SECRET` son secretos y viven solo en el servidor. La tokenización envía el secreto en la URL, así que `integration-http` la registra como confidencial: guarda el origen y la ruta en `integration_logs`, nunca la cadena de consulta ni el cuerpo de la respuesta, que contiene el token. `PCO_REMOTE_IPV4` es informativo y `PCO_ADMIN_ONLY` ausente equivale a `true`.
+
+### Ensayo en UAT
+
+El seed crea cuatro facturas marcadas `UAT_SEED` y no se ejecuta con `NODE_ENV=production`. Los documentos existen en el ambiente UAT del proveedor:
+
+| Factura    | Documento     | Total         | Puntos |
+| ---------- | ------------- | ------------- | ------ |
+| `FV-1-001` | 1011237866 CC | `$110.000`    | 110    |
+| `FV-1-002` | 1011237867 CC | `$110.999,99` | 110    |
+| `FV-1-003` | 1011237868 CE | `$250.000`    | 250    |
+| `FV-1-004` | 101123516 NIT | `$999.000`    | 999    |
+
+Para probar el flujo completo sin consumir una factura real: abrir `FV-1-002`, pulsar **Acumular**, consultar `1011237867` y confirmar. El resultado debe traer puntos acreditados, saldo y equivalente en dinero.
+
+`npm run test:points-colombia` cubre las reglas sin tocar la red: arranca un servidor del proveedor simulado y verifica el cálculo de puntos, la composición del prefijo, la propiedad de la factura, la revalidación de la cuenta, la unicidad del intento, el reintento único tras un `401` y el bloqueo de reintentos ante una respuesta ambigua.
+
+### Intentos ambiguos
+
+El identificador de transacción se persiste **antes** del `POST`, de modo que se reutiliza si el proceso se interrumpe. Un `5xx` o un tiempo de espera agotado dejan la factura en `UNVERIFIED`: el proveedor pudo haber acumulado, así que el panel bloquea el reintento en lugar de arriesgar una doble acumulación. La reconciliación manual de esos casos sigue pendiente de definir con el proveedor para la certificación.
+
 ## Sistema visual
 
 El panel utiliza HeroUI, Inter y Gravity UI Icons. Las superficies administrativas deben ser planas: no utilizar degradados en fondos ni componentes.
@@ -330,6 +399,7 @@ npm run test:prospects:import
 npm run test:n8n
 npm run test:realtime
 npm run test:notifications
+npm run test:points-colombia
 npm run test:security
 npm run test:exposure
 npm run test:smoke

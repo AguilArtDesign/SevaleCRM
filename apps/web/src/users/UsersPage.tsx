@@ -97,6 +97,7 @@ export function UsersPage() {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [sellerId, setSellerId] = useState('');
+  const [invoicePrefix, setInvoicePrefix] = useState('');
   const [role, setRole] = useState<UserRole>('COMMERCIAL');
   const [active, setActive] = useState(true);
   const [deleteTarget, setDeleteTarget] = useState<UserRecord | null>(null);
@@ -133,6 +134,7 @@ export function UsersPage() {
     setName('');
     setEmail('');
     setSellerId('');
+    setInvoicePrefix('');
     setRole('COMMERCIAL');
     setActive(true);
   };
@@ -148,6 +150,7 @@ export function UsersPage() {
     setName(selected.name);
     setEmail(selected.email);
     setSellerId(selected.sellerId === null ? '' : String(selected.sellerId));
+    setInvoicePrefix(selected.siigoInvoicePrefix ?? '');
     setRole(selected.role);
     setActive(selected.active);
   };
@@ -170,7 +173,7 @@ export function UsersPage() {
     event.preventDefault();
     setFormError('');
 
-    const values = { name, email, sellerId, role, active };
+    const values = { name, email, sellerId, siigoInvoicePrefix: invoicePrefix, role, active };
     const createResult = formMode === 'create' ? createUserSchema.safeParse(values) : null;
     const updateResult = formMode === 'edit' ? updateUserSchema.safeParse(values) : null;
     const validationError = createResult?.error ?? updateResult?.error;
@@ -188,14 +191,21 @@ export function UsersPage() {
         const {
           name: nextName,
           sellerId: nextSellerId,
+          siigoInvoicePrefix: nextPrefix,
           role: nextRole,
           active: nextActive,
         } = updateResult.data;
         await usersApi.update(
           editingId,
           editingId === currentUser?.id
-            ? { name: nextName, sellerId: nextSellerId }
-            : { name: nextName, sellerId: nextSellerId, role: nextRole, active: nextActive },
+            ? { name: nextName, sellerId: nextSellerId, siigoInvoicePrefix: nextPrefix }
+            : {
+                name: nextName,
+                sellerId: nextSellerId,
+                siigoInvoicePrefix: nextPrefix,
+                role: nextRole,
+                active: nextActive,
+              },
         );
         toast.success('Los cambios del usuario se guardaron correctamente.');
       }
@@ -541,6 +551,22 @@ export function UsersPage() {
                     />
                     <Description>
                       Identificador del vendedor en Siigo. No puede repetirse entre usuarios.
+                    </Description>
+                  </TextField>
+
+                  <TextField fullWidth name="siigoInvoicePrefix">
+                    <Label>Prefijo de factura en Siigo</Label>
+                    <Input
+                      variant="secondary"
+                      placeholder="FV-2"
+                      value={invoicePrefix}
+                      onChange={(event) =>
+                        setInvoicePrefix(event.target.value.replace(/[^0-9a-zA-Z-]/g, ''))
+                      }
+                    />
+                    <Description>
+                      Con este prefijo se arma la factura que se busca en Puntos Colombia, por
+                      ejemplo FV-2 + 789. Puede repetirse entre usuarios.
                     </Description>
                   </TextField>
 

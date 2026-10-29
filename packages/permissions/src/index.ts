@@ -56,6 +56,10 @@ export const permissions = [
   'prospects.import',
   'tags.manage',
   'loyalty.read',
+  // Operar el panel de Puntos Colombia: buscar facturas, consultar cuentas y acumular. Solo el
+  // administrador mientras se certifica con el proveedor; habilitar comerciales será un cambio de
+  // esta lista, sin tocar las reglas de propiedad por seller.
+  'loyalty.accrue',
   // Bitácora de las llamadas a las APIs externas. Contiene cuerpos con datos de clientes y pedidos,
   // así que es exclusiva de la administración; vaciarla es un acto aparte.
   'logs.read',
@@ -93,7 +97,8 @@ export const rolePermissions = {
     'prospects.create',
     'prospects.update',
     'prospects.convert',
-    'loyalty.read',
+    // El panel de Puntos Colombia queda fuera del alcance del comercial mientras se certifica: no lo
+    // ve, no lo consulta y no lo opera. Habilitarlo será agregar aquí `loyalty.read`.
   ],
   LOGISTICS: ['inventory.read', 'orders.read', 'orders.shipping.update'],
 } as const satisfies Record<Role, readonly Permission[]>;

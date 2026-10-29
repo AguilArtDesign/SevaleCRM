@@ -14,6 +14,7 @@ import { CouponsModule } from './coupons/coupons.module.js';
 import { AgreementsModule } from './agreements/agreements.module.js';
 import { ProspectsModule } from './prospects/prospects.module.js';
 import { LogsModule } from './integration-logs/logs.module.js';
+import { LoyaltyModule } from './loyalty/loyalty.module.js';
 
 @Module({
   imports: [
@@ -30,6 +31,7 @@ import { LogsModule } from './integration-logs/logs.module.js';
     AgreementsModule,
     ProspectsModule,
     LogsModule,
+    LoyaltyModule,
   ],
   controllers: [HealthController],
   providers: [HealthService],

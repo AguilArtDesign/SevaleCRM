@@ -53,6 +53,21 @@ export type SiigoQuotationReference = {
 };
 
 /**
+ * Factura de Siigo reducida a lo que el panel de Puntos Colombia necesita. `itemCount` es la
+ * cantidad de líneas de `items`, no la suma de cantidades: es lo que muestra la tabla.
+ */
+export type SiigoInvoice = {
+  id: string;
+  name: string;
+  /** Fecha de la factura en formato `YYYY-MM-DD`. */
+  date: string;
+  sellerId: number;
+  total: number;
+  customerIdentification: string;
+  itemCount: number;
+};
+
+/**
  * Lo que el CRM ya sabe del documento. Si Siigo responde a una actualización sin el cuerpo completo,
  * estos datos se conservan en vez de dar por fallida una cotización que sí se actualizó.
  */
@@ -165,6 +180,35 @@ function round(value: number, decimals: number): number {
   return Math.round((value + Number.EPSILON) * factor) / factor;
 }
 
+/**
+ * Valida la factura de Siigo y la reduce a lo que el panel usa. Un campo indispensable ausente es un
+ * error de integración y no un dato a inventar: `seller` decide permisos y `total` decide los puntos.
+ */
+function normalizeInvoice(payload: UnknownRecord): SiigoInvoice {
+  const id = typeof payload.id === 'string' ? payload.id.trim() : '';
+  const name = typeof payload.name === 'string' ? payload.name.trim() : '';
+  const date = typeof payload.date === 'string' ? payload.date.trim() : '';
+  const sellerId = positiveInteger(payload.seller);
+  const total = finiteNumber(payload.total);
+  const customer = isRecord(payload.customer) ? payload.customer : null;
+  const identification =
+    customer && typeof customer.identification === 'string' ? customer.identification.trim() : '';
+  const itemCount = Array.isArray(payload.items) ? payload.items.length : null;
+  if (
+    !id ||
+    !name ||
+    !/^\d{4}-\d{2}-\d{2}$/.test(date) ||
+    sellerId === null ||
+    total === null ||
+    total <= 0 ||
+    !identification ||
+    itemCount === null
+  ) {
+    throw invalidIntegrationResponse('Siigo');
+  }
+  return { id, name, date, sellerId, total, customerIdentification: identification, itemCount };
+}
+
 function safeSiigoPublicUrl(value: unknown): string | null {
   if (typeof value !== 'string' || !value.trim()) return null;
   try {
@@ -189,6 +233,15 @@ export class SiigoService {
     return this.withAuthenticationRetry((token) => this.requestProductBySku(sku, token));
   }
 
+  /**
+   * Busca una factura por su nombre completo (`FV-2-789`). Siigo filtra por `name` y devuelve
+   * coincidencias parciales, así que se exige igualdad exacta aqui: aceptar `FV-2-78` cuando se
+   * buscó `FV-2-789` sería acumular puntos sobre la factura equivocada.
+   */
+  async findInvoiceByName(name: string): Promise<SiigoInvoice | null> {
+    return this.withAuthenticationRetry((token) => this.requestInvoiceByName(name, token));
+  }
+
   async createQuotation(input: SiigoQuotationCreateInput): Promise<SiigoQuotationReference> {
     return this.withAuthenticationRetry((token) => this.requestCreateQuotation(input, token));
   }
@@ -205,6 +258,32 @@ export class SiigoService {
     return this.withAuthenticationRetry((token) =>
       this.requestCreateQuotation(input, token, { externalId, known }),
     );
+  }
+
+  private async requestInvoiceByName(name: string, token: string): Promise<SiigoInvoice | null> {
+    const baseUrl = requireIntegrationValue('SIIGO_API_URL', 'Siigo');
+    const partnerId = requireIntegrationValue('SIIGO_PARTNER_ID', 'Siigo');
+    const url = integrationUrl(baseUrl, 'invoices');
+    url.searchParams.set('name', name);
+    url.searchParams.set('page', '1');
+    url.searchParams.set('page_size', '10');
+
+    const payload = await integrationGet(
+      url,
+      { Authorization: `Bearer ${token}`, 'Partner-Id': partnerId },
+      'Siigo',
+    );
+    if (!isRecord(payload) || !Array.isArray(payload.results)) {
+      throw invalidIntegrationResponse('Siigo');
+    }
+    const results: unknown[] = payload.results;
+    const exact = results.filter(
+      (invoice): invoice is UnknownRecord => isRecord(invoice) && invoice.name === name,
+    );
+    // Dos facturas con el mismo nombre no deberían existir; si pasa, no se elige una al azar.
+    if (exact.length > 1) throw invalidIntegrationResponse('Siigo');
+    const invoice = exact[0];
+    return invoice ? normalizeInvoice(invoice) : null;
   }
 
   private async requestProductBySku(sku: string, token: string): Promise<SiigoProduct | null> {

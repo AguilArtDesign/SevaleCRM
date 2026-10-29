@@ -38,10 +38,33 @@ export const sellerIdSchema = z.preprocess(
   sellerIdValueSchema,
 );
 
+/**
+ * Prefijo con el que se arma el nombre de la factura en Siigo (`FV-2-`). Se normaliza el guion final
+ * para que `FV-2` y `FV-2-` no convivan: `FV-2--789` no existe en Siigo. Opcional, porque no todo
+ * usuario opera facturas, y no único: en oficina varios comerciales comparten prefijo.
+ */
+export const siigoInvoicePrefixSchema = z.preprocess(
+  (value) => {
+    if (typeof value !== 'string') return value;
+    // El guion final lo pone el esquema: escribirlo no puede ser un error del formulario.
+    const normalized = value.trim().replace(/-+$/, '');
+    return normalized === '' ? null : normalized;
+  },
+  z
+    .string()
+    .trim()
+    .toUpperCase()
+    .max(20, 'El prefijo no puede superar los 20 caracteres.')
+    .regex(/^[A-Z0-9]+(-[A-Z0-9]+)*$/, 'Usa letras, números y guiones, por ejemplo FV-2.')
+    .transform((value) => `${value}-`)
+    .nullable(),
+);
+
 export const createUserSchema = z.object({
   name: z.string().trim().min(2, 'El nombre debe tener al menos 2 caracteres.').max(191),
   email: emailSchema,
   sellerId: sellerIdSchema,
+  siigoInvoicePrefix: siigoInvoicePrefixSchema.optional(),
   role: roleSchema,
   active: z.boolean().default(true),
 });
@@ -52,6 +75,7 @@ export const updateUserSchema = z
     role: roleSchema.optional(),
     active: z.boolean().optional(),
     sellerId: sellerIdSchema.optional(),
+    siigoInvoicePrefix: siigoInvoicePrefixSchema.optional(),
   })
   .refine((data) => Object.keys(data).length > 0, 'Debes enviar al menos un cambio.');
 
@@ -1449,3 +1473,74 @@ export type UpdateTagInput = z.infer<typeof updateTagSchema>;
 export type TagListQuery = z.infer<typeof tagListQuerySchema>;
 export type ProspectStatusInput = z.infer<typeof prospectStatusSchema>;
 export type ProspectSourceInput = z.infer<typeof prospectSourceSchema>;
+
+// --- Puntos Colombia --------------------------------------------------------------------------
+
+/**
+ * Tipos de documento que acepta Puntos Colombia. Es su propio catálogo: `2` cédula de ciudadanía,
+ * `3` cédula de extranjería y `5` NIT. No coincide con los códigos que usa Siigo, así que no se
+ * reutiliza `customerDocumentTypes`.
+ */
+export const pointsDocumentTypes = [
+  { value: '2', label: 'Cédula de ciudadanía' },
+  { value: '3', label: 'Cédula de extranjería' },
+  { value: '5', label: 'NIT' },
+] as const;
+
+export const pointsDocumentTypeSchema = z.enum(['2', '3', '5'], {
+  error: 'Selecciona el tipo de documento.',
+});
+
+/** Solo la parte numérica: el prefijo lo pone el backend desde el usuario. */
+export const pointsInvoiceNumberSchema = z
+  .string()
+  .trim()
+  .min(1, 'Ingresa el número de la factura.')
+  .max(20, 'El número de la factura es demasiado largo.')
+  .regex(/^\d+$/, 'El número de la factura solo admite dígitos.');
+
+/** Lo que el operador digita en el buscador: nunca incluye prefijo ni seller. */
+export const pointsInvoiceSearchSchema = z.object({
+  number: pointsInvoiceNumberSchema,
+  /**
+   * Sellers que puede elegir el administrador. Es obligatorio solo cuando el prefijo se repite
+   * entre varios sellers; el servicio lo exige en ese caso y no antes.
+   */
+  sellerId: z.coerce.number().int().positive().optional(),
+});
+
+export const pointsAccountLookupSchema = z.object({
+  documentNumber: z
+    .string()
+    .trim()
+    .min(1, 'Ingresa el número de documento.')
+    .max(32, 'El número de documento es demasiado largo.')
+    .regex(/^[0-9A-Za-z-]+$/, 'El número de documento contiene caracteres no válidos.'),
+  documentType: pointsDocumentTypeSchema,
+});
+
+export const pointsAccrualSchema = pointsAccountLookupSchema;
+
+/** Identificador interno de la factura del panel, igual que el resto de módulos. */
+export const pointsInvoiceIdSchema = z.coerce
+  .number()
+  .int('El identificador de la factura no es válido.')
+  .positive('El identificador de la factura no es válido.');
+
+export const pointsInvoiceListQuerySchema = z.object({
+  search: z.string().trim().max(191).default(''),
+  status: z
+    .enum(['all', 'PENDING', 'PROCESSING', 'COMPLETED', 'FAILED', 'UNVERIFIED'])
+    .default('all'),
+  sellerId: z.coerce.number().int().positive().optional(),
+  dateFrom: z.coerce.date().optional(),
+  dateTo: z.coerce.date().optional(),
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(20),
+});
+
+export type PointsInvoiceSearchInput = z.infer<typeof pointsInvoiceSearchSchema>;
+export type PointsAccountLookupInput = z.infer<typeof pointsAccountLookupSchema>;
+export type PointsAccrualInput = z.infer<typeof pointsAccrualSchema>;
+export type PointsInvoiceListQuery = z.infer<typeof pointsInvoiceListQuerySchema>;
+export type PointsDocumentType = (typeof pointsDocumentTypes)[number]['value'];

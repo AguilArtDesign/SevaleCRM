@@ -5,6 +5,9 @@ import { SiigoTokenService } from './siigo/siigo-token.service.js';
 import { SiigoService } from './siigo/siigo.service.js';
 import { ExchangeRateService } from './trm/trm.service.js';
 import { WooCommerceService } from './woocommerce/woocommerce.service.js';
+import { IntegrationTokenRepository } from './integration-token.repository.js';
+import { PuntosColombiaService } from './puntos-colombia/puntos-colombia.service.js';
+import { PuntosColombiaTokenService } from './puntos-colombia/puntos-colombia-token.service.js';
 import { N8nApiKeyGuard } from './n8n/n8n-api-key.guard.js';
 import { SiigoWebhookController } from './n8n/siigo-webhook.controller.js';
 import { SiigoWebhookRepository } from './n8n/siigo-webhook.repository.js';
@@ -21,10 +24,19 @@ import { NotificationsModule } from '../notifications/notifications.module.js';
     SiigoService,
     ExchangeRateService,
     WooCommerceService,
+    IntegrationTokenRepository,
+    PuntosColombiaTokenService,
+    PuntosColombiaService,
     N8nApiKeyGuard,
     SiigoWebhookRepository,
     SiigoWebhookService,
   ],
-  exports: [SiigoTokenService, SiigoService, ExchangeRateService, WooCommerceService],
+  exports: [
+    SiigoTokenService,
+    SiigoService,
+    ExchangeRateService,
+    WooCommerceService,
+    PuntosColombiaService,
+  ],
 })
 export class IntegrationsModule {}

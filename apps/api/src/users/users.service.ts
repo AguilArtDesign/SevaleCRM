@@ -12,6 +12,7 @@ const userSelect = {
   name: true,
   email: true,
   sellerId: true,
+  siigoInvoicePrefix: true,
   role: true,
   active: true,
   createdAt: true,
@@ -101,6 +102,7 @@ export class UsersService {
           name: input.name,
           email: input.email,
           sellerId: input.sellerId,
+          siigoInvoicePrefix: input.siigoInvoicePrefix ?? null,
           role: input.role,
           active: input.active,
           // Los usuarios del CRM son provisionados por un administrador y el
