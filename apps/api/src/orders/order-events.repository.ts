@@ -70,4 +70,16 @@ export class OrderEventsRepository {
       this.prisma.orderEvent.count({ where }),
     ]);
   }
+
+  /**
+   * Quién disparó la última cotización a Siigo y cuándo, según la traza. El nombre se lee del que
+   * quedó copiado en la fila, así que sobrevive al borrado de la cuenta.
+   */
+  latestQuoted(operationId: number) {
+    return this.prisma.orderEvent.findFirst({
+      where: { operationId, action: 'QUOTED' },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      select: { userName: true, createdAt: true, user: { select: { name: true } } },
+    });
+  }
 }

@@ -1,16 +1,24 @@
 import { useQuery } from '@tanstack/react-query';
-import { Alert, Button, Modal, Spinner } from '@heroui/react';
+import { Alert, Button, Modal, Spinner, Table } from '@heroui/react';
 import { ArrowUpRightFromSquare, PaperPlane } from '@gravity-ui/icons';
 import { Chip } from '../components/Chip';
 import { ordersApi, type SiigoQuotationPreviewRecord } from './api';
 import { formattedDate, formattedMoneyWithCode } from './presentation';
 
-function quotationStatusLabel(preview: SiigoQuotationPreviewRecord): string {
+/**
+ * Solo tres estados, como los ve quien cotiza: pendiente, con error o sincronizada. `SYNCING` cae en
+ * pendiente porque el panel no tiene una cuarta etiqueta que añada algo útil.
+ */
+const quotationStatusMeta = {
+  PENDING: { label: 'Pendiente', color: 'warning' as const },
+  ERROR: { label: 'Error', color: 'danger' as const },
+  SYNCED: { label: 'Sincronizado', color: 'success' as const },
+};
+
+function quotationStatus(preview: SiigoQuotationPreviewRecord) {
   const status = preview.quotation?.status;
-  if (status === 'SYNCED') return 'Sincronizada';
-  if (status === 'ERROR') return 'Con error';
-  if (status === 'SYNCING') return 'Sincronizando';
-  return 'Sin sincronizar';
+  if (status === 'SYNCED' || status === 'ERROR') return quotationStatusMeta[status];
+  return quotationStatusMeta.PENDING;
 }
 
 function productCount(preview: SiigoQuotationPreviewRecord): string {
@@ -25,6 +33,14 @@ function exchangeRateLabel(preview: SiigoQuotationPreviewRecord): string {
     minimumFractionDigits: 2,
   }).format(preview.exchangeRate.value);
   return `$ ${rate} COP`;
+}
+
+type PreviewItem = SiigoQuotationPreviewRecord['items'][number];
+
+/** Lo que se paga por unidad después del descuento porcentual que viaja a Siigo. */
+function payablePrice(item: PreviewItem): number {
+  if (item.discount <= 0) return item.grossPrice;
+  return Math.round(item.grossPrice * (1 - item.discount / 100) * 100) / 100;
 }
 
 /**
@@ -58,13 +74,15 @@ export function SiigoQuotationModal({
   return (
     <Modal isOpen={isOpen} onOpenChange={(open) => !open && onClose()}>
       <Modal.Backdrop>
-        <Modal.Container size="sm" placement="center" scroll="inside">
+        <Modal.Container placement="center" scroll="inside">
           <Modal.Dialog className="siigo-quotation-modal">
             <Modal.CloseTrigger aria-label="Cerrar cotización" />
             <Modal.Header>
               <div>
-                <Modal.Heading>Cotizaciones Siigo</Modal.Heading>
-                <p>{preview?.operationCode ?? 'Cargando operación…'}</p>
+                <Modal.Heading className="siigo-quotation-heading">
+                  Cotización Siigo
+                  <Chip color="default">{preview?.operationCode ?? '—'}</Chip>
+                </Modal.Heading>
                 <p className="siigo-quotation-subtitle">
                   Validar información antes de enviarla a Siigo
                 </p>
@@ -99,14 +117,18 @@ export function SiigoQuotationModal({
                       </Chip>
                     </div>
 
-                    <dl className="siigo-quotation-meta">
+                    <dl className="order-ticket-data siigo-quotation-meta">
                       <div>
                         <dt>Cliente</dt>
                         <dd>{preview.customer.displayName}</dd>
                       </div>
                       <div>
                         <dt>Estado</dt>
-                        <dd>{quotationStatusLabel(preview)}</dd>
+                        <dd>
+                          <Chip color={quotationStatus(preview).color}>
+                            {quotationStatus(preview).label}
+                          </Chip>
+                        </dd>
                       </div>
                       <div>
                         <dt>{preview.customer.documentTypeLabel}</dt>
@@ -135,9 +157,23 @@ export function SiigoQuotationModal({
                         </dd>
                       </div>
                       <div>
-                        <dt>Vendedor</dt>
-                        <dd>{preview.seller.name}</dd>
+                        <dt>Comercial</dt>
+                        <dd>
+                          {/* Un pedido importado de la tienda no lo creó un comercial del CRM:
+                              mostrarlo como Sistema evita atribuírselo a quien abrió la vista. */}
+                          {preview.source === 'WOOCOMMERCE'
+                            ? 'Sistema'
+                            : preview.seller.name || '—'}
+                        </dd>
                       </div>
+                      {/* Solo en dólares: Siigo exige la tasa de cambio en el comprobante. En pesos
+                          no hay TRM que mostrar y la celda quedaría vacía. */}
+                      {preview.exchangeRate.required && (
+                        <div>
+                          <dt>TRM</dt>
+                          <dd>{exchangeRateLabel(preview)}</dd>
+                        </div>
+                      )}
                     </dl>
 
                     <section className="siigo-quotation-summary">
@@ -145,55 +181,85 @@ export function SiigoQuotationModal({
                         <strong>Resumen</strong>
                         <span>{productCount(preview)}</span>
                       </header>
-                      <ul>
-                        {preview.items.map((item) => (
-                          <li key={`${item.kind}-${item.code}`}>
-                            <div className="siigo-quotation-item-copy">
-                              <strong>{item.description}</strong>
-                              <span>
-                                {item.kind === 'SHIPPING' ? 'Envío' : `SKU ${item.code}`}
-                                {item.discount > 0 && (
-                                  <em className="siigo-quotation-item-discount">
-                                    −{item.discount}% desc.
-                                  </em>
-                                )}
-                              </span>
-                            </div>
-                            <span className="siigo-quotation-item-qty">{item.quantity}x</span>
-                            <strong className="siigo-quotation-item-amount">
-                              {formattedMoneyWithCode(String(item.grossPrice), preview.currency)}
-                            </strong>
-                          </li>
-                        ))}
-                      </ul>
+                      {/* Sin encabezado visible: las tres columnas se leen solas en un resumen tan
+                          corto. Se conserva en el marcado (oculto) porque la tabla lo necesita para
+                          definir las columnas y para que un lector de pantalla las anuncie. */}
+                      <Table className="siigo-quotation-table">
+                        <Table.Content aria-label="Resumen de la cotización">
+                          <Table.Header className="siigo-quotation-table-head">
+                            <Table.Column isRowHeader>Producto</Table.Column>
+                            <Table.Column>Cantidad</Table.Column>
+                            <Table.Column>Precio</Table.Column>
+                          </Table.Header>
+                          <Table.Body>
+                            {preview.items.map((item) => (
+                              <Table.Row key={`${item.kind}-${item.code}`}>
+                                <Table.Cell>
+                                  <div className="siigo-quotation-item-copy">
+                                    <strong>{item.description}</strong>
+                                    <span>
+                                      {item.kind === 'SHIPPING' ? 'Envío' : `SKU ${item.code}`}
+                                    </span>
+                                  </div>
+                                </Table.Cell>
+                                <Table.Cell>
+                                  <span className="siigo-quotation-item-qty">{item.quantity}</span>
+                                </Table.Cell>
+                                <Table.Cell>
+                                  {/* Con descuento porcentual se conserva el valor de lista tachado
+                                      encima del que se paga. Un precio modificado a mano no tiene
+                                      descuento: se muestra solo ese valor, sin inventar un precio
+                                      anterior que Siigo ya no usa. */}
+                                  <div className="siigo-quotation-amount">
+                                    {item.discount > 0 ? (
+                                      <>
+                                        <del>
+                                          {formattedMoneyWithCode(
+                                            String(item.grossPrice),
+                                            preview.currency,
+                                          )}
+                                        </del>
+                                        <span>
+                                          {formattedMoneyWithCode(
+                                            String(payablePrice(item)),
+                                            preview.currency,
+                                          )}
+                                        </span>
+                                      </>
+                                    ) : (
+                                      <span>
+                                        {formattedMoneyWithCode(
+                                          String(item.grossPrice),
+                                          preview.currency,
+                                        )}
+                                      </span>
+                                    )}
+                                  </div>
+                                </Table.Cell>
+                              </Table.Row>
+                            ))}
+                          </Table.Body>
+                        </Table.Content>
+                      </Table>
                     </section>
 
-                    <p className="siigo-quotation-footnote">
-                      {preview.tax.id > 0 && (
-                        <span>
-                          Impuesto aplicado: <strong>{preview.tax.label}</strong>
-                        </span>
-                      )}
-                      <span>
-                        Última sincronización{' '}
-                        {preview.quotation?.syncedAt
-                          ? formattedDate(preview.quotation.syncedAt)
-                          : '—'}
-                      </span>
-                    </p>
-
-                    {preview.exchangeRate.required && (
-                      <div className="siigo-quotation-rate">
-                        <div>
-                          <span>TRM del día</span>
-                          <strong>{exchangeRateLabel(preview)}</strong>
-                        </div>
-                        <p>
-                          Siigo exige la tasa de cambio en las cotizaciones en dólares. El precio
-                          del pedido no cambia.
-                        </p>
+                    <dl className="order-ticket-data siigo-quotation-meta">
+                      <div>
+                        <dt>Última sincronización</dt>
+                        <dd>
+                          {preview.lastSync ? (
+                            <>
+                              {preview.lastSync.name ?? 'Sistema'}
+                              <p className="siigo-quotation-sync-date">
+                                {formattedDate(preview.lastSync.at)}
+                              </p>
+                            </>
+                          ) : (
+                            '—'
+                          )}
+                        </dd>
                       </div>
-                    )}
+                    </dl>
 
                     {preview.issues.length > 0 && (
                       <Alert status="warning">
@@ -229,7 +295,7 @@ export function SiigoQuotationModal({
               )}
             </Modal.Body>
             <Modal.Footer>
-              <Button variant="danger-soft" onPress={onClose} isDisabled={isSubmitting}>
+              <Button variant="tertiary" onPress={onClose} isDisabled={isSubmitting}>
                 Cancelar
               </Button>
               <Button

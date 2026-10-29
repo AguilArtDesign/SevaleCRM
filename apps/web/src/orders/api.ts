@@ -167,6 +167,8 @@ export type OrderDetailRecord = {
 export type SiigoQuotationPreviewRecord = {
   operationCode: string;
   currency: 'COP' | 'USD';
+  /** De dónde salió la operación: un pedido de la tienda no tiene comercial del CRM. */
+  source: OrderSource;
   customer: {
     id: number;
     displayName: string;
@@ -175,6 +177,8 @@ export type SiigoQuotationPreviewRecord = {
     documentNumber: string;
   };
   seller: { id: number | null; name: string; email: string };
+  /** Quién disparó la última cotización y cuándo; nulo si nunca se intentó. */
+  lastSync: { name: string | null; at: string } | null;
   documentId: number;
   costCenter: number;
   tax: { id: number; label: string };

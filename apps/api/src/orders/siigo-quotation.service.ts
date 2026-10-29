@@ -3,6 +3,7 @@ import { SiigoService } from '../integrations/siigo/siigo.service.js';
 import { ExchangeRateService } from '../integrations/trm/trm.service.js';
 import { IntegrationLogsService } from '../integration-logs/integration-logs.service.js';
 import { buildQuotation } from './siigo-quotation-input.js';
+import { OrderEventsRepository } from './order-events.repository.js';
 import { OrdersRepository, type QuotationOperation } from './orders.repository.js';
 
 class SiigoQuotationError extends Error {
@@ -40,13 +41,15 @@ export class SiigoQuotationService {
     private readonly siigo: SiigoService,
     private readonly exchangeRate: ExchangeRateService,
     private readonly logs: IntegrationLogsService,
+    private readonly events: OrderEventsRepository,
   ) {}
 
   /** Vista previa: no toca Siigo, solo arma lo que se enviaría y señala lo que lo impide. */
   async preview(operationId: number, userId: string) {
-    const [operation, seller] = await Promise.all([
+    const [operation, seller, lastQuoted] = await Promise.all([
       this.orders.quotationOperation(operationId),
       this.orders.quotationSeller(userId),
+      this.events.latestQuoted(operationId),
     ]);
     if (!operation) throw new NotFoundException('La operación no existe.');
     const rate = await this.exchangeRateFor(operation);
@@ -56,8 +59,22 @@ export class SiigoQuotationService {
       exchangeRateDate: rate?.validFrom ?? null,
     });
     const quotation = operation.siigoQuotation;
+    // Quién sincronizó sale de la traza, no de `quotation.syncedAt`: la fecha sola no dice a quién
+    // preguntarle, y en un fallo no hay `synced_at` pero sí el intento con su autor.
+    const lastSync = lastQuoted
+      ? {
+          name: lastQuoted.user?.name ?? lastQuoted.userName,
+          at: lastQuoted.createdAt.toISOString(),
+        }
+      : quotation?.syncedAt
+        ? { name: null, at: quotation.syncedAt.toISOString() }
+        : null;
     return {
       ...draft.preview,
+      // Un pedido importado de la tienda no lo creó un comercial: el panel lo muestra como Sistema
+      // en vez de atribuírselo a quien abrió la vista previa.
+      source: operation.source,
+      lastSync,
       quotation: quotation
         ? {
             status: quotation.status,
