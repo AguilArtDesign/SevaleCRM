@@ -74,6 +74,8 @@ export class SiigoTokenService {
       { 'Partner-Id': partnerId },
       { username, access_key: accessKey },
       'Siigo',
+      // El cuerpo lleva el usuario y la clave reales del `.env`: no debe quedar escrito en `logs`.
+      { confidential: true },
     );
     const token = normalizeTokenResponse(payload);
     if (!token) throw invalidIntegrationResponse('Siigo');

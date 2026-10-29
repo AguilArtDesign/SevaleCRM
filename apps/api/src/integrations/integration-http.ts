@@ -11,7 +11,25 @@ const integrationLogger = new Logger('Integrations');
 export type IntegrationRequestOptions = {
   timeoutMs?: number;
   retryCount?: number;
+  /**
+   * El proveedor pide credenciales en la query (Puntos Colombia) y su respuesta trae el token. Con
+   * esto el registro guarda solo el origen y la ruta, y omite el cuerpo de la respuesta, para que el
+   * secreto no quede escrito en la base ni visible en el panel de Logs.
+   */
+  confidential?: boolean;
 };
+
+/**
+ * Rutas de autenticación. Se reconocen por la URL y no por una bandera en cada llamada: cualquier
+ * integración futura queda cubierta sin que nadie tenga que acordarse de marcar la petición, y un
+ * cambio de nombre en la llamada no puede reabrir la fuga.
+ */
+const authenticationPaths = /(^|\/)(auth|auth\/|oauth|token|tokens|session|login)(\/|$)/i;
+
+/** Una llamada de autenticación intercambia credenciales: su cuerpo nunca se registra. */
+export function isAuthenticationRequest(url: URL): boolean {
+  return authenticationPaths.test(url.pathname);
+}
 
 /** Entrada que se entrega al registro persistente cuando algo llama a una API externa. */
 export type IntegrationHttpLog = {
@@ -181,7 +199,8 @@ type RequestTrace = {
 
 /**
  * Envuelve la llamada para dejar rastro de todos los casos: éxito, rechazo del proveedor, timeout y
- * caída de red. El cuerpo de la petición se guarda tal cual se envió, sin cabeceras.
+ * caída de red. El cuerpo de la petición se guarda tal cual se envió, sin cabeceras, salvo en las
+ * llamadas de autenticación: allí lo que viaja son las credenciales del `.env`.
  */
 async function integrationRequest(
   url: URL,
@@ -193,6 +212,10 @@ async function integrationRequest(
   const method = (init.method ?? 'GET').toUpperCase();
   const operation = `${method} ${url.pathname}`;
   const trace: RequestTrace = { statusCode: null, responseBody: null };
+  // Una llamada confidencial se registra sin query ni cuerpos: el secreto viaja en la URL o en el
+  // cuerpo, y la respuesta puede traer el token. La autenticación lo es siempre, sin excepción.
+  const confidential = options.confidential === true || isAuthenticationRequest(url);
+  const logUrl = confidential ? `${url.origin}${url.pathname}` : url.toString();
   try {
     const payload = await performRequest(url, integration, init, options, trace);
     emitLog({
@@ -200,12 +223,12 @@ async function integrationRequest(
       operation,
       outcome: 'SUCCESS',
       method,
-      url: url.toString(),
+      url: logUrl,
       statusCode: trace.statusCode ?? 200,
       code: null,
       message: null,
-      requestBody: init.body,
-      responseBody: payload,
+      requestBody: confidential ? null : init.body,
+      responseBody: confidential ? null : payload,
       durationMs: Date.now() - startedAt,
     });
     return payload;
@@ -215,12 +238,12 @@ async function integrationRequest(
       operation,
       outcome: 'ERROR',
       method,
-      url: url.toString(),
+      url: logUrl,
       statusCode: trace.statusCode,
       code: integrationErrorCode(error),
       message: exceptionMessage(error),
-      requestBody: init.body,
-      responseBody: trace.responseBody,
+      requestBody: confidential ? null : init.body,
+      responseBody: confidential ? null : trace.responseBody,
       durationMs: Date.now() - startedAt,
     });
     throw error;

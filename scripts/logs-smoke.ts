@@ -1,5 +1,6 @@
 import '../apps/api/src/config/load-environment.js';
 import { randomUUID } from 'node:crypto';
+import { createServer } from 'node:http';
 import { NestFactory } from '@nestjs/core';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import { hashPassword } from 'better-auth/crypto';
@@ -7,6 +8,12 @@ import { AppModule } from '../apps/api/src/app.module.js';
 import { PrismaService } from '../apps/api/src/database/prisma.service.js';
 import { Role } from '../apps/api/src/generated/prisma/client.js';
 import { IntegrationLogsService } from '../apps/api/src/integration-logs/integration-logs.service.js';
+import { serializeLogBody } from '../apps/api/src/integration-logs/integration-log.types.js';
+import {
+  integrationPost,
+  integrationUrl,
+  isAuthenticationRequest,
+} from '../apps/api/src/integrations/integration-http.js';
 
 process.env.BETTER_AUTH_SECRET ||= 'local-logs-smoke-secret-at-least-32-characters';
 
@@ -214,6 +221,116 @@ try {
     'El detalle no devuelve el usuario que originó el log.',
   );
   expectStatus(await api('/api/logs/999999999', adminCookie), 404, 'Detalle inexistente');
+
+  // Un cuerpo que llega como cadena ya serializada se enmascara igual: es el caso real de
+  // `POST /auth` de Siigo, cuyo `access_key` quedaba escrito en claro.
+  const stringBody = serializeLogBody(
+    JSON.stringify({ username: 'comercial@sevale.com', access_key: 'clave-real-del-env' }),
+  );
+  assert(
+    stringBody?.includes('clave-real-del-env') === false && stringBody?.includes('[omitido]'),
+    'Un cuerpo en texto no oculta las credenciales que lleva dentro.',
+  );
+  assert(
+    serializeLogBody('texto plano sin json') === 'texto plano sin json',
+    'Un cuerpo que no es JSON debe conservarse tal cual.',
+  );
+  assert(
+    serializeLogBody({ refresh_token: 'x', nested: { password: 'y' } })?.includes('[omitido]'),
+    'Las claves anidadas que parecen credenciales deben ocultarse.',
+  );
+
+  // Toda ruta de autenticación se reconoce por la URL, sin depender de una bandera por llamada.
+  for (const path of [
+    'https://api.siigo.com/auth',
+    'https://apinp.puntoscolombia.com/auth/oauth/v2/token',
+    'https://example.invalid/oauth/token',
+    'https://example.invalid/api/v1/token',
+    'https://example.invalid/login',
+  ]) {
+    assert(isAuthenticationRequest(new URL(path)), `No se reconoció ${path} como autenticación.`);
+  }
+  for (const path of [
+    'https://example.invalid/v1/customers',
+    'https://example.invalid/wp-json/wc/v3/orders/123/notes',
+    'https://example.invalid/pos-management/v1/transactions/processsale',
+  ]) {
+    assert(
+      !isAuthenticationRequest(new URL(path)),
+      `Se marcó ${path} como autenticación sin serlo.`,
+    );
+  }
+
+  // De punta a punta: la integración real pasa por el registro y no deja rastro de credenciales.
+  const provider = createServer((request, response) => {
+    if (request.url?.startsWith('/auth')) {
+      response.writeHead(200, { 'content-type': 'application/json' });
+      response.end(JSON.stringify({ access_token: 'token-que-no-debe-verse', expires_in: 3600 }));
+      return;
+    }
+    response.writeHead(200, { 'content-type': 'application/json' });
+    response.end(JSON.stringify({ ok: true }));
+  });
+  await new Promise<void>((resolve) => provider.listen(0, '127.0.0.1', resolve));
+  const address = provider.address();
+  if (typeof address === 'string' || address === null) throw new Error('Sin puerto del proveedor.');
+  const providerBase = `http://127.0.0.1:${address.port}`;
+  const authIntegration = `AUTH_${runId.replaceAll('-', '').slice(0, 12).toUpperCase()}`;
+
+  try {
+    await integrationPost(
+      integrationUrl(providerBase, 'auth?client_secret=secreto-en-query'),
+      {},
+      { username: 'comercial@sevale.com', access_key: 'clave-real-del-env' },
+      authIntegration,
+    );
+    await integrationPost(
+      integrationUrl(providerBase, 'v1/customers'),
+      {},
+      { email: 'cliente@example.invalid', token: 'token-en-el-cuerpo' },
+      authIntegration,
+    );
+  } finally {
+    provider.close();
+  }
+
+  // El registro se escribe sin bloquear la llamada, así que se espera a que aterrice en la base.
+  const readAuthRows = async () => {
+    for (let attempt = 0; attempt < 40; attempt += 1) {
+      const rows = await prisma.integrationLog.findMany({
+        where: { integration: authIntegration },
+        orderBy: { id: 'asc' },
+      });
+      if (rows.length >= 2) return rows;
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    return prisma.integrationLog.findMany({
+      where: { integration: authIntegration },
+      orderBy: { id: 'asc' },
+    });
+  };
+  const authRows = await readAuthRows();
+  logIds.push(...authRows.map(({ id }) => id));
+  assert(authRows.length === 2, 'Las llamadas de prueba no se registraron.');
+  const authRow = authRows.find(({ operation }) => operation.includes('auth'));
+  const businessRow = authRows.find(({ operation }) => operation.includes('customers'));
+  assert(authRow !== undefined && businessRow !== undefined, 'Falta alguna de las dos llamadas.');
+  assert(authRow.requestBody === null, 'La llamada de autenticación guardó su cuerpo enviado.');
+  assert(authRow.responseBody === null, 'La llamada de autenticación guardó su respuesta.');
+  assert(
+    authRow.url?.includes('client_secret') === false,
+    'La URL registrada conserva el secreto de la query.',
+  );
+  assert(
+    businessRow.requestBody?.includes('[omitido]') === true &&
+      businessRow.requestBody?.includes('token-en-el-cuerpo') === false,
+    'La llamada de negocio no ocultó el token de su cuerpo.',
+  );
+  assert(
+    businessRow.requestBody?.includes('cliente@example.invalid') === true,
+    'El enmascarado borró datos legítimos del cuerpo.',
+  );
+  await prisma.integrationLog.deleteMany({ where: { integration: authIntegration } });
 
   // El vaciado es un permiso aparte y borra todo, no solo lo del smoke.
   expectStatus(await api('/api/logs', commercialCookie, 'DELETE'), 403, 'Vaciado del comercial');
