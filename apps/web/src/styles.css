@@ -2323,6 +2323,7 @@ select {
   margin: 0;
   padding: 0;
   list-style: none;
+  padding-top: 1rem;
 }
 
 .customer-activity-item {
@@ -2358,8 +2359,8 @@ select {
   height: 1.75rem;
   place-items: center;
   border-radius: 999px;
-  background: var(--surface-secondary);
-  color: var(--muted);
+  background: var(--default-foreground);
+  color: var(--default);
 }
 
 .customer-activity-item--success .customer-activity-marker {
@@ -2369,7 +2370,7 @@ select {
 
 .customer-activity-item--warning .customer-activity-marker {
   background: color-mix(in oklch, var(--warning) 25%, transparent);
-  color: var(--warning-foreground);
+  color: var(--warning);
 }
 
 .customer-activity-item--danger .customer-activity-marker {
@@ -2391,8 +2392,9 @@ select {
 }
 
 .customer-activity-head strong {
-  font-size: 0.88rem;
-  font-weight: 600;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--foreground);
 }
 
 .customer-activity-head time {
