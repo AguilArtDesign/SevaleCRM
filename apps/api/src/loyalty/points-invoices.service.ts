@@ -385,6 +385,13 @@ export class PointsInvoicesService {
         'La acumulación anterior quedó por verificar. Concíliala antes de reintentar.',
       );
     }
+    if (claim.outcome === 'REVOKED') {
+      throw businessError(
+        ConflictException,
+        'POINTS_INVOICE_REVOKED',
+        'Los puntos de esta factura se revocaron. Una factura revocada no se puede volver a acumular.',
+      );
+    }
 
     try {
       const result = await this.puntos.processSale(

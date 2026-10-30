@@ -6789,6 +6789,16 @@ select {
   min-height: 3.75rem;
 }
 
+/* La columna de acciones va sin título y el botón se alinea al borde derecho de la celda. */
+.points-actions-column {
+  text-align: right;
+}
+
+.points-table .inventory-row-actions {
+  padding-right: 0;
+  justify-content: flex-end;
+}
+
 .points-cell {
   display: inline-flex;
   align-items: center;
@@ -6801,13 +6811,6 @@ select {
   object-fit: contain;
 }
 
-/* Dos acciones en la misma celda: ver el resultado y, cuando aplica, revocar los puntos. */
-.points-actions {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-}
-
 /* Solo el mensaje de error del último intento: la tabla no es el lugar para el diagnóstico. */
 .points-invoice-error {
   margin: 0.25rem 0 0;
@@ -6815,13 +6818,11 @@ select {
   font-size: 0.75rem;
 }
 
+/* El selector de rango ocupa el ancho de los dos campos de fecha que reemplazó. */
 .points-date-range {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-  color: var(--muted);
+  width: 19.5rem;
 }
 
-.points-date-range .input {
-  width: 9.5rem;
+.points-date-range .date-field-group {
+  width: 100%;
 }

@@ -8,6 +8,8 @@ export type PointsInvoiceClaim =
   | { outcome: 'ALREADY_COMPLETED' }
   | { outcome: 'IN_PROGRESS' }
   | { outcome: 'UNVERIFIED' }
+  /** Los puntos se anularon en el programa; volver a acumular exigiría un ajuste manual. */
+  | { outcome: 'REVOKED' }
   | { outcome: 'CLAIMED'; accrualId: number; points: number };
 
 export type PointsRevocationClaim =
@@ -147,6 +149,9 @@ export class PointsInvoicesRepository {
       if (invoice.status === 'PROCESSING') return { outcome: 'IN_PROGRESS' };
       // Tras un resultado ambiguo no se reenvía: repetir podría acumular dos veces.
       if (invoice.status === 'UNVERIFIED') return { outcome: 'UNVERIFIED' };
+      // Anulada: los puntos ya se devolvieron y el proveedor conoce la operación. Sin este caso el
+      // reclamo caía en el `updateMany` y se informaba como «en curso», que no dice nada.
+      if (invoice.status === 'REVOKED') return { outcome: 'REVOKED' };
 
       const claimed = await transaction.pointsInvoice.updateMany({
         where: { id, status: { in: ['PENDING', 'FAILED'] } },

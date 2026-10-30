@@ -3,20 +3,32 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Alert,
   Button,
+  DateField,
+  DateRangePicker,
   Description,
+  Dropdown,
   EmptyState,
   Label,
   ListBox,
   Modal,
+  RangeCalendar,
   SearchField,
   Spinner,
   Table,
 } from '@heroui/react';
-import { ArrowRotateLeft, Gem, Magnifier, Plus } from '@gravity-ui/icons';
+import type { CalendarDate } from '@internationalized/date';
+import {
+  ArrowRotateLeft,
+  EllipsisVertical,
+  Eye,
+  FileText,
+  Gem,
+  Magnifier,
+  Xmark,
+} from '@gravity-ui/icons';
 import { pointsDocumentTypes, type PointsDocumentType } from '@sevale/validation';
 import { hasPermission } from '@sevale/permissions';
 import { Chip } from '../components/Chip';
-import { Input } from '../components/Input';
 import { getPaginationItems, Pagination } from '../components/Pagination';
 import { Select } from '../components/Select';
 import { formattedMoneyWithCode } from '../orders/presentation';
@@ -29,6 +41,8 @@ import {
 } from './api';
 import { accrualTimestamp, canAccrue, canRevoke, invoiceDate, statusMeta } from './presentation';
 
+type DateRangeValue = { start: CalendarDate; end: CalendarDate };
+
 /**
  * Panel de Puntos Colombia. Mientras el proveedor certifica, el módulo es exclusivo del
  * administrador: el permiso del backend y la bandera `PCO_ADMIN_ONLY` lo cierran para los demás.
@@ -39,10 +53,12 @@ export function PointsColombiaPage() {
   // Revocar es destructivo y tiene su propio permiso: el botón no se muestra si el rol no lo tiene,
   // así el usuario no descubre el límite con un 403.
   const canRevokePoints = Boolean(user && hasPermission(user.role, 'loyalty.revoke'));
+  // El vendedor solo lo usa la administración: un comercial opera sus propias facturas y la columna
+  // le repetiría su propio nombre en todas las filas.
+  const isAdmin = user?.role === 'ADMIN';
   const [status, setStatus] = useState<PointsInvoiceStatus | 'all'>('all');
   const [search, setSearch] = useState('');
-  const [dateFrom, setDateFrom] = useState('');
-  const [dateTo, setDateTo] = useState('');
+  const [dateRange, setDateRange] = useState<DateRangeValue | null>(null);
   const [sellerId, setSellerId] = useState('all');
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
@@ -52,7 +68,18 @@ export function PointsColombiaPage() {
   const [detailTarget, setDetailTarget] = useState<PointsInvoiceRecord | null>(null);
 
   const listQuery = useQuery({
-    queryKey: ['points-colombia', status, search, dateFrom, dateTo, sellerId, page, pageSize],
+    // Las fechas entran a la clave como `YYYY-MM-DD`: el objeto del calendario cambia de identidad
+    // en cada render y provocaría una consulta por render.
+    queryKey: [
+      'points-colombia',
+      status,
+      search,
+      dateRange?.start.toString() ?? '',
+      dateRange?.end.toString() ?? '',
+      sellerId,
+      page,
+      pageSize,
+    ],
     queryFn: () =>
       pointsColombiaApi.list({
         search,
@@ -60,8 +87,8 @@ export function PointsColombiaPage() {
         page,
         pageSize,
         sellerId: sellerId === 'all' ? undefined : Number(sellerId),
-        dateFrom: dateFrom ? new Date(`${dateFrom}T00:00:00`) : undefined,
-        dateTo: dateTo ? new Date(`${dateTo}T23:59:59`) : undefined,
+        dateFrom: dateRange ? new Date(`${dateRange.start.toString()}T00:00:00`) : undefined,
+        dateTo: dateRange ? new Date(`${dateRange.end.toString()}T23:59:59`) : undefined,
       }),
   });
   const prefixesQuery = useQuery({
@@ -90,8 +117,8 @@ export function PointsColombiaPage() {
           <span className="customers-count">{result?.pagination.total ?? 0}</span>
         </div>
         <Button variant="primary" onPress={() => setSearchOpen(true)}>
-          <Plus width={16} height={16} />
-          Buscar factura
+          <FileText width={16} height={16} />
+          Agregar factura
         </Button>
       </header>
 
@@ -147,29 +174,71 @@ export function PointsColombiaPage() {
               </Select.Popover>
             </Select>
           )}
-          <div className="points-date-range">
-            <Input
-              type="date"
-              aria-label="Facturas desde"
-              variant="secondary"
-              value={dateFrom}
-              onChange={(event) => {
-                setDateFrom(event.target.value);
+          <DateRangePicker
+            className="points-date-range"
+            aria-label="Filtrar por fecha de factura"
+            value={dateRange}
+            onChange={(value) => {
+              setDateRange(value);
+              setPage(1);
+            }}
+          >
+            <DateField.Group variant="secondary">
+              <DateField.Input slot="start">
+                {(segment) => <DateField.Segment segment={segment} />}
+              </DateField.Input>
+              <DateRangePicker.RangeSeparator />
+              <DateField.Input slot="end">
+                {(segment) => <DateField.Segment segment={segment} />}
+              </DateField.Input>
+              <DateField.Suffix>
+                {/* Igual que en el resto del panel, el disparador va dentro del grupo: el botón
+                    envuelve los campos y el foco se queda en los segmentos. */}
+                <DateRangePicker.Trigger>
+                  <DateRangePicker.TriggerIndicator />
+                </DateRangePicker.Trigger>
+              </DateField.Suffix>
+            </DateField.Group>
+            <DateRangePicker.Popover>
+              <RangeCalendar aria-label="Rango de fechas de factura">
+                <RangeCalendar.Header>
+                  <RangeCalendar.YearPickerTrigger>
+                    <RangeCalendar.YearPickerTriggerHeading />
+                    <RangeCalendar.YearPickerTriggerIndicator />
+                  </RangeCalendar.YearPickerTrigger>
+                  <RangeCalendar.NavButton slot="previous" />
+                  <RangeCalendar.NavButton slot="next" />
+                </RangeCalendar.Header>
+                <RangeCalendar.Grid>
+                  <RangeCalendar.GridHeader>
+                    {(day) => <RangeCalendar.HeaderCell>{day}</RangeCalendar.HeaderCell>}
+                  </RangeCalendar.GridHeader>
+                  <RangeCalendar.GridBody>
+                    {(date) => <RangeCalendar.Cell date={date} />}
+                  </RangeCalendar.GridBody>
+                </RangeCalendar.Grid>
+                <RangeCalendar.YearPickerGrid>
+                  <RangeCalendar.YearPickerGridBody>
+                    {({ year }) => <RangeCalendar.YearPickerCell year={year} />}
+                  </RangeCalendar.YearPickerGridBody>
+                </RangeCalendar.YearPickerGrid>
+              </RangeCalendar>
+            </DateRangePicker.Popover>
+          </DateRangePicker>
+          {/* Sin esto, quitar el filtro obliga a borrar los seis segmentos uno por uno. */}
+          {dateRange && (
+            <Button
+              size="sm"
+              variant="ghost"
+              onPress={() => {
+                setDateRange(null);
                 setPage(1);
               }}
-            />
-            <span>–</span>
-            <Input
-              type="date"
-              aria-label="Facturas hasta"
-              variant="secondary"
-              value={dateTo}
-              onChange={(event) => {
-                setDateTo(event.target.value);
-                setPage(1);
-              }}
-            />
-          </div>
+            >
+              <Xmark width={14} height={14} />
+              Quitar fecha
+            </Button>
+          )}
         </div>
         <SearchField
           className="orders-search"
@@ -203,12 +272,16 @@ export function PointsColombiaPage() {
               <Table.Column isRowHeader>Factura</Table.Column>
               <Table.Column>Fecha</Table.Column>
               <Table.Column>Documento</Table.Column>
-              <Table.Column>Vendedor</Table.Column>
+              {isAdmin && <Table.Column>Vendedor</Table.Column>}
               <Table.Column>Total COP</Table.Column>
               <Table.Column>Puntos</Table.Column>
               <Table.Column>Estado</Table.Column>
               <Table.Column>Acumulado</Table.Column>
-              <Table.Column className="inventory-actions-column">Acciones</Table.Column>
+              {/* La columna de acciones no lleva título: el botón se explica solo y centra la
+                  atención en los datos. */}
+              <Table.Column className="points-actions-column" aria-label="Acciones">
+                {''}
+              </Table.Column>
             </Table.Header>
             <Table.Body
               renderEmptyState={() =>
@@ -258,8 +331,9 @@ export function PointsColombiaPage() {
                       </div>
                     </Table.Cell>
                     <Table.Cell>
-                      {invoice.sellerName ??
-                        (invoice.sellerId === null ? '—' : `Siigo #${invoice.sellerId}`)}
+                      {isAdmin &&
+                        (invoice.sellerName ??
+                          (invoice.sellerId === null ? '—' : `Siigo #${invoice.sellerId}`))}
                     </Table.Cell>
                     <Table.Cell>{formattedMoneyWithCode(invoice.total, 'COP')}</Table.Cell>
                     <Table.Cell>
@@ -280,41 +354,64 @@ export function PointsColombiaPage() {
                         : '—'}
                     </Table.Cell>
                     <Table.Cell>
-                      <div className="points-actions">
-                        {/* Una vez acreditada, la acción de acumular deja de existir: los puntos no
-                            se pueden volver a acumular. Revocar, en cambio, solo aparece sobre
-                            puntos acreditados y desaparece cuando ya se anularon. */}
-                        {canAccrue(invoice) ? (
+                      <div className="inventory-row-actions">
+                        <Dropdown>
                           <Button
+                            className="inventory-actions-trigger"
+                            isIconOnly
                             size="sm"
-                            variant="secondary"
-                            onPress={() => setAccrualTarget(invoice)}
+                            variant="ghost"
+                            aria-label={`Acciones para ${invoice.name}`}
                           >
-                            <Gem width={15} height={15} />
-                            {invoice.status === 'FAILED' ? 'Reintentar' : 'Acumular'}
+                            <EllipsisVertical className="text-muted" width={17} height={17} />
                           </Button>
-                        ) : (
-                          <>
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onPress={() => setDetailTarget(invoice)}
+                          <Dropdown.Popover
+                            className="inventory-actions-popover"
+                            placement="bottom end"
+                          >
+                            <Dropdown.Menu
+                              aria-label={`Acciones para ${invoice.name}`}
+                              onAction={(key) => {
+                                if (String(key) === 'accrue') setAccrualTarget(invoice);
+                                if (String(key) === 'detail') setDetailTarget(invoice);
+                                if (String(key) === 'revoke') setRevokeTarget(invoice);
+                              }}
                             >
-                              Ver resultado
-                            </Button>
-                            {canRevoke(invoice) && canRevokePoints && (
-                              <Button
-                                size="sm"
-                                variant="danger-soft"
-                                aria-label={`Revocar puntos de ${invoice.name}`}
-                                onPress={() => setRevokeTarget(invoice)}
-                              >
-                                <ArrowRotateLeft className="text-danger" width={15} height={15} />
-                                Revocar
-                              </Button>
-                            )}
-                          </>
-                        )}
+                              <Dropdown.Section>
+                                {/* Acumular solo existe mientras no haya puntos acreditados: una
+                                    factura completada no puede volver a acumular. */}
+                                {canAccrue(invoice) && (
+                                  <Dropdown.Item id="accrue" textValue="Acumular puntos">
+                                    <Gem
+                                      className="size-4 shrink-0 text-muted"
+                                      aria-hidden="true"
+                                    />
+                                    <Label>
+                                      {invoice.status === 'FAILED'
+                                        ? 'Reintentar acumulación'
+                                        : 'Acumular puntos'}
+                                    </Label>
+                                  </Dropdown.Item>
+                                )}
+                                <Dropdown.Item id="detail" textValue="Detalles">
+                                  <Eye className="size-4 shrink-0 text-muted" aria-hidden="true" />
+                                  <Label>Detalles</Label>
+                                </Dropdown.Item>
+                                {/* Revocar es irreversible y solo aplica sobre puntos ya
+                                    acreditados; desaparece cuando la anulación se completó. */}
+                                {canRevoke(invoice) && canRevokePoints && (
+                                  <Dropdown.Item id="revoke" textValue="Revocar" variant="danger">
+                                    <ArrowRotateLeft
+                                      className="size-4 shrink-0 text-danger"
+                                      aria-hidden="true"
+                                    />
+                                    <Label>Revocar</Label>
+                                  </Dropdown.Item>
+                                )}
+                              </Dropdown.Section>
+                            </Dropdown.Menu>
+                          </Dropdown.Popover>
+                        </Dropdown>
                       </div>
                     </Table.Cell>
                   </Table.Row>

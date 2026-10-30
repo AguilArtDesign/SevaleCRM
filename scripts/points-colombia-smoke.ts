@@ -235,6 +235,7 @@ const repository = {
     if (row.status === 'COMPLETED') return resolved({ outcome: 'ALREADY_COMPLETED' });
     if (row.status === 'PROCESSING') return resolved({ outcome: 'IN_PROGRESS' });
     if (row.status === 'UNVERIFIED') return resolved({ outcome: 'UNVERIFIED' });
+    if (row.status === 'REVOKED') return resolved({ outcome: 'REVOKED' });
     row.status = 'PROCESSING';
     const created: Accrual = {
       id: nextAccrualId++,
@@ -704,6 +705,22 @@ try {
     'Código de factura ya revocada.',
   );
   assert(cancelPayloads.length === 1, 'El reintento no debe volver a anular en el proveedor.');
+
+  // Una factura revocada no se puede volver a acumular: los puntos ya se devolvieron en el programa
+  // y repetir la venta los acreditaría dos veces.
+  const salesBeforeRevoked = sentSales();
+  const reaccrueRevoked = await rejects(
+    service.accrue(registered.id, { documentNumber: '1011237867', documentType: '2' }, admin),
+    'Una factura revocada no debe poder acumularse otra vez.',
+  );
+  assert(
+    businessCode(reaccrueRevoked) === 'POINTS_INVOICE_REVOKED',
+    'El intento de acumular una factura revocada debe tener su propio código.',
+  );
+  assert(
+    sentSales() === salesBeforeRevoked,
+    'El proveedor no debe recibir una segunda acumulación de la revocada.',
+  );
 
   // 5xx al anular: no se sabe si el proveedor la aplicó, así que queda por verificar. Los puntos
   // siguen acreditados: la factura vuelve a Completado y el bloqueo vive en la anulación.
