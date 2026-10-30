@@ -1,7 +1,8 @@
 import type { PointsDocumentType, PointsInvoiceListQuery } from '@sevale/validation';
 import { apiUrl } from '../config/api-url';
 
-export type PointsInvoiceStatus = 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED' | 'UNVERIFIED';
+export type PointsInvoiceStatus =
+  'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED' | 'UNVERIFIED' | 'REVOKING' | 'REVOKED';
 
 export type PointsInvoiceRecord = {
   id: number;
@@ -33,6 +34,12 @@ export type PointsInvoiceRecord = {
     documentType: string;
     errorCode: string | null;
     errorMessage: string | null;
+    /** Anulación de la acumulación. Nulo mientras nadie la haya intentado. */
+    revocationStatus: 'PROCESSING' | 'COMPLETED' | 'FAILED' | 'UNVERIFIED' | null;
+    revocationErrorCode: string | null;
+    revocationErrorMessage: string | null;
+    revokedAt: string | null;
+    revokedBy: { id: string; name: string } | null;
     completedAt: string | null;
     createdAt: string;
     user: { id: string; name: string };
@@ -133,5 +140,10 @@ export const pointsColombiaApi = {
     apiRequest<PointsAccrualResponse>(`/api/points-colombia/invoices/${id}/accrue`, {
       method: 'POST',
       body: JSON.stringify({ documentNumber, documentType }),
+    }),
+  /** Anula los puntos ya acreditados. No necesita datos del navegador: todo sale del intento. */
+  revoke: (id: number) =>
+    apiRequest<PointsInvoiceRecord>(`/api/points-colombia/invoices/${id}/revoke`, {
+      method: 'POST',
     }),
 };

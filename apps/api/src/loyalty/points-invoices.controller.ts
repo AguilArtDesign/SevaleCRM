@@ -97,4 +97,14 @@ export class PointsInvoicesController {
       this.user(request),
     );
   }
+
+  /**
+   * Anular los puntos ya acreditados. Va con su propio permiso porque es destructivo: dejarlo en
+   * `loyalty.accrue` haría que habilitar la acumulación habilitara también la revocación.
+   */
+  @Post('invoices/:id/revoke')
+  @RequirePermissions('loyalty.revoke')
+  revoke(@Param('id') id: string, @Req() request: AuthenticatedRequest) {
+    return this.points.revoke(parseInput(pointsInvoiceIdSchema, id), this.user(request));
+  }
 }

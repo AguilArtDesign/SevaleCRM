@@ -6766,6 +6766,48 @@ select {
   gap: 0.4rem;
 }
 
+/* Misma altura y pie que las demás tablas del CRM: el listado se lee igual que Clientes o Pedidos. */
+.points-table {
+  height: calc(100vh - 200px);
+  grid-template-rows: minmax(0, 1fr) auto;
+}
+
+/* El formato de la tabla es el mismo en todas las columnas: 13px y peso medio. Las celdas que
+   muestran dos líneas (documento) conservan su tamaño reducido para el detalle en gris. */
+.points-table .table__cell,
+.points-table .table__cell strong,
+.points-invoice-copy strong {
+  font-size: 0.8125rem;
+  font-weight: 500;
+}
+
+.points-table .table__content {
+  min-width: 70rem;
+}
+
+.points-table .table__footer {
+  min-height: 3.75rem;
+}
+
+.points-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.points-cell img {
+  width: 1rem;
+  height: 1rem;
+  object-fit: contain;
+}
+
+/* Dos acciones en la misma celda: ver el resultado y, cuando aplica, revocar los puntos. */
+.points-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
 /* Solo el mensaje de error del último intento: la tabla no es el lugar para el diagnóstico. */
 .points-invoice-error {
   margin: 0.25rem 0 0;
@@ -6782,13 +6824,4 @@ select {
 
 .points-date-range .input {
   width: 9.5rem;
-}
-
-.points-pagination {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.75rem;
-  color: var(--muted);
-  font-size: 0.8125rem;
 }

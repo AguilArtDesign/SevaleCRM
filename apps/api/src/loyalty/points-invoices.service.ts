@@ -17,7 +17,12 @@ import type {
 } from '@sevale/validation';
 import { SiigoService, type SiigoInvoice } from '../integrations/siigo/siigo.service.js';
 import {
+  IntegrationAuthenticationException,
+  IntegrationResourceMissingException,
+} from '../integrations/integration-http.js';
+import {
   PointsAccountNotFoundError,
+  PointsCancellationRejectedError,
   PuntosColombiaService,
   puntoColombiaDate,
   type PointsBalance,
@@ -164,14 +169,32 @@ export class PointsInvoicesService {
     );
   }
 
+  /**
+   * Nombre del vendedor para la tabla. Primero se busca entre los usuarios del CRM, que es la
+   * fuente natural; si el `sellerId` de la factura no corresponde a ninguno (vendedores históricos
+   * o cuentas de Siigo que nunca se dieron de alta aquí), se consulta Siigo para no mostrar el
+   * número suelto. Un fallo de Siigo no rompe el listado: la columna cae al número.
+   */
   private async sellerNames(ids: (number | null)[]) {
     const distinct = [...new Set(ids.filter((id): id is number => id !== null))];
     const rows = await this.invoices.sellerNames(distinct);
-    return new Map(
-      rows
-        .filter((row): row is { sellerId: number; name: string } => row.sellerId !== null)
-        .map((row) => [row.sellerId, row.name]),
+    const names = new Map<number, string>();
+    for (const row of rows) {
+      if (row.sellerId !== null) names.set(row.sellerId, row.name);
+    }
+    await Promise.all(
+      distinct
+        .filter((id) => !names.has(id))
+        .map(async (id) => {
+          try {
+            const name = await this.siigo.sellerName(id);
+            if (name) names.set(id, name);
+          } catch {
+            // Sin nombre el panel muestra `Siigo #id`, que sigue siendo identificable.
+          }
+        }),
     );
+    return names;
   }
 
   /** Prefijos disponibles para el buscador del administrador. */
@@ -412,8 +435,116 @@ export class PointsInvoicesService {
     }
   }
 
-  /** El prefijo sale del usuario; el administrador lo elige entre los configurados. */
-  private async resolvePrefix(
+  /**
+   * Anula los puntos ya acreditados de una factura. Necesita dos identificadores: el original, que
+   * quedó guardado cuando se acumuló, y uno nuevo para la anulación. El nuevo se genera y se guarda
+   * antes del envío, igual que en la acumulación, para que un resultado incierto siga siendo
+   * conciliable.
+   */
+  async revoke(id: number, user: SessionUser) {
+    const invoice = await this.invoices.detail(id);
+    if (!invoice) throw new NotFoundException('La factura no existe en el panel.');
+    if (invoice.source === 'SIIGO' && user.role !== 'ADMIN') {
+      const own = await this.ownPrefix(user.id);
+      if (!own?.sellerId || invoice.sellerId !== own.sellerId) {
+        throw businessError(
+          ForbiddenException,
+          'POINTS_INVOICE_NOT_OWNED',
+          'La factura pertenece a otro vendedor.',
+        );
+      }
+    }
+    const accrual = invoice.accruals[0];
+    if (!accrual) {
+      throw businessError(
+        ConflictException,
+        'POINTS_INVOICE_NOT_ACCRUED',
+        'Solo se pueden revocar los puntos de una factura ya acumulada.',
+      );
+    }
+
+    // El identificador original se reutiliza tal cual: es el que el proveedor reconoce.
+    const original = accrual.transactionIdentifier as unknown as TransactionIdentifier;
+    const cancellation: TransactionIdentifier = {
+      terminalId: this.terminalId(),
+      transactionId: invoice.name,
+      cashierId: this.cashierId(),
+      locationCode: this.locationCode(),
+      transactionDate: puntoColombiaDate(),
+      nut: invoice.name,
+    };
+
+    const claim = await this.invoices.claimRevocation(id, user.id, { ...cancellation });
+    if (claim.outcome === 'NOT_FOUND')
+      throw new NotFoundException('La factura no existe en el panel.');
+    if (claim.outcome === 'NOT_ACCRUED') {
+      throw businessError(
+        ConflictException,
+        'POINTS_INVOICE_NOT_ACCRUED',
+        'Solo se pueden revocar los puntos de una factura ya acumulada.',
+      );
+    }
+    if (claim.outcome === 'ALREADY_REVOKED') {
+      throw businessError(
+        ConflictException,
+        'POINTS_INVOICE_ALREADY_REVOKED',
+        'Los puntos de esta factura ya se revocaron.',
+      );
+    }
+    if (claim.outcome === 'IN_PROGRESS') {
+      throw businessError(
+        ConflictException,
+        'POINTS_REVOCATION_IN_PROGRESS',
+        'La revocación de esta factura está en curso.',
+      );
+    }
+    if (claim.outcome === 'UNVERIFIED') {
+      throw businessError(
+        ConflictException,
+        'POINTS_REVOCATION_UNVERIFIED',
+        'La revocación anterior quedó por verificar. Concíliala antes de reintentar.',
+      );
+    }
+
+    try {
+      await this.puntos.cancelTransaction(original, cancellation);
+      await this.invoices.markRevoked(id, claim.accrualId);
+      await this.logs.record({
+        integration: 'PUNTOS_COLOMBIA',
+        operation: 'accrual.cancel',
+        outcome: 'SUCCESS',
+        code: 'POINTS_REVOKED',
+        message: `Factura ${invoice.name}: se revocaron ${accrual.pointsEarned ?? accrual.pointsRequested} puntos.`,
+        responseBody: { original, cancellation },
+        referenceType: 'POINTS_INVOICE',
+        referenceId: id,
+        userId: user.id,
+      });
+      return this.detail(id);
+    } catch (error) {
+      // Un rechazo del proveedor es definitivo: reintentar con los mismos datos daría lo mismo. Un
+      // 404 de la anulación también lo es: la operación original no existe en el proveedor.
+      const rejected =
+        error instanceof PointsCancellationRejectedError ||
+        error instanceof IntegrationResourceMissingException;
+      const unverified =
+        !rejected && !(error instanceof IntegrationAuthenticationException) && isAmbiguous(error);
+      const code = rejected
+        ? 'POINTS_REVOCATION_REJECTED'
+        : unverified
+          ? 'POINTS_REVOCATION_UNVERIFIED'
+          : 'POINTS_REVOCATION_FAILED';
+      const message = safeMessage(error, 'Puntos Colombia no pudo anular la acumulación.');
+      await this.invoices.markRevocationFailed(id, claim.accrualId, code, message, unverified);
+      this.logger.warn(`Revocación de ${invoice.name} falló (${code}).`);
+      throw new BadGatewayException({
+        success: false,
+        error: { code, message },
+      });
+    }
+  }
+
+  /** El prefijo sale del usuario; el administrador lo elige entre los configurados. */ private async resolvePrefix(
     user: SessionUser,
     requestedSellerId?: number,
   ): Promise<{ prefix: string; sellerId: number | null }> {

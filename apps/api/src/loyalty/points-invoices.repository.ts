@@ -10,6 +10,15 @@ export type PointsInvoiceClaim =
   | { outcome: 'UNVERIFIED' }
   | { outcome: 'CLAIMED'; accrualId: number; points: number };
 
+export type PointsRevocationClaim =
+  | { outcome: 'NOT_FOUND' }
+  /** Sin acumulación confirmada no hay nada que anular. */
+  | { outcome: 'NOT_ACCRUED' }
+  | { outcome: 'ALREADY_REVOKED' }
+  | { outcome: 'IN_PROGRESS' }
+  | { outcome: 'UNVERIFIED' }
+  | { outcome: 'CLAIMED'; accrualId: number };
+
 export type NewPointsAccrual = {
   documentNumber: string;
   documentType: string;
@@ -32,8 +41,15 @@ const invoiceInclude = {
       balanceCheckedAt: true,
       documentNumber: true,
       documentType: true,
+      // El identificador original es obligatorio para anular: sin él no hay nada que conciliar.
+      transactionIdentifier: true,
       errorCode: true,
       errorMessage: true,
+      revocationStatus: true,
+      revocationErrorCode: true,
+      revocationErrorMessage: true,
+      revokedAt: true,
+      revokedBy: { select: { id: true, name: true } },
       completedAt: true,
       createdAt: true,
       user: { select: { id: true, name: true } },
@@ -175,6 +191,106 @@ export class PointsInvoicesRepository {
           pointsBalance: result.pointsBalance,
           approbationNumber: result.approbationNumber,
           completedAt: new Date(),
+        },
+      }),
+    ]);
+  }
+
+  /**
+   * Reclama la anulación. Igual que la acumulación, el paso a `PROCESSING` es único: dos peticiones
+   * simultáneas no pueden anular dos veces. La factura pasa a `REVOKING` en la misma transacción,
+   * así que la tabla deja de ofrecer la acción mientras el proveedor responde.
+   */
+  claimRevocation(
+    invoiceId: number,
+    userId: string,
+    identifier: Prisma.InputJsonValue,
+  ): Promise<PointsRevocationClaim> {
+    return this.prisma.$transaction(async (transaction) => {
+      const invoice = await transaction.pointsInvoice.findUnique({
+        where: { id: invoiceId },
+        select: {
+          status: true,
+          accruals: {
+            where: { status: 'COMPLETED' },
+            orderBy: { id: 'desc' },
+            take: 1,
+            select: { id: true, revocationStatus: true },
+          },
+        },
+      });
+      if (!invoice) return { outcome: 'NOT_FOUND' };
+      if (invoice.status === 'REVOKED') return { outcome: 'ALREADY_REVOKED' };
+      if (invoice.status === 'REVOKING') return { outcome: 'IN_PROGRESS' };
+
+      const accrual = invoice.accruals[0];
+      // La anulación solo existe sobre una acumulación confirmada: si la factura quedó fallida o
+      // por verificar, primero hay que resolver eso y no hay nada acreditado que devolver.
+      if (!accrual || invoice.status !== 'COMPLETED') return { outcome: 'NOT_ACCRUED' };
+      if (accrual.revocationStatus === 'COMPLETED') return { outcome: 'ALREADY_REVOKED' };
+      // Tras un resultado ambiguo no se reenvía: repetir podría anular una operación ya anulada.
+      if (accrual.revocationStatus === 'UNVERIFIED') return { outcome: 'UNVERIFIED' };
+
+      const claimed = await transaction.pointsAccrual.updateMany({
+        where: { id: accrual.id, OR: [{ revocationStatus: null }, { revocationStatus: 'FAILED' }] },
+        data: {
+          revocationStatus: 'PROCESSING',
+          revocationIdentifier: identifier,
+          revokedByUserId: userId,
+          revocationErrorCode: null,
+          revocationErrorMessage: null,
+        },
+      });
+      if (claimed.count !== 1) return { outcome: 'IN_PROGRESS' };
+
+      await transaction.pointsInvoice.update({
+        where: { id: invoiceId },
+        data: { status: 'REVOKING' },
+      });
+      return { outcome: 'CLAIMED', accrualId: accrual.id };
+    });
+  }
+
+  markRevoked(invoiceId: number, accrualId: number) {
+    return this.prisma.$transaction([
+      this.prisma.pointsInvoice.update({
+        where: { id: invoiceId },
+        data: { status: 'REVOKED' },
+      }),
+      this.prisma.pointsAccrual.update({
+        where: { id: accrualId },
+        data: {
+          revocationStatus: 'COMPLETED',
+          revokedAt: new Date(),
+          revocationErrorCode: null,
+          revocationErrorMessage: null,
+        },
+      }),
+    ]);
+  }
+
+  /**
+   * Una anulación fallida no deshace nada: los puntos siguen acreditados, así que la factura vuelve
+   * a `COMPLETED` y el error se guarda solo en el intento de anulación.
+   */
+  markRevocationFailed(
+    invoiceId: number,
+    accrualId: number,
+    code: string,
+    message: string,
+    unverified: boolean,
+  ) {
+    return this.prisma.$transaction([
+      this.prisma.pointsInvoice.update({
+        where: { id: invoiceId },
+        data: { status: 'COMPLETED' },
+      }),
+      this.prisma.pointsAccrual.update({
+        where: { id: accrualId },
+        data: {
+          revocationStatus: unverified ? 'UNVERIFIED' : 'FAILED',
+          revocationErrorCode: code,
+          revocationErrorMessage: message,
         },
       }),
     ]);

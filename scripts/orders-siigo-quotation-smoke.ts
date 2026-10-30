@@ -38,6 +38,7 @@ async function requestBody(request: IncomingMessage): Promise<Record<string, unk
 let discountType: 'Value' | 'Percentage' = 'Percentage';
 let capturedPayload: Record<string, unknown> | null = null;
 const requestedPaths: string[] = [];
+const usersHits: number[] = [];
 const updatedQuotationIds: string[] = [];
 let createdQuotations = 0;
 const trmHits = { count: 0 };
@@ -51,6 +52,24 @@ const server = createServer((request, response) => {
       return json(response, 200, [
         { valor: '3157.94', unidad: 'COP', vigenciadesde: '2026-10-27T00:00:00.000' },
       ]);
+    }
+    // Siigo no filtra `users` por id: el vendedor se busca recorriendo las páginas. La cuenta de
+    // prueba informa 150 usuarios, así que el vendedor 999 solo aparece en la segunda página.
+    if (url.pathname.replace(/\/$/, '').endsWith('/v1/users')) {
+      const page = Number(url.searchParams.get('page') ?? '1');
+      usersHits.push(page);
+      const all = Array.from({ length: 150 }, (_, index) => ({
+        id: 1000 + index,
+        first_name: `Vendedor${index}`,
+        last_name: 'Siigo',
+        active: true,
+      }));
+      all[120] = { id: 999, first_name: 'Histórico', last_name: 'Antiguo', active: true };
+      const start = (page - 1) * 100;
+      return json(response, 200, {
+        pagination: { page, page_size: 100, total_results: all.length },
+        results: all.slice(start, start + 100),
+      });
     }
     if (url.pathname.endsWith('/document-types')) {
       return json(response, 200, [
@@ -446,6 +465,24 @@ try {
     'No se deben consultar productos en Siigo: el código ya está en el inventario.',
   );
 
+  // El nombre de un vendedor que no está en el CRM: Siigo no filtra por id, así que hay que
+  // recorrer las páginas hasta encontrarlo. El 999 vive en la segunda.
+  const sellerName = await siigo.sellerName(999);
+  assert(sellerName === 'Histórico Antiguo', 'El nombre del vendedor no se resolvió en Siigo.');
+  assert(
+    usersHits.join(',') === '1,2',
+    'La búsqueda del vendedor debe paginar hasta encontrar la página que lo contiene.',
+  );
+  // La caché evita repetir la consulta para el mismo vendedor.
+  await siigo.sellerName(999);
+  assert(usersHits.join(',') === '1,2', 'La segunda consulta debía salir de la caché.');
+  // Un vendedor inexistente recorre todas las páginas y termina en null, sin lanzar.
+  assert((await siigo.sellerName(777_777)) === null, 'Un vendedor inexistente debe devolver null.');
+  assert(
+    usersHits.join(',') === '1,2,1,2',
+    'Debe detenerse al agotar las páginas que informa Siigo.',
+  );
+
   // Un comprobante configurado por valor necesita convertir el porcentaje al importe de la línea.
   discountType = 'Value';
   await siigo.createQuotation(quotationInput);
@@ -555,7 +592,7 @@ try {
   );
 
   process.stdout.write(
-    'Siigo quotation smoke: fixed document and cost center, SKU codes, per-currency taxes, tax split, per-product coupon, manual price exclusion, shipping line, TRM cache, open-order rule per WooCommerce status, blocking issues, discount unit, update of an already created quotation, errors and retry checks passed.\n',
+    'Siigo quotation smoke: fixed document and cost center, SKU codes, per-currency taxes, tax split, per-product coupon, manual price exclusion, shipping line, TRM cache, paginated seller name fallback, open-order rule per WooCommerce status, blocking issues, discount unit, update of an already created quotation, errors and retry checks passed.\n',
   );
 } finally {
   for (const [key, value] of Object.entries(previousEnvironment)) {

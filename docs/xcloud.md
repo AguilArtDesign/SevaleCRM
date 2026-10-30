@@ -71,6 +71,16 @@ El archivo `.env.production.example` contiene únicamente placeholders y sirve c
 | `N8N_API_KEY`                                                  | Sí                    | API key aleatoria de al menos 32 caracteres.          |
 | `INITIAL_ADMIN_EMAIL`                                          | Solo seed inicial     | Correo del administrador inicial.                     |
 | `INITIAL_ADMIN_PASSWORD`                                       | Opcional y temporal   | Contraseña inicial; retirarla después del seed.       |
+| `PCO_BASE_URL`                                                 | Para usar el panel    | Base del portal de aliados de Puntos Colombia.        |
+| `PCO_CLIENT_ID`                                                | Para usar el panel    | Credencial de la tokenización. Secreto.               |
+| `PCO_CLIENT_SECRET`                                            | Para usar el panel    | Credencial de la tokenización. Secreto.               |
+| `PCO_PARTNER_CODE`                                             | Para usar el panel    | NIT de la empresa en el programa.                     |
+| `PCO_LOCATION_CODE`                                            | Para usar el panel    | Código del punto de venta.                            |
+| `PCO_CA_CHANNEL`                                               | No                    | Canal informado al proveedor; por defecto `V`.        |
+| `PCO_REMOTE_IPV4`                                              | No                    | IP de salida informada al proveedor.                  |
+| `PCO_TERMINAL_ID`                                              | No                    | Terminal de las transacciones; `PCAliados-01`.        |
+| `PCO_CASHIER_ID`                                               | No                    | Cajero de las transacciones.                          |
+| `PCO_ADMIN_ONLY`                                               | No                    | Cierra el panel a los no administradores.             |
 | `VITE_API_URL`                                                 | No en un solo dominio | URL pública de API para una topología separada.       |
 | `REDIS_HOST`, `REDIS_PORT`, `REDIS_USERNAME`, `REDIS_PASSWORD` | No                    | Reservadas; V1 no utiliza Redis.                      |
 
@@ -89,6 +99,25 @@ TRM_API_URL=https://www.datos.gov.co/resource/32sa-8pi3.json
 El valor por defecto se aplica cuando la variable no existe, viene vacía o no es un entero positivo. Un valor verosímil pero equivocado, por ejemplo `865`, **no** cae al valor por defecto: se envía así y Siigo lo rechaza. Conviene copiar los valores del panel de Siigo tal cual.
 
 `TRM_API_URL` solo se consulta al cotizar en dólares. Si todas las cotizaciones son en pesos, no se usa.
+
+### Variables de Puntos Colombia
+
+El panel de Puntos Colombia no forma parte de la validación de arranque: si faltan sus variables la API inicia igual y el resto del CRM funciona, pero cada llamada al panel responde `503` con `INTEGRATION_NOT_CONFIGURED`. Como el menú aparece para el administrador, conviene cargarlas antes de publicar o dejar `PCO_ADMIN_ONLY=true` mientras no se use.
+
+```env
+PCO_BASE_URL=https://apinp.puntoscolombia.com
+PCO_CLIENT_ID=
+PCO_CLIENT_SECRET=
+PCO_PARTNER_CODE=
+PCO_LOCATION_CODE=
+PCO_CA_CHANNEL=V
+PCO_REMOTE_IPV4=
+PCO_TERMINAL_ID=PCAliados-01
+PCO_CASHIER_ID=Yohander-01
+PCO_ADMIN_ONLY=true
+```
+
+`PCO_CLIENT_ID` y `PCO_CLIENT_SECRET` son secretos y solo viven en el servidor: la tokenización envía el secreto en la URL, así que el registro de integración guarda la ruta sin la cadena de consulta. `PCO_PARTNER_CODE` es el NIT de la empresa y `PCO_LOCATION_CODE`, el código del punto de venta; los dos los entrega el programa al certificar. `PCO_ADMIN_ONLY` ausente equivale a `true`.
 
 ### Gmail SMTP
 

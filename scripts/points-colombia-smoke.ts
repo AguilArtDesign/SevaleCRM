@@ -48,6 +48,7 @@ async function body(request: IncomingMessage): Promise<Record<string, unknown>> 
 // --- Proveedor simulado ------------------------------------------------------------------------
 
 const salePayloads: Record<string, unknown>[] = [];
+const cancelPayloads: Record<string, unknown>[] = [];
 const sentSales = () => salePayloads.length;
 const uatAccounts = new Map<string, { pointsAmount: number; allowAccrual: boolean }>([
   ['1011237867', { pointsAmount: 10900, allowAccrual: true }],
@@ -93,6 +94,22 @@ const server = createServer((request, response) => {
         approbationNumber: 'AP-9001',
         mainBalance: { pointsEarned: granted, pointsBalance: 50000 + granted },
       });
+    }
+    if (url.pathname.endsWith('/transactions/cancel') && request.method === 'POST') {
+      const payload = await body(request);
+      cancelPayloads.push(payload);
+      const current = payload.transactionIdentifier as Record<string, unknown> | undefined;
+      const invoice = typeof current?.transactionId === 'string' ? current.transactionId : '';
+      // Un 5xx deja la anulación por verificar: no se sabe si el proveedor la aplicó.
+      if (invoice === 'FV-1-950') return json(response, 500, { resultCode: 'POS_ERROR' });
+      // Un rechazo con código propio es definitivo: reintentar daría lo mismo.
+      if (invoice === 'FV-1-951')
+        return json(response, 409, {
+          resultCode: 'POS_TRANSACTION_NOT_FOUND',
+          resultMsg: 'La transacción no existe.',
+        });
+      // Éxito tal como lo devuelve el proveedor: código de confirmación, no un cuerpo de datos.
+      return json(response, 200, { resultCode: '0', resultMsg: 'Transacción anulada.' });
     }
     return json(response, 404, { resultCode: 'POS_NOT_FOUND' });
   })();
@@ -204,6 +221,10 @@ const repository = {
       siigoInvoiceId: (input.siigoInvoiceId as string | null) ?? null,
       total: String(input.total),
       points: Number(input.points),
+      // El vendedor y el origen viajan desde el servicio: sin ellos la tabla no puede resolver el
+      // nombre ni distinguir una factura de Siigo de una de prueba.
+      sellerId: typeof input.sellerId === 'number' ? input.sellerId : undefined,
+      source: typeof input.source === 'string' ? input.source : undefined,
     });
     row.status = String(input.status);
     return resolved({ ...row, createdBy: users[0], accruals: [] });
@@ -255,6 +276,49 @@ const repository = {
       Object.assign(accrual, { status: row.status, errorCode: code, errorMessage: message });
     return resolved(null);
   },
+  claimRevocation(invoiceId: number, userId: string, identifier: Record<string, unknown>) {
+    const row = invoices.get(invoiceId);
+    if (!row) return resolved({ outcome: 'NOT_FOUND' });
+    if (row.status === 'REVOKED') return resolved({ outcome: 'ALREADY_REVOKED' });
+    if (row.status === 'REVOKING') return resolved({ outcome: 'IN_PROGRESS' });
+    const accrual = row.accruals.find((item) => item.status === 'COMPLETED');
+    if (!accrual || row.status !== 'COMPLETED') return resolved({ outcome: 'NOT_ACCRUED' });
+    if (accrual.revocationStatus === 'COMPLETED') return resolved({ outcome: 'ALREADY_REVOKED' });
+    if (accrual.revocationStatus === 'UNVERIFIED') return resolved({ outcome: 'UNVERIFIED' });
+    accrual.revocationStatus = 'PROCESSING';
+    accrual.revocationIdentifier = identifier;
+    accrual.revokedBy = { id: userId, name: 'Yohander Aguilar' };
+    row.status = 'REVOKING';
+    return resolved({ outcome: 'CLAIMED', accrualId: accrual.id });
+  },
+  markRevoked(invoiceId: number, accrualId: number) {
+    const row = invoices.get(invoiceId);
+    if (!row) throw new Error('Factura inexistente');
+    row.status = 'REVOKED';
+    const accrual = row.accruals.find((item) => item.id === accrualId);
+    if (accrual) Object.assign(accrual, { revocationStatus: 'COMPLETED', revokedAt: new Date() });
+    return resolved(null);
+  },
+  /** Un fallo al anular no deshace los puntos: la factura sigue completada. */
+  markRevocationFailed(
+    invoiceId: number,
+    accrualId: number,
+    code: string,
+    message: string,
+    unverified: boolean,
+  ) {
+    const row = invoices.get(invoiceId);
+    if (!row) throw new Error('Factura inexistente');
+    row.status = 'COMPLETED';
+    const accrual = row.accruals.find((item) => item.id === accrualId);
+    if (accrual)
+      Object.assign(accrual, {
+        revocationStatus: unverified ? 'UNVERIFIED' : 'FAILED',
+        revocationErrorCode: code,
+        revocationErrorMessage: message,
+      });
+    return resolved(null);
+  },
 };
 
 const siigoCatalog = new Map<string, Record<string, unknown>>([
@@ -300,9 +364,15 @@ const siigo = {
   findInvoiceByName(name: string) {
     return resolved(siigoCatalog.get(name) ?? null);
   },
+  /** El nombre de un vendedor que no existe en el CRM se resuelve contra Siigo. */
+  sellerName(sellerId: number) {
+    sellerNameRequests.push(sellerId);
+    return resolved(sellerId === 999 ? 'Vendedor de Siigo' : null);
+  },
 } as unknown as SiigoService;
 
 const logEntries: Record<string, unknown>[] = [];
+const sellerNameRequests: number[] = [];
 const logs = {
   record(entry: Record<string, unknown>) {
     logEntries.push(entry);
@@ -445,6 +515,24 @@ try {
     'Registrar dos veces la misma factura no debe duplicarla.',
   );
 
+  // El nombre del vendedor sale primero del CRM. Solo cuando el `sellerId` no pertenece a ningún
+  // usuario se consulta Siigo, que es el caso de las facturas históricas.
+  const fromCrm = await service.detail(registered.id);
+  assert(fromCrm.sellerName === 'Yohander Aguilar', 'El vendedor del CRM debe resolverse local.');
+  assert(
+    sellerNameRequests.length === 0,
+    'Un vendedor que existe en el CRM no debe consultarse en Siigo.',
+  );
+  const withUnknownSeller = await service.register({ number: '500', sellerId: 821 }, admin);
+  assert(
+    withUnknownSeller.sellerName === 'Vendedor de Siigo',
+    'Un vendedor que no está en el CRM debe resolverse contra Siigo.',
+  );
+  assert(
+    sellerNameRequests.join(',') === '999',
+    'Solo debe consultarse Siigo para el vendedor que no existe en el CRM.',
+  );
+
   // Acumulación: la identidad del documento no basta, la cuenta se revalida antes de enviar.
   const noAccount = await rejects(
     service.accrue(registered.id, { documentNumber: '999999999', documentType: '2' }, admin),
@@ -555,6 +643,140 @@ try {
     'Un comercial no puede acumular la factura de otro seller.',
   );
   assert(businessCode(foreign) === 'POINTS_INVOICE_NOT_OWNED', 'Debe rechazarse por pertenencia.');
+
+  // --- Anulación ---------------------------------------------------------------------------------
+
+  // Una factura sin acumulación no puede revocarse: no hay nada acreditado que devolver.
+  const notAccrued = await rejects(
+    service.revoke(
+      newRow({ name: 'FV-1-940', siigoInvoiceId: 'siigo-940', total: '110000.00' }).id,
+      admin,
+    ),
+    'Una factura pendiente no puede revocarse.',
+  );
+  assert(
+    businessCode(notAccrued) === 'POINTS_INVOICE_NOT_ACCRUED',
+    'Código de factura sin acumular.',
+  );
+
+  // Revocar la factura que sí acumuló: los dos identificadores salen de lo que ya está guardado.
+  const revoked = await service.revoke(registered.id, admin);
+  assert(revoked.status === 'REVOKED', 'La factura revocada debe quedar en REVOKED.');
+  assert(revoked.accrual?.revocationStatus === 'COMPLETED', 'La anulación debe quedar completada.');
+
+  const cancellation = cancelPayloads[0] as Record<string, unknown>;
+  assert(cancellation.partnerCode === '901647454', 'El partner code viaja en la anulación.');
+  const requestIdentifier = cancellation.transactionIdentifier as Record<string, unknown>;
+  const originalIdentifier = cancellation.originalTransactionIdentifier as Record<string, unknown>;
+  assert(
+    requestIdentifier.transactionId === 'FV-1-846',
+    'La anulación identifica la factura por su nombre.',
+  );
+  assert(
+    originalIdentifier.transactionId === 'FV-1-846',
+    'El identificador original también es el de la factura.',
+  );
+  assert(
+    // El original es el que se envió al acumular, no uno regenerado ahora.
+    originalIdentifier.transactionDate === identifier.transactionDate,
+    'El identificador original debe reutilizar la fecha con la que se acumuló.',
+  );
+  assert(
+    typeof requestIdentifier.transactionDate === 'string' &&
+      /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/.test(requestIdentifier.transactionDate),
+    'La fecha de la anulación va en hora de Colombia y sin zona.',
+  );
+  assert(
+    originalIdentifier.nut === 'FV-1-846' && originalIdentifier.terminalId === 'PCAliados-01',
+    'El identificador original viaja completo, no solo el id.',
+  );
+  assert(
+    logEntries.at(-1)?.code === 'POINTS_REVOKED',
+    'La anulación correcta debe registrarse en logs.',
+  );
+
+  const revokedTwice = await rejects(
+    service.revoke(registered.id, admin),
+    'Una factura no puede revocarse dos veces.',
+  );
+  assert(
+    businessCode(revokedTwice) === 'POINTS_INVOICE_ALREADY_REVOKED',
+    'Código de factura ya revocada.',
+  );
+  assert(cancelPayloads.length === 1, 'El reintento no debe volver a anular en el proveedor.');
+
+  // 5xx al anular: no se sabe si el proveedor la aplicó, así que queda por verificar. Los puntos
+  // siguen acreditados: la factura vuelve a Completado y el bloqueo vive en la anulación.
+  const ambiguousCancellation = newRow({
+    name: 'FV-1-950',
+    siigoInvoiceId: 'siigo-950',
+    total: '110000.00',
+    status: 'COMPLETED',
+  });
+  ambiguousCancellation.accruals.push({
+    id: nextAccrualId++,
+    status: 'COMPLETED',
+    documentNumber: '1011237867',
+    documentType: '2',
+    transactionIdentifier: identifier,
+    pointsRequested: 110,
+    pointsEarned: 110,
+    user: { id: 'user-admin', name: 'Yohander Aguilar' },
+  });
+  const unverifiedCancellation = await rejects(
+    service.revoke(ambiguousCancellation.id, admin),
+    'Un 5xx al anular debe dejar la anulación por verificar.',
+  );
+  assert(
+    businessCode(unverifiedCancellation) === 'POINTS_REVOCATION_UNVERIFIED',
+    'Un 5xx de la anulación queda por verificar.',
+  );
+  assert(
+    invoices.get(ambiguousCancellation.id)?.status === 'COMPLETED',
+    'Un fallo al anular no puede deshacer los puntos ya acreditados.',
+  );
+  const blockedCancellation = await rejects(
+    service.revoke(ambiguousCancellation.id, admin),
+    'Una anulación por verificar no puede reenviarse.',
+  );
+  assert(
+    businessCode(blockedCancellation) === 'POINTS_REVOCATION_UNVERIFIED',
+    'El bloqueo de la anulación debe ser explícito.',
+  );
+
+  // Rechazo con código propio: es definitivo, así que se informa como fallo y se puede reintentar.
+  const rejectedCancellation = newRow({
+    name: 'FV-1-951',
+    siigoInvoiceId: 'siigo-951',
+    total: '110000.00',
+    status: 'COMPLETED',
+  });
+  rejectedCancellation.accruals.push({
+    id: nextAccrualId++,
+    status: 'COMPLETED',
+    documentNumber: '1011237867',
+    documentType: '2',
+    transactionIdentifier: identifier,
+    pointsRequested: 110,
+    pointsEarned: 110,
+    user: { id: 'user-admin', name: 'Yohander Aguilar' },
+  });
+  const rejected = await rejects(
+    service.revoke(rejectedCancellation.id, admin),
+    'Un rechazo con código propio debe ser un fallo definitivo.',
+  );
+  assert(
+    businessCode(rejected) === 'POINTS_REVOCATION_REJECTED',
+    'Un resultCode de rechazo no puede darse por ambiguo.',
+  );
+  assert(
+    rejectedCancellation.accruals.at(-1)?.revocationStatus === 'FAILED',
+    'Un rechazo definitivo deja la anulación en FAILED, no en UNVERIFIED.',
+  );
+  assert(
+    rejectedCancellation.accruals.at(-1)?.revocationErrorMessage === 'La transacción no existe.',
+    'El mensaje del proveedor debe conservarse para diagnosticar.',
+  );
 
   // Token rechazado: se renueva una sola vez y la operación continúa.
   const refreshesBefore = tokenRefreshes;

@@ -10,11 +10,24 @@ export const statusMeta: Record<
   FAILED: { label: 'Fallido', color: 'danger' },
   // Ambiguo: no se sabe si el proveedor acreditó, así que no se reintenta a ciegas.
   UNVERIFIED: { label: 'Por verificar', color: 'danger' },
+  // Los puntos siguen acreditados: si la anulación falla, la factura vuelve a Completado.
+  REVOKING: { label: 'Revocando', color: 'warning' },
+  REVOKED: { label: 'Revocado', color: 'default' },
 };
 
 /** Solo los estados sin acumulación confirmada permiten operar la factura. */
 export function canAccrue(invoice: PointsInvoiceRecord) {
   return invoice.status === 'PENDING' || invoice.status === 'FAILED';
+}
+
+/**
+ * Anular solo tiene sentido sobre puntos acreditados. Un intento de anulación que quedó fallido se
+ * puede repetir; uno ambiguo, no: repetir podría anular una operación que ya se anuló.
+ */
+export function canRevoke(invoice: PointsInvoiceRecord) {
+  if (invoice.status !== 'COMPLETED') return false;
+  const status = invoice.accrual?.revocationStatus;
+  return status === null || status === undefined || status === 'FAILED';
 }
 
 /** Fecha de factura tal como llega (`YYYY-MM-DD`), sin pasar por la zona del navegador. */

@@ -1530,7 +1530,16 @@ export const pointsInvoiceIdSchema = z.coerce
 export const pointsInvoiceListQuerySchema = z.object({
   search: z.string().trim().max(191).default(''),
   status: z
-    .enum(['all', 'PENDING', 'PROCESSING', 'COMPLETED', 'FAILED', 'UNVERIFIED'])
+    .enum([
+      'all',
+      'PENDING',
+      'PROCESSING',
+      'COMPLETED',
+      'FAILED',
+      'UNVERIFIED',
+      'REVOKING',
+      'REVOKED',
+    ])
     .default('all'),
   sellerId: z.coerce.number().int().positive().optional(),
   dateFrom: z.coerce.date().optional(),

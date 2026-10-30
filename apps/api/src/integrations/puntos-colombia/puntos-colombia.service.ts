@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import {
   IntegrationAuthenticationException,
+  IntegrationRequestRejectedException,
   IntegrationResourceMissingException,
   integrationGet,
   integrationPost,
@@ -34,6 +35,19 @@ export type PointsAccrualResult = {
 
 /** El proveedor contestó que la cuenta no existe; es un resultado de negocio, no un fallo técnico. */
 export class PointsAccountNotFoundError extends Error {}
+
+/**
+ * El proveedor rechazó la anulación con un `resultCode` propio. Es un fallo definitivo: reintentar
+ * con los mismos datos daría lo mismo, así que se informa tal cual y no se marca como ambiguo.
+ */
+export class PointsCancellationRejectedError extends Error {
+  constructor(
+    readonly resultCode: string,
+    message: string,
+  ) {
+    super(message);
+  }
+}
 
 export type TransactionIdentifier = {
   terminalId: string;
@@ -78,6 +92,13 @@ export function puntoColombiaDate(date = new Date()): string {
 }
 
 /**
+ * Códigos con los que el proveedor confirma en lugar de rechazar. No hay contrato documentado de la
+ * respuesta de anulación, así que se aceptan las dos formas: sin `resultCode` y con un código de
+ * éxito conocido. Cualquier otro código se trata como rechazo.
+ */
+const cancellationSuccessCodes = new Set(['0', '00', '200', 'OK', 'SUCCESS']);
+
+/**
  * Cliente de las tres fases de Puntos Colombia: token, consulta de cuenta y acumulación. Todo sale
  * del backend; React nunca ve credenciales ni llama al proveedor.
  */
@@ -111,6 +132,24 @@ export class PuntosColombiaService {
         partnerCode: config.partnerCode,
         transactionIdentifier,
         mainPoints,
+      }),
+    );
+  }
+
+  /**
+   * Anula una acumulación ya acreditada. El proveedor exige los dos identificadores: el de la
+   * operación que se anula —el que quedó guardado cuando se acumuló— y uno nuevo para la anulación,
+   * que solo se distingue del original por la fecha.
+   */
+  cancelTransaction(
+    original: TransactionIdentifier,
+    cancellation: TransactionIdentifier,
+  ): Promise<void> {
+    return this.withToken((token, config) =>
+      this.requestCancel(token, config, {
+        partnerCode: config.partnerCode,
+        transactionIdentifier: cancellation,
+        originalTransactionIdentifier: original,
       }),
     );
   }
@@ -194,5 +233,55 @@ export class PuntosColombiaService {
       approbationNumber:
         typeof payload.approbationNumber === 'string' ? payload.approbationNumber : null,
     };
+  }
+
+  /**
+   * La anulación copia la forma de la acumulación: un `resultCode` no vacío es un rechazo de negocio
+   * y no una respuesta válida. El contrato documentado de este endpoint no trae un cuerpo de éxito
+   * que valga la pena guardar, así que el resultado solo se confirma por el estado HTTP.
+   */
+  private async requestCancel(
+    token: string,
+    config: PuntosColombiaConfig,
+    body: UnknownRecord,
+  ): Promise<void> {
+    const url = integrationUrl(config.baseUrl, 'pos-management/v1/transactions/cancel');
+    let payload: unknown;
+    try {
+      payload = await integrationPost(
+        url,
+        {
+          ...puntosColombiaHeaders(config, token),
+          // La anulación pide el partner code también como cabecera. `processsale` ya está
+          // certificado sin ella, así que la cabecera se agrega solo aquí en vez de cambiar el flujo
+          // que funciona.
+          'CA-PARTNERCODE': config.partnerCode,
+        },
+        body,
+        'Puntos Colombia',
+      );
+    } catch (error) {
+      // Un 4xx es un rechazo del proveedor, no un fallo incierto: se informa como tal para que no
+      // quede como «por verificar» algo que el proveedor ya descartó.
+      if (error instanceof IntegrationRequestRejectedException) {
+        throw new PointsCancellationRejectedError(
+          String(error.statusCode),
+          error.providerDetail ?? 'Puntos Colombia rechazó la anulación.',
+        );
+      }
+      throw error;
+    }
+    if (!isRecord(payload)) throw invalidIntegrationResponse('Puntos Colombia');
+    if (typeof payload.resultCode === 'string' && payload.resultCode) {
+      const code = payload.resultCode.trim();
+      if (cancellationSuccessCodes.has(code.toUpperCase())) return;
+      const message =
+        typeof payload.resultMsg === 'string' && payload.resultMsg
+          ? payload.resultMsg
+          : typeof payload.message === 'string' && payload.message
+            ? payload.message
+            : 'Puntos Colombia rechazó la anulación.';
+      throw new PointsCancellationRejectedError(code, message);
+    }
   }
 }

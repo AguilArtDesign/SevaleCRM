@@ -365,9 +365,15 @@ El seed crea cuatro facturas marcadas `UAT_SEED` y no se ejecuta con `NODE_ENV=p
 | `FV-1-003` | 1011237868 CE | `$250.000`    | 250    |
 | `FV-1-004` | 101123516 NIT | `$999.000`    | 999    |
 
-Para probar el flujo completo sin consumir una factura real: abrir `FV-1-002`, pulsar **Acumular**, consultar `1011237867` y confirmar. El resultado debe traer puntos acreditados, saldo y equivalente en dinero.
+Para probar el flujo completo sin consumir una factura real: abrir `FV-1-002`, pulsar **Acumular**, consultar `1011237867` y confirmar. El resultado debe traer puntos acreditados, saldo y equivalente en dinero. Después, **Revocar** sobre esa misma factura devuelve los puntos al programa y deja la fila en `REVOCADO`.
 
-`npm run test:points-colombia` cubre las reglas sin tocar la red: arranca un servidor del proveedor simulado y verifica el cálculo de puntos, la composición del prefijo, la propiedad de la factura, la revalidación de la cuenta, la unicidad del intento, el reintento único tras un `401` y el bloqueo de reintentos ante una respuesta ambigua.
+`npm run test:points-colombia` cubre las reglas sin tocar la red: arranca un servidor del proveedor simulado y verifica el cálculo de puntos, la composición del prefijo, la propiedad de la factura, la revalidación de la cuenta, la unicidad del intento, el reintento único tras un `401`, el bloqueo de reintentos ante una respuesta ambigua y la anulación con sus dos identificadores.
+
+### Anulación
+
+Una factura acumulada muestra además la acción **Revocar**, que la anula en Puntos Colombia mediante `POST pos-management/v1/transactions/cancel`. El cuerpo lleva dos identificadores iguales salvo en la fecha: el `originalTransactionIdentifier` es el que quedó guardado al acumular, y el `transactionIdentifier` se genera en el momento de anular. La factura pasa a `REVOKING` mientras el proveedor responde y termina en `REVOKED`.
+
+Anular es irreversible desde el CRM, así que va con su propio permiso (`loyalty.revoke`, hoy solo `ADMIN`) y una confirmación aparte. Un rechazo del proveedor —un `4xx` con `resultCode`— deja la anulación en `FAILED` y se puede repetir; un `5xx` o un tiempo de espera agotado la dejan en `UNVERIFIED` y la bloquean. En ninguno de los dos casos los puntos se dan por devueltos: la factura vuelve a `COMPLETED` y el error se guarda solo en el intento de anulación, porque un fallo al anular no deshace la acumulación.
 
 ### Intentos ambiguos
 

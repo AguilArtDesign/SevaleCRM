@@ -4,6 +4,7 @@ import {
   Alert,
   Button,
   Description,
+  EmptyState,
   Label,
   ListBox,
   Modal,
@@ -11,19 +12,22 @@ import {
   Spinner,
   Table,
 } from '@heroui/react';
-import { Gem, Magnifier, Plus } from '@gravity-ui/icons';
+import { ArrowRotateLeft, Gem, Magnifier, Plus } from '@gravity-ui/icons';
 import { pointsDocumentTypes, type PointsDocumentType } from '@sevale/validation';
+import { hasPermission } from '@sevale/permissions';
 import { Chip } from '../components/Chip';
 import { Input } from '../components/Input';
+import { getPaginationItems, Pagination } from '../components/Pagination';
 import { Select } from '../components/Select';
 import { formattedMoneyWithCode } from '../orders/presentation';
+import { useCurrentUser } from '../users/useCurrentUser';
 import {
   pointsColombiaApi,
   type PointsInvoiceRecord,
   type PointsInvoiceStatus,
   type PointsPrefixOption,
 } from './api';
-import { accrualTimestamp, canAccrue, invoiceDate, statusMeta } from './presentation';
+import { accrualTimestamp, canAccrue, canRevoke, invoiceDate, statusMeta } from './presentation';
 
 /**
  * Panel de Puntos Colombia. Mientras el proveedor certifica, el módulo es exclusivo del
@@ -31,24 +35,30 @@ import { accrualTimestamp, canAccrue, invoiceDate, statusMeta } from './presenta
  */
 export function PointsColombiaPage() {
   const queryClient = useQueryClient();
+  const { user } = useCurrentUser();
+  // Revocar es destructivo y tiene su propio permiso: el botón no se muestra si el rol no lo tiene,
+  // así el usuario no descubre el límite con un 403.
+  const canRevokePoints = Boolean(user && hasPermission(user.role, 'loyalty.revoke'));
   const [status, setStatus] = useState<PointsInvoiceStatus | 'all'>('all');
   const [search, setSearch] = useState('');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [sellerId, setSellerId] = useState('all');
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
   const [searchOpen, setSearchOpen] = useState(false);
   const [accrualTarget, setAccrualTarget] = useState<PointsInvoiceRecord | null>(null);
+  const [revokeTarget, setRevokeTarget] = useState<PointsInvoiceRecord | null>(null);
   const [detailTarget, setDetailTarget] = useState<PointsInvoiceRecord | null>(null);
 
   const listQuery = useQuery({
-    queryKey: ['points-colombia', status, search, dateFrom, dateTo, sellerId, page],
+    queryKey: ['points-colombia', status, search, dateFrom, dateTo, sellerId, page, pageSize],
     queryFn: () =>
       pointsColombiaApi.list({
         search,
         status,
         page,
-        pageSize: 20,
+        pageSize,
         sellerId: sellerId === 'all' ? undefined : Number(sellerId),
         dateFrom: dateFrom ? new Date(`${dateFrom}T00:00:00`) : undefined,
         dateTo: dateTo ? new Date(`${dateTo}T23:59:59`) : undefined,
@@ -186,126 +196,206 @@ export function PointsColombiaPage() {
         </Alert>
       )}
 
-      <Table>
-        <Table.Content aria-label="Facturas del panel de Puntos Colombia">
-          <Table.Header>
-            <Table.Column isRowHeader>Factura</Table.Column>
-            <Table.Column>Fecha</Table.Column>
-            <Table.Column>Documento</Table.Column>
-            <Table.Column>Vendedor</Table.Column>
-            <Table.Column>Total COP</Table.Column>
-            <Table.Column>Productos</Table.Column>
-            <Table.Column>Puntos</Table.Column>
-            <Table.Column>Estado</Table.Column>
-            <Table.Column>Acumulado</Table.Column>
-            <Table.Column>Acciones</Table.Column>
-          </Table.Header>
-          <Table.Body
-            renderEmptyState={() => (
-              <div className="coming-soon">
-                <span className="coming-soon-icon" aria-hidden="true">
-                  <Gem width={22} height={22} />
+      <Table className="inventory-products-table points-table">
+        <Table.ScrollContainer>
+          <Table.Content aria-label="Facturas del panel de Puntos Colombia">
+            <Table.Header>
+              <Table.Column isRowHeader>Factura</Table.Column>
+              <Table.Column>Fecha</Table.Column>
+              <Table.Column>Documento</Table.Column>
+              <Table.Column>Vendedor</Table.Column>
+              <Table.Column>Total COP</Table.Column>
+              <Table.Column>Puntos</Table.Column>
+              <Table.Column>Estado</Table.Column>
+              <Table.Column>Acumulado</Table.Column>
+              <Table.Column className="inventory-actions-column">Acciones</Table.Column>
+            </Table.Header>
+            <Table.Body
+              renderEmptyState={() =>
+                listQuery.isPending ? (
+                  <div className="customers-empty">
+                    <Spinner />
+                    <span>Cargando facturas…</span>
+                  </div>
+                ) : (
+                  <EmptyState className="customers-empty">
+                    <Gem width={28} height={28} />
+                    <strong>Sin facturas en el panel</strong>
+                    <span>Busca una factura de Siigo para empezar a acumular puntos.</span>
+                  </EmptyState>
+                )
+              }
+            >
+              {(result?.data ?? []).map((invoice) => {
+                const meta = statusMeta[invoice.status];
+                // El tipo lo elige quien acumula; si todavía no hay intento, se usa el que vino de
+                // Siigo al registrar la factura.
+                const typeCode = invoice.accrual?.documentType ?? invoice.customerDocumentType;
+                const documentLabel = typeCode ? pointsDocumentLabel(typeCode) : null;
+                return (
+                  <Table.Row key={invoice.id}>
+                    <Table.Cell>
+                      <div className="points-invoice-copy">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          aria-label={`Ver detalle de ${invoice.name}`}
+                          onPress={() => setDetailTarget(invoice)}
+                        >
+                          <strong>{invoice.name}</strong>
+                        </Button>
+                        {/* Una factura de prueba nunca debe confundirse con una real de Siigo. */}
+                        {invoice.source === 'UAT_SEED' && <Chip color="default">UAT</Chip>}
+                      </div>
+                    </Table.Cell>
+                    <Table.Cell>{invoiceDate(invoice.invoiceDate)}</Table.Cell>
+                    <Table.Cell>
+                      {/* Mismo patrón que la tabla de Clientes: número arriba y el tipo debajo.
+                          El tipo llega de Siigo al registrar o del que eligió quien acumuló. */}
+                      <div className="customer-copy">
+                        <strong>{invoice.customerIdentification}</strong>
+                        {documentLabel && <span>{documentLabel}</span>}
+                      </div>
+                    </Table.Cell>
+                    <Table.Cell>
+                      {invoice.sellerName ??
+                        (invoice.sellerId === null ? '—' : `Siigo #${invoice.sellerId}`)}
+                    </Table.Cell>
+                    <Table.Cell>{formattedMoneyWithCode(invoice.total, 'COP')}</Table.Cell>
+                    <Table.Cell>
+                      <span className="points-cell">
+                        <img src="/img/puntos-colombia.svg" alt="" aria-hidden="true" />
+                        <strong>{invoice.points}</strong>
+                      </span>
+                    </Table.Cell>
+                    <Table.Cell>
+                      <Chip color={meta.color}>{meta.label}</Chip>
+                      {invoice.accrual?.errorMessage && (
+                        <p className="points-invoice-error">{invoice.accrual.errorMessage}</p>
+                      )}
+                    </Table.Cell>
+                    <Table.Cell>
+                      {invoice.accrual?.completedAt
+                        ? accrualTimestamp(invoice.accrual.completedAt)
+                        : '—'}
+                    </Table.Cell>
+                    <Table.Cell>
+                      <div className="points-actions">
+                        {/* Una vez acreditada, la acción de acumular deja de existir: los puntos no
+                            se pueden volver a acumular. Revocar, en cambio, solo aparece sobre
+                            puntos acreditados y desaparece cuando ya se anularon. */}
+                        {canAccrue(invoice) ? (
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            onPress={() => setAccrualTarget(invoice)}
+                          >
+                            <Gem width={15} height={15} />
+                            {invoice.status === 'FAILED' ? 'Reintentar' : 'Acumular'}
+                          </Button>
+                        ) : (
+                          <>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onPress={() => setDetailTarget(invoice)}
+                            >
+                              Ver resultado
+                            </Button>
+                            {canRevoke(invoice) && canRevokePoints && (
+                              <Button
+                                size="sm"
+                                variant="danger-soft"
+                                aria-label={`Revocar puntos de ${invoice.name}`}
+                                onPress={() => setRevokeTarget(invoice)}
+                              >
+                                <ArrowRotateLeft className="text-danger" width={15} height={15} />
+                                Revocar
+                              </Button>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    </Table.Cell>
+                  </Table.Row>
+                );
+              })}
+            </Table.Body>
+          </Table.Content>
+        </Table.ScrollContainer>
+        {(result?.data.length ?? 0) > 0 && (
+          <Table.Footer>
+            <Pagination aria-label="Paginación de facturas">
+              <Pagination.Summary>
+                <span className="customers-page-size-control">
+                  Filas por página
+                  <Select
+                    className="customers-page-size"
+                    value={String(pageSize)}
+                    aria-label="Filas por página"
+                    onChange={(selected) => {
+                      setPageSize(Number(selected));
+                      setPage(1);
+                    }}
+                  >
+                    <Select.Trigger>
+                      <Select.Value />
+                      <Select.Indicator />
+                    </Select.Trigger>
+                    <Select.Popover>
+                      <ListBox>
+                        {[10, 20, 50, 100].map((size) => (
+                          <ListBox.Item key={size} id={String(size)}>
+                            {size}
+                            <ListBox.ItemIndicator />
+                          </ListBox.Item>
+                        ))}
+                      </ListBox>
+                    </Select.Popover>
+                  </Select>
                 </span>
-                <strong>Sin facturas en el panel</strong>
-                <p>Busca una factura de Siigo para empezar a acumular puntos.</p>
-              </div>
-            )}
-          >
-            {(result?.data ?? []).map((invoice) => {
-              const meta = statusMeta[invoice.status];
-              return (
-                <Table.Row key={invoice.id}>
-                  <Table.Cell>
-                    <div className="points-invoice-copy">
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        aria-label={`Ver detalle de ${invoice.name}`}
-                        onPress={() => setDetailTarget(invoice)}
+              </Pagination.Summary>
+              <Pagination.Content>
+                <Pagination.Item>
+                  <Pagination.Previous
+                    isDisabled={page <= 1 || listQuery.isFetching}
+                    onPress={() => setPage((current) => current - 1)}
+                  >
+                    <Pagination.PreviousIcon />
+                    Anterior
+                  </Pagination.Previous>
+                </Pagination.Item>
+                {getPaginationItems(page, totalPages).map((item, index) =>
+                  item === 'ellipsis' ? (
+                    <Pagination.Item key={`ellipsis-${index}`}>
+                      <Pagination.Ellipsis />
+                    </Pagination.Item>
+                  ) : (
+                    <Pagination.Item key={item}>
+                      <Pagination.Link
+                        isActive={item === page}
+                        isDisabled={listQuery.isFetching}
+                        onPress={() => setPage(item)}
                       >
-                        <strong>{invoice.name}</strong>
-                      </Button>
-                      {/* Una factura de prueba nunca debe confundirse con una real de Siigo. */}
-                      {invoice.source === 'UAT_SEED' && <Chip color="default">Prueba UAT</Chip>}
-                    </div>
-                  </Table.Cell>
-                  <Table.Cell>{invoiceDate(invoice.invoiceDate)}</Table.Cell>
-                  <Table.Cell>{invoice.customerIdentification}</Table.Cell>
-                  <Table.Cell>
-                    {invoice.sellerName ??
-                      (invoice.sellerId === null ? '—' : `Siigo #${invoice.sellerId}`)}
-                  </Table.Cell>
-                  <Table.Cell>{formattedMoneyWithCode(invoice.total, 'COP')}</Table.Cell>
-                  <Table.Cell>{invoice.itemCount}</Table.Cell>
-                  <Table.Cell>
-                    <strong>{invoice.points}</strong>
-                  </Table.Cell>
-                  <Table.Cell>
-                    <Chip color={meta.color}>{meta.label}</Chip>
-                    {invoice.accrual?.errorMessage && (
-                      <p className="points-invoice-error">{invoice.accrual.errorMessage}</p>
-                    )}
-                  </Table.Cell>
-                  <Table.Cell>
-                    {invoice.accrual?.completedAt
-                      ? accrualTimestamp(invoice.accrual.completedAt)
-                      : '—'}
-                  </Table.Cell>
-                  <Table.Cell>
-                    {/* Una vez acreditada, la acción deja de existir: el resultado se consulta en el
-                        detalle, porque los puntos no se pueden volver a acumular. */}
-                    {canAccrue(invoice) ? (
-                      <Button
-                        size="sm"
-                        variant="secondary"
-                        onPress={() => setAccrualTarget(invoice)}
-                      >
-                        <Gem width={15} height={15} />
-                        {invoice.status === 'FAILED' ? 'Reintentar' : 'Acumular'}
-                      </Button>
-                    ) : (
-                      <Button size="sm" variant="ghost" onPress={() => setDetailTarget(invoice)}>
-                        Ver resultado
-                      </Button>
-                    )}
-                  </Table.Cell>
-                </Table.Row>
-              );
-            })}
-          </Table.Body>
-        </Table.Content>
+                        {item}
+                      </Pagination.Link>
+                    </Pagination.Item>
+                  ),
+                )}
+                <Pagination.Item>
+                  <Pagination.Next
+                    isDisabled={page >= totalPages || listQuery.isFetching}
+                    onPress={() => setPage((current) => current + 1)}
+                  >
+                    Siguiente
+                    <Pagination.NextIcon />
+                  </Pagination.Next>
+                </Pagination.Item>
+              </Pagination.Content>
+            </Pagination>
+          </Table.Footer>
+        )}
       </Table>
-
-      {listQuery.isPending && (
-        <div className="siigo-quotation-loading">
-          <Spinner />
-          <span>Cargando facturas…</span>
-        </div>
-      )}
-
-      {totalPages > 1 && (
-        <div className="points-pagination">
-          <Button
-            size="sm"
-            variant="ghost"
-            isDisabled={page <= 1}
-            onPress={() => setPage((current) => current - 1)}
-          >
-            Anterior
-          </Button>
-          <span>
-            Página {page} de {totalPages}
-          </span>
-          <Button
-            size="sm"
-            variant="ghost"
-            isDisabled={page >= totalPages}
-            onPress={() => setPage((current) => current + 1)}
-          >
-            Siguiente
-          </Button>
-        </div>
-      )}
 
       <InvoiceSearchModal
         isOpen={searchOpen}
@@ -325,6 +415,15 @@ export function PointsColombiaPage() {
         onClose={() => setAccrualTarget(null)}
         onDone={() => {
           setAccrualTarget(null);
+          void refresh();
+        }}
+      />
+
+      <RevokeModal
+        invoice={revokeTarget}
+        onClose={() => setRevokeTarget(null)}
+        onDone={() => {
+          setRevokeTarget(null);
           void refresh();
         }}
       />
@@ -444,6 +543,34 @@ function InvoiceDetailModal({
                     <dt>Fecha de acumulación</dt>
                     <dd>{accrual.completedAt ? accrualTimestamp(accrual.completedAt) : '—'}</dd>
                   </div>
+                  {accrual.revocationStatus && (
+                    <>
+                      <div>
+                        <dt>Revocación</dt>
+                        <dd>
+                          <Chip
+                            color={
+                              accrual.revocationStatus === 'COMPLETED'
+                                ? 'default'
+                                : accrual.revocationStatus === 'PROCESSING'
+                                  ? 'warning'
+                                  : 'danger'
+                            }
+                          >
+                            {revocationLabels[accrual.revocationStatus]}
+                          </Chip>
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>Revocado el</dt>
+                        <dd>{accrual.revokedAt ? accrualTimestamp(accrual.revokedAt) : '—'}</dd>
+                      </div>
+                      <div>
+                        <dt>Revocado por</dt>
+                        <dd>{accrual.revokedBy?.name ?? '—'}</dd>
+                      </div>
+                    </>
+                  )}
                 </dl>
               ) : (
                 <p className="siigo-quotation-subtitle">
@@ -455,6 +582,14 @@ function InvoiceDetailModal({
                 <Alert status="danger">
                   <Alert.Content>
                     <Alert.Description>{accrual.errorMessage}</Alert.Description>
+                  </Alert.Content>
+                </Alert>
+              )}
+              {/* Un fallo al anular no deshace los puntos: se muestra aparte del de acumulación. */}
+              {accrual?.revocationErrorMessage && (
+                <Alert status="danger">
+                  <Alert.Content>
+                    <Alert.Description>{accrual.revocationErrorMessage}</Alert.Description>
                   </Alert.Content>
                 </Alert>
               )}
@@ -475,6 +610,14 @@ function InvoiceDetailModal({
 function pointsDocumentLabel(value: string) {
   return pointsDocumentTypes.find((type) => type.value === value)?.label ?? value;
 }
+
+/** Resultado del intento de anulación, tal como se lee en el detalle. */
+const revocationLabels: Record<string, string> = {
+  PROCESSING: 'En curso',
+  COMPLETED: 'Completada',
+  FAILED: 'Fallida',
+  UNVERIFIED: 'Por verificar',
+};
 
 /**
  * Busca la factura en Siigo. El operador solo escribe el número: el prefijo lo pone el backend desde
@@ -873,6 +1016,115 @@ function AccrualModal({
                   </Button>
                 </>
               )}
+            </Modal.Footer>
+          </Modal.Dialog>
+        </Modal.Container>
+      </Modal.Backdrop>
+    </Modal>
+  );
+}
+
+/**
+ * Revoca los puntos ya acreditados. Se confirma en un modal aparte porque es irreversible desde el
+ * CRM: si el proveedor anula la acumulación, el panel no tiene forma de volver a acreditarla.
+ */
+function RevokeModal({
+  invoice,
+  onClose,
+  onDone,
+}: {
+  invoice: PointsInvoiceRecord | null;
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const [error, setError] = useState('');
+  const revokeMutation = useMutation({
+    mutationFn: () => pointsColombiaApi.revoke(invoice!.id),
+    onError: (failure: Error) => setError(failure.message),
+    onSuccess: () => {
+      setError('');
+      onDone();
+    },
+  });
+
+  if (!invoice) return null;
+  const accrual = invoice.accrual;
+  const revoked = accrual?.pointsEarned ?? accrual?.pointsRequested ?? invoice.points;
+
+  return (
+    <Modal isOpen onOpenChange={(open) => !open && onClose()}>
+      <Modal.Backdrop>
+        <Modal.Container placement="center">
+          <Modal.Dialog className="siigo-quotation-modal">
+            <Modal.CloseTrigger aria-label="Cerrar revocación" />
+            <Modal.Header>
+              <div>
+                <Modal.Heading>
+                  Revocar puntos
+                  <Chip color="default">{invoice.name}</Chip>
+                </Modal.Heading>
+                <p className="siigo-quotation-subtitle">
+                  {revoked} puntos · {invoice.customerIdentification}
+                </p>
+              </div>
+            </Modal.Header>
+            <Modal.Body>
+              {error && (
+                <Alert status="danger">
+                  <Alert.Content>
+                    <Alert.Description>{error}</Alert.Description>
+                  </Alert.Content>
+                </Alert>
+              )}
+              {/* Un intento anterior fallido se puede repetir; el mensaje dice por qué falló. */}
+              {accrual?.revocationErrorMessage && (
+                <Alert status="warning">
+                  <Alert.Content>
+                    <Alert.Description>{accrual.revocationErrorMessage}</Alert.Description>
+                  </Alert.Content>
+                </Alert>
+              )}
+              <dl className="order-ticket-data">
+                <div>
+                  <dt>Factura</dt>
+                  <dd>{invoice.name}</dd>
+                </div>
+                <div>
+                  <dt>Documento</dt>
+                  <dd>{accrual?.documentNumber ?? invoice.customerIdentification}</dd>
+                </div>
+                <div>
+                  <dt>Puntos a revocar</dt>
+                  <dd>
+                    <strong>{revoked}</strong>
+                  </dd>
+                </div>
+                <div>
+                  <dt>Acumulados el</dt>
+                  <dd>{accrual?.completedAt ? accrualTimestamp(accrual.completedAt) : '—'}</dd>
+                </div>
+              </dl>
+              <Alert status="warning">
+                <Alert.Content>
+                  <Alert.Description>
+                    Los puntos se anulan en Puntos Colombia y la factura queda como Revocada. Desde
+                    el CRM no se puede volver a acreditarlos.
+                  </Alert.Description>
+                </Alert.Content>
+              </Alert>
+            </Modal.Body>
+            <Modal.Footer>
+              <Button variant="tertiary" onPress={onClose}>
+                Cancelar
+              </Button>
+              <Button
+                variant="danger"
+                isPending={revokeMutation.isPending}
+                onPress={() => revokeMutation.mutate()}
+              >
+                <ArrowRotateLeft width={16} height={16} />
+                Revocar puntos
+              </Button>
             </Modal.Footer>
           </Modal.Dialog>
         </Modal.Container>

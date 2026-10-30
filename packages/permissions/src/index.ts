@@ -60,6 +60,9 @@ export const permissions = [
   // administrador mientras se certifica con el proveedor; habilitar comerciales será un cambio de
   // esta lista, sin tocar las reglas de propiedad por seller.
   'loyalty.accrue',
+  // Anular puntos ya acreditados es destructivo y no reversible desde el CRM: se separa de acumular
+  // para poder cerrarlo sin cerrar el resto del panel cuando se habiliten los comerciales.
+  'loyalty.revoke',
   // Bitácora de las llamadas a las APIs externas. Contiene cuerpos con datos de clientes y pedidos,
   // así que es exclusiva de la administración; vaciarla es un acto aparte.
   'logs.read',

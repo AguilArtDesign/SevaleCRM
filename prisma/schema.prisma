@@ -168,6 +168,7 @@ model User {
   integrationLogs        IntegrationLog[]
   pointsInvoicesCreated  PointsInvoice[]    @relation("PointsInvoiceCreatedBy")
   pointsAccruals         PointsAccrual[]    @relation("PointsAccrualActor")
+  pointsAccrualsRevoked  PointsAccrual[]    @relation("PointsAccrualRevokedBy")
 
   @@map("users")
 }
@@ -997,9 +998,21 @@ enum PointsInvoiceStatus {
   COMPLETED
   FAILED
   UNVERIFIED
+  /// Anulación en curso: los puntos siguen acreditados hasta que el proveedor confirme.
+  REVOKING
+  REVOKED
 }
 
 enum PointsAccrualStatus {
+  PROCESSING
+  COMPLETED
+  FAILED
+  UNVERIFIED
+}
+
+/// Resultado de anular una acumulación. Es un intento aparte del de acumular: un fallo al anular no
+/// deshace los puntos, así que su estado no puede vivir en el mismo campo que el de la acumulación.
+enum PointsRevocationStatus {
   PROCESSING
   COMPLETED
   FAILED
@@ -1043,29 +1056,39 @@ model PointsInvoice {
 /// Un intento de acumulación. Se guarda aparte de la factura para conservar la trazabilidad de cada
 /// envío, incluido el `transactionIdentifier` exacto que viajó a Puntos Colombia.
 model PointsAccrual {
-  id                    Int                 @id @default(autoincrement())
-  invoiceId             Int                 @map("invoice_id")
-  userId                String              @map("user_id") @db.VarChar(36)
+  id                     Int                     @id @default(autoincrement())
+  invoiceId              Int                     @map("invoice_id")
+  userId                 String                  @map("user_id") @db.VarChar(36)
   /// Documento y tipo usados en el envío; pueden diferir del que traía la factura si el operador
   /// corrigió el precargado durante la consulta.
-  documentNumber        String              @map("document_number") @db.VarChar(32)
-  documentType          String              @map("document_type") @db.VarChar(4)
-  pointsRequested       Int                 @map("points_requested")
-  pointsEarned          Int?                @map("points_earned")
-  pointsBalance         Int?                @map("points_balance")
-  approbationNumber     String?             @map("approbation_number") @db.VarChar(128)
-  transactionIdentifier Json                @map("transaction_identifier")
-  status                PointsAccrualStatus @default(PROCESSING)
-  errorCode             String?             @map("error_code") @db.VarChar(100)
-  errorMessage          String?             @map("error_message") @db.Text
+  documentNumber         String                  @map("document_number") @db.VarChar(32)
+  documentType           String                  @map("document_type") @db.VarChar(4)
+  pointsRequested        Int                     @map("points_requested")
+  pointsEarned           Int?                    @map("points_earned")
+  pointsBalance          Int?                    @map("points_balance")
+  approbationNumber      String?                 @map("approbation_number") @db.VarChar(128)
+  transactionIdentifier  Json                    @map("transaction_identifier")
+  status                 PointsAccrualStatus     @default(PROCESSING)
+  errorCode              String?                 @map("error_code") @db.VarChar(100)
+  errorMessage           String?                 @map("error_message") @db.Text
   /// Saldo en pesos de la consulta posterior. Puede faltar sin invalidar el éxito de la acumulación.
-  balanceValueInMoney   Decimal?            @map("balance_value_in_money") @db.Decimal(18, 2)
-  balanceCheckedAt      DateTime?           @map("balance_checked_at")
-  completedAt           DateTime?           @map("completed_at")
-  createdAt             DateTime            @default(now()) @map("created_at")
-  updatedAt             DateTime            @updatedAt @map("updated_at")
-  invoice               PointsInvoice       @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
-  user                  User                @relation("PointsAccrualActor", fields: [userId], references: [id], onDelete: Cascade)
+  balanceValueInMoney    Decimal?                @map("balance_value_in_money") @db.Decimal(18, 2)
+  balanceCheckedAt       DateTime?               @map("balance_checked_at")
+  /// Anulación de esta acumulación. Nulo mientras nadie la haya intentado.
+  revocationStatus       PointsRevocationStatus? @map("revocation_status")
+  /// Identificador con el que se pidió la anulación: es la fecha la que lo distingue del original.
+  revocationIdentifier   Json?                   @map("revocation_identifier")
+  revocationErrorCode    String?                 @map("revocation_error_code") @db.VarChar(100)
+  revocationErrorMessage String?                 @map("revocation_error_message") @db.Text
+  revokedAt              DateTime?               @map("revoked_at")
+  revokedByUserId        String?                 @map("revoked_by_user_id") @db.VarChar(36)
+  completedAt            DateTime?               @map("completed_at")
+  createdAt              DateTime                @default(now()) @map("created_at")
+  updatedAt              DateTime                @updatedAt @map("updated_at")
+  invoice                PointsInvoice           @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  user                   User                    @relation("PointsAccrualActor", fields: [userId], references: [id], onDelete: Cascade)
+  /// Queda en nulo si el usuario se elimina: la anulación ocurrió y su rastro no puede perderse.
+  revokedBy              User?                   @relation("PointsAccrualRevokedBy", fields: [revokedByUserId], references: [id], onDelete: SetNull)
 
   @@index([invoiceId])
   @@index([status])

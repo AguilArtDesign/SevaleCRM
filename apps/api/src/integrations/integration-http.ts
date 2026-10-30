@@ -92,6 +92,30 @@ export class IntegrationResourceMissingException extends BadGatewayException {
   }
 }
 
+/**
+ * El proveedor entendió la petición y la rechazó por una regla de negocio (4xx). Es un estado final:
+ * repetirla con los mismos datos daría lo mismo. Se distingue del resto de fallos porque todos
+ * salían como `BadGatewayException` y, por el estado 502, no había forma de saber si el proveedor
+ * había aplicado algo o no.
+ */
+export class IntegrationRequestRejectedException extends BadGatewayException {
+  constructor(
+    integration: string,
+    readonly statusCode: number,
+    readonly providerDetail: string | null,
+  ) {
+    super({
+      success: false,
+      error: {
+        code: 'INTEGRATION_REQUEST_FAILED',
+        message: providerDetail
+          ? `${integration} rechazó la solicitud: ${providerDetail}`
+          : `${integration} no pudo completar la consulta.`,
+      },
+    });
+  }
+}
+
 export function integrationErrorCode(error: unknown): string | null {
   if (!isRecord(error) || typeof error.getResponse !== 'function') return null;
   const response = (error as { getResponse: () => unknown }).getResponse();
@@ -125,6 +149,12 @@ function integrationErrorMessage(payload: unknown): string | null {
   // La REST API de WooCommerce responde { code, message } cuando rechaza una solicitud.
   if (typeof payload.message === 'string') {
     const normalized = payload.message.trim().split(/\s+/u).join(' ');
+    return normalized ? normalized.slice(0, 450) : null;
+  }
+
+  // Puntos Colombia describe el motivo en `resultMsg`.
+  if (typeof payload.resultMsg === 'string') {
+    const normalized = payload.resultMsg.trim().split(/\s+/u).join(' ');
     return normalized ? normalized.slice(0, 450) : null;
   }
 
@@ -322,6 +352,11 @@ async function performRequest(
       await logIntegrationFailure(url, integration, response);
       const payload = trace.responseBody;
       const detail = integrationErrorMessage(payload);
+      // Un 4xx es un rechazo de negocio: quien llama puede decidir si lo informa como fallo
+      // definitivo en vez de tratarlo como resultado incierto.
+      if (!transientFailure) {
+        throw new IntegrationRequestRejectedException(integration, response.status, detail);
+      }
       throw new BadGatewayException({
         success: false,
         error: {

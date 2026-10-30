@@ -12,6 +12,13 @@ import { SiigoTokenService } from './siigo-token.service.js';
 
 type UnknownRecord = Record<string, unknown>;
 
+/** Los vendedores de Siigo cambian poco: una hora de caché evita repetir la consulta por factura. */
+const SELLER_NAME_TTL_MS = 60 * 60 * 1000;
+const sellerNameCache = new Map<number, { name: string | null; expiresAt: number }>();
+const SELLER_NAME_PAGE_SIZE = 100;
+/** Techo de páginas al buscar un vendedor: frena el bucle si el proveedor no informa el total. */
+const SELLER_NAME_MAX_PAGES = 20;
+
 export type SiigoProduct = {
   id: string;
   sku: string;
@@ -247,6 +254,22 @@ export class SiigoService {
   }
 
   /**
+   * Nombre del vendedor en Siigo. La tabla de Puntos Colombia muestra facturas de vendedores que
+   * pueden no tener usuario en el CRM (por ejemplo, cuentas históricas), así que el nombre se
+   * consulta al origen. Se guarda una hora porque los vendedores cambian poco y cada factura nueva
+   * repetiría la consulta.
+   */
+  async sellerName(sellerId: number): Promise<string | null> {
+    const cached = sellerNameCache.get(sellerId);
+    if (cached && cached.expiresAt > Date.now()) return cached.name;
+    const name = await this.withAuthenticationRetry((token) =>
+      this.requestSellerName(sellerId, token),
+    );
+    sellerNameCache.set(sellerId, { name, expiresAt: Date.now() + SELLER_NAME_TTL_MS });
+    return name;
+  }
+
+  /**
    * Actualiza una cotización existente. Se reenvía el documento completo —no un parche— porque es
    * como Siigo espera el cuerpo: la lista de ítems reemplaza la anterior por completo.
    */
@@ -258,6 +281,44 @@ export class SiigoService {
     return this.withAuthenticationRetry((token) =>
       this.requestCreateQuotation(input, token, { externalId, known }),
     );
+  }
+
+  /**
+   * Nombre del vendedor en Siigo. `users` no filtra por id, así que se recorren las páginas de cien
+   * hasta encontrarlo: leer solo la primera dejaría fuera al vendedor buscado en una cuenta grande.
+   * Se corta al llegar al total que informa el proveedor o en una página incompleta.
+   */
+  private async requestSellerName(sellerId: number, token: string): Promise<string | null> {
+    const baseUrl = requireIntegrationValue('SIIGO_API_URL', 'Siigo');
+    const partnerId = requireIntegrationValue('SIIGO_PARTNER_ID', 'Siigo');
+    const headers = { Authorization: `Bearer ${token}`, 'Partner-Id': partnerId };
+    for (let page = 1; page <= SELLER_NAME_MAX_PAGES; page += 1) {
+      const url = integrationUrl(baseUrl, 'users');
+      url.searchParams.set('page', String(page));
+      url.searchParams.set('page_size', String(SELLER_NAME_PAGE_SIZE));
+      const payload = await integrationGet(url, headers, 'Siigo');
+      if (!isRecord(payload) || !Array.isArray(payload.results)) {
+        throw invalidIntegrationResponse('Siigo');
+      }
+      const match = payload.results.find(
+        (user): user is UnknownRecord => isRecord(user) && positiveInteger(user.id) === sellerId,
+      );
+      if (match) {
+        const fullName = [match.first_name, match.last_name]
+          .map((part) => (typeof part === 'string' ? part.trim() : ''))
+          .filter(Boolean)
+          .join(' ');
+        const name = fullName || (typeof match.username === 'string' ? match.username.trim() : '');
+        return name || null;
+      }
+      // Una página incompleta es la última, y el total evita seguir si el proveedor lo informa.
+      if (payload.results.length < SELLER_NAME_PAGE_SIZE) return null;
+      const total = isRecord(payload.pagination)
+        ? positiveInteger(payload.pagination.total_results)
+        : null;
+      if (total !== null && page * SELLER_NAME_PAGE_SIZE >= total) return null;
+    }
+    return null;
   }
 
   private async requestInvoiceByName(name: string, token: string): Promise<SiigoInvoice | null> {
