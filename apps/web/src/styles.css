@@ -3679,7 +3679,77 @@ select {
 }
 
 .orders-table .table__content {
-  min-width: 72rem;
+  min-width: 78rem;
+}
+
+/* La columna de acciones queda fija a la derecha: al desplazar la tabla en horizontal los tres
+   puntos siguen a la vista. Su fondo es opaco para que el contenido que pasa por debajo no se
+   transparente, y el botón se pega al borde derecho de la celda. */
+.orders-table thead th:last-child {
+  position: sticky;
+  right: 0;
+  z-index: 3;
+  background: var(--surface-secondary);
+  text-align: right;
+  /* Sin texto en la cabecera, la columna se ajusta al botón en lugar de reservar el ancho de
+     «Acciones». */
+  width: 3.5rem;
+  padding-inline: 0.5rem;
+}
+
+.orders-table tbody .table__row > td:last-child {
+  position: sticky;
+  right: 0;
+  z-index: 2;
+  background: var(--surface);
+}
+
+/* Las celdas fijas no pueden dejar pasar el tinte que HeroUI pinta en el resto de la fila, porque
+   su fondo es opaco: el hover y la selección se replican aquí con los mismos porcentajes que usa la
+   tabla (40 % al pasar el cursor, 10 % al seleccionar). */
+.orders-table tbody .table__row:is(:hover, [data-hovered='true']) > td:last-child {
+  background: color-mix(in srgb, var(--surface) 40%, var(--surface-secondary));
+}
+
+.orders-table tbody .table__row[data-selected='true'] > td:last-child {
+  background: color-mix(in srgb, var(--surface) 10%, var(--surface-secondary));
+}
+
+.orders-row-actions {
+  display: flex;
+  padding-right: 0;
+  justify-content: flex-end;
+}
+
+/* El número de la orden es un disparador, no un enlace: mantiene el peso visual del dato y solo
+   cambia al pasar el cursor para que se note que abre el detalle. */
+.order-code-button {
+  min-width: 0;
+  padding-inline: 0;
+  background: transparent;
+}
+
+.order-code-button:hover strong,
+.order-code-button[data-hovered='true'] strong {
+  color: var(--accent);
+}
+
+/* La cotización se abre en Siigo desde su enlace público: el icono indica que sale del CRM. */
+.order-quotation-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  color: var(--accent);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.order-quotation-link:hover {
+  text-decoration: underline;
+}
+
+.order-quotation-name {
+  color: var(--muted);
 }
 
 .orders-empty {

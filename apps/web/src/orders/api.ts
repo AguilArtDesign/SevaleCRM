@@ -35,6 +35,11 @@ export type OrderListRecord = {
   updatedAt: string;
   /** Qué ofrece la acción de la fila: crear la cotización, actualizarla o abrir la que ya existe. */
   quotationAction: 'CREATE' | 'UPDATE' | 'VIEW';
+  /**
+   * La cotización ya creada en Siigo, para mostrarla en su columna. `name` es el identificador que
+   * ve el cliente (`C-1-844`) y `url` el enlace público del documento.
+   */
+  quotation: { number: string | null; name: string; url: string | null } | null;
   customer: Pick<
     CustomerRecord,
     'id' | 'displayName' | 'personType' | 'documentType' | 'documentNumber' | 'email'

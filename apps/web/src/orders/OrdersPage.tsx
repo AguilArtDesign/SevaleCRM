@@ -19,6 +19,7 @@ import {
 } from '@heroui/react';
 import {
   ArrowRotateRight,
+  ArrowUpRightFromSquare,
   Box,
   Check,
   ClockArrowRotateLeft,
@@ -84,6 +85,8 @@ function messageFrom(error: unknown): string {
 type OrderActionTarget = {
   kind: 'shipment-form' | 'shipment-view' | 'siigo-quotation';
   operationId: number;
+  /** Solo para la cotización: distingue consultar una existente de crear o actualizar. */
+  quotationAction?: 'CREATE' | 'UPDATE' | 'VIEW';
 };
 
 function stopRowSelection(event: { stopPropagation: () => void }) {
@@ -668,9 +671,11 @@ export function OrdersPage() {
                 <Table.Column>Tienda</Table.Column>
                 <Table.Column>Origen</Table.Column>
                 <Table.Column>Estado</Table.Column>
+                <Table.Column>Cotización</Table.Column>
                 <Table.Column>Total</Table.Column>
                 <Table.Column>Fecha</Table.Column>
-                <Table.Column className="inventory-actions-column">Acciones</Table.Column>
+                {/* Sin título: el botón se explica solo y la columna se ajusta a su ancho. */}
+                <Table.Column aria-label="Acciones">{''}</Table.Column>
               </Table.Header>
               <Table.Body
                 renderEmptyState={() =>
@@ -706,9 +711,21 @@ export function OrdersPage() {
                       </Table.Cell>
                     )}
                     <Table.Cell onClick={stopRowSelection} onPointerDown={stopRowSelection}>
-                      <strong className="order-code" title={String(order.wooOrderId ?? order.id)}>
-                        #{order.wooOrderId ?? order.id}
-                      </strong>
+                      {/* El número abre el mismo detalle que «Ver pedido»: es el dato que se
+                          busca cuando se quiere revisar un pedido concreto. */}
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="order-code-button"
+                        aria-label={`Ver detalle del pedido ${order.wooOrderId ?? order.id}`}
+                        onPress={() =>
+                          setSelected({ operationId: order.operationId, store: order.store })
+                        }
+                      >
+                        <strong className="order-code" title={String(order.wooOrderId ?? order.id)}>
+                          #{order.wooOrderId ?? order.id}
+                        </strong>
+                      </Button>
                     </Table.Cell>
                     <Table.Cell onClick={stopRowSelection} onPointerDown={stopRowSelection}>
                       <div className="order-customer-cell">
@@ -726,6 +743,24 @@ export function OrdersPage() {
                       <OrderStatusChip status={order.status} wooStatus={order.wooStatus} />
                     </Table.Cell>
                     <Table.Cell onClick={stopRowSelection} onPointerDown={stopRowSelection}>
+                      {/* La cotización vive en Siigo y su enlace público la abre sin salir del
+                          listado. Mientras no se haya enviado nada, la celda queda vacía. */}
+                      {order.quotation?.url ? (
+                        <a
+                          className="order-quotation-link"
+                          href={order.quotation.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          title={`Abrir la cotización ${order.quotation.name} en Siigo`}
+                        >
+                          {order.quotation.name}
+                          <ArrowUpRightFromSquare width={14} height={14} aria-hidden="true" />
+                        </a>
+                      ) : (
+                        <span className="order-quotation-name">{order.quotation?.name ?? '—'}</span>
+                      )}
+                    </Table.Cell>
+                    <Table.Cell onClick={stopRowSelection} onPointerDown={stopRowSelection}>
                       <strong className="order-total">
                         {formattedMoneyWithCode(order.total, order.currency)}
                       </strong>
@@ -736,7 +771,7 @@ export function OrdersPage() {
                       </span>
                     </Table.Cell>
                     <Table.Cell onClick={stopRowSelection} onPointerDown={stopRowSelection}>
-                      <div className="inventory-row-actions">
+                      <div className="orders-row-actions">
                         <Dropdown>
                           <Button
                             className="inventory-actions-trigger"
@@ -773,6 +808,7 @@ export function OrdersPage() {
                                   setActionTarget({
                                     kind: 'siigo-quotation',
                                     operationId: order.operationId,
+                                    quotationAction: order.quotationAction,
                                   });
                                 }
                                 if (key === 'shipment') {
@@ -1056,6 +1092,7 @@ export function OrdersPage() {
         <SiigoQuotationModal
           isOpen
           operationId={actionTarget.operationId}
+          quotationAction={actionTarget.quotationAction}
           isSubmitting={quotation.isPending}
           serverError={quotation.isError ? messageFrom(quotation.error) : ''}
           onClose={() => setActionTarget(null)}

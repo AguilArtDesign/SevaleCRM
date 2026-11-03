@@ -75,6 +75,7 @@ function payablePrice(item: PreviewItem): number {
 export function SiigoQuotationModal({
   isOpen,
   operationId,
+  quotationAction,
   isSubmitting,
   serverError,
   onClose,
@@ -82,6 +83,11 @@ export function SiigoQuotationModal({
 }: {
   isOpen: boolean;
   operationId: number | null;
+  /**
+   * Qué ofrece la acción. `VIEW` es solo consulta: la cotización ya existe y coincide con el pedido,
+   * así que consultar no se ve afectado por que la operación esté cerrada.
+   */
+  quotationAction?: 'CREATE' | 'UPDATE' | 'VIEW';
   isSubmitting: boolean;
   serverError: string;
   onClose: () => void;
@@ -94,7 +100,13 @@ export function SiigoQuotationModal({
     staleTime: 0,
   });
   const preview = previewQuery.data;
-  const blocked = Boolean(preview && preview.issues.length > 0);
+  // Consultar no envía nada a Siigo, así que el aviso de que el pedido está cerrado solo estorba
+  // cuando lo único que se quiere es volver a ver una cotización que ya existe.
+  const isViewOnly = quotationAction === 'VIEW';
+  const issues = isViewOnly
+    ? (preview?.issues ?? []).filter((issue) => issue.code !== 'SIIGO_QUOTATION_ORDER_CLOSED')
+    : (preview?.issues ?? []);
+  const blocked = issues.length > 0;
 
   return (
     <Modal isOpen={isOpen} onOpenChange={(open) => !open && onClose()}>
@@ -286,12 +298,12 @@ export function SiigoQuotationModal({
                       </div>
                     </dl>
 
-                    {preview.issues.length > 0 && (
+                    {issues.length > 0 && (
                       <Alert status="warning">
                         <Alert.Content>
                           <Alert.Description>
                             <ul className="siigo-quotation-issues">
-                              {preview.issues.map((issue) => (
+                              {issues.map((issue) => (
                                 <li key={issue.code}>{issue.message}</li>
                               ))}
                             </ul>
@@ -321,21 +333,29 @@ export function SiigoQuotationModal({
             </Modal.Body>
             <Modal.Footer>
               <Button variant="tertiary" onPress={onClose} isDisabled={isSubmitting}>
-                Cancelar
+                {isViewOnly ? 'Cerrar' : 'Cancelar'}
               </Button>
-              <Button
-                variant="primary"
-                isPending={isSubmitting}
-                isDisabled={!preview || blocked || previewQuery.isPending || isUpToDate(preview)}
-                onPress={onSubmit}
-              >
-                {({ isPending }) => (
-                  <>
-                    {isPending ? <Spinner color="current" size="sm" /> : <PaperPlane width={17} />}
-                    {submitLabel(preview, isPending)}
-                  </>
-                )}
-              </Button>
+              {/* Consultar una cotización que ya existe y coincide con el pedido no envía nada:
+                  reenviarla no cambiaría lo que hay en Siigo. */}
+              {!isViewOnly && (
+                <Button
+                  variant="primary"
+                  isPending={isSubmitting}
+                  isDisabled={!preview || blocked || previewQuery.isPending || isUpToDate(preview)}
+                  onPress={onSubmit}
+                >
+                  {({ isPending }) => (
+                    <>
+                      {isPending ? (
+                        <Spinner color="current" size="sm" />
+                      ) : (
+                        <PaperPlane width={17} />
+                      )}
+                      {submitLabel(preview, isPending)}
+                    </>
+                  )}
+                </Button>
+              )}
             </Modal.Footer>
           </Modal.Dialog>
         </Modal.Container>

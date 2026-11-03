@@ -319,7 +319,9 @@ export class OrdersRepository {
               // El resumen de la cotización decide qué dice la acción de la fila: crear, actualizar
               // o ver. `externalId` distingue una cotización que ya vive en Siigo.
               siigoQuotation: {
-                select: { status: true, externalId: true },
+                // Se traen también el número y la URL: el listado muestra la cotización en su
+                // propia columna y abre el enlace público sin pedir el detalle de cada fila.
+                select: { status: true, externalId: true, number: true, name: true, url: true },
               },
               customer: {
                 select: {

@@ -126,15 +126,21 @@ export function allowsShipment(order: { status: OrderStatus }): boolean {
 const quotableWooStatuses = new Set(['pending', 'processing', 'on-hold']);
 
 /**
- * La cotización de Siigo solo aplica a un pedido abierto. El backend aplica la misma regla y
- * rechaza la operación cerrada, por si alguien llega a la ruta sin pasar por el panel.
+ * Cuándo se ofrece la acción de Siigo en el menú de la fila.
+ *
+ * Consultar una cotización que ya existe no depende de que el pedido siga abierto: el documento está
+ * en Siigo y el comercial puede volver a verlo aunque la operación ya esté completada. Lo que sí
+ * exige un pedido abierto es crearlo o actualizarlo, porque eso cambia lo que hay en Siigo.
  */
 export function allowsSiigoQuotation(order: {
   status: OrderStatus;
   wooStatus?: string | null;
+  quotationAction: 'CREATE' | 'UPDATE' | 'VIEW';
 }): boolean {
   // Una operación cancelada no se cotiza: el backend responde NOT_ALLOWED.
   if (order.status === 'CANCELLED') return false;
+  // `VIEW` significa que la cotización existe y coincide con el pedido: solo se consulta.
+  if (order.quotationAction === 'VIEW') return true;
   const wooStatus = order.wooStatus?.trim().toLocaleLowerCase('en') ?? '';
   // Un pedido del CRM que todavía no existe en WooCommerce no tiene estado de tienda. Sigue
   // pendiente, y la cotización se arma con los datos del CRM, así que no depende de la tienda.

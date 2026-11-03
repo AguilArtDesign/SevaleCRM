@@ -206,6 +206,18 @@ export class OrdersService {
           : outdated.has(operation.id)
             ? ('UPDATE' as const)
             : ('VIEW' as const),
+        /**
+         * La cotización ya creada en Siigo, para su propia columna del listado. `name` es el
+         * identificador que ve el cliente (`C-1-844`) y `url` el enlace público del documento.
+         * Mientras no haya nada enviado, la fila no tiene cotización.
+         */
+        quotation: operation.siigoQuotation?.name
+          ? {
+              number: operation.siigoQuotation.number,
+              name: operation.siigoQuotation.name,
+              url: operation.siigoQuotation.url,
+            }
+          : null,
         wooOrderId: order.wooOrderId?.toString() ?? null,
         wooStatus: order.wooStatus,
         subtotal: money(order.subtotal),
