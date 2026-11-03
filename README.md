@@ -383,6 +383,14 @@ Una factura acumulada muestra además la acción **Revocar**, que la anula en Pu
 
 Anular es irreversible desde el CRM, así que va con su propio permiso (`loyalty.revoke`, hoy solo `ADMIN`) y una confirmación aparte. Un rechazo del proveedor —un `4xx` con `resultCode`— deja la anulación en `FAILED` y se puede repetir; un `5xx` o un tiempo de espera agotado la dejan en `UNVERIFIED` y la bloquean. En ninguno de los dos casos los puntos se dan por devueltos: la factura vuelve a `COMPLETED` y el error se guarda solo en el intento de anulación, porque un fallo al anular no deshace la acumulación.
 
+### Eliminar una factura
+
+Una factura que todavía no se operó en Puntos Colombia muestra la acción **Eliminar**, que la quita del panel con su historial (`DELETE /api/points-colombia/invoices/:id`). Sirve para deshacer un registro equivocado: sin ella, la tabla acumula facturas que nadie va a usar.
+
+Solo aplica a los estados sin operación —`PENDING` y `FAILED`— y el bloqueo se comprueba en dos sitios: el estado de la factura y, dentro de una transacción, que no exista un intento `COMPLETED`, `PROCESSING` o `UNVERIFIED`. Una factura `COMPLETED` o `REVOKED` tiene puntos reales en el programa y su rastro no puede perderse; una `UNVERIFIED` necesita conciliarse antes. La condición viaja en el `where` del borrado, así que dos peticiones simultáneas no pueden borrar una factura que otra acaba de acumular.
+
+Va con su propio permiso (`loyalty.delete`, hoy solo `ADMIN`), igual que la anulación: habilitar la acumulación a los comerciales no debe habilitar el borrado.
+
 ### Intentos ambiguos
 
 El identificador de transacción se persiste **antes** del `POST`, de modo que se reutiliza si el proceso se interrumpe. Un `5xx` o un tiempo de espera agotado dejan la factura en `UNVERIFIED`: el proveedor pudo haber acumulado, así que el panel bloquea el reintento en lugar de arriesgar una doble acumulación. La reconciliación manual de esos casos sigue pendiente de definir con el proveedor para la certificación.

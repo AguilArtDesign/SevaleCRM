@@ -146,4 +146,9 @@ export const pointsColombiaApi = {
     apiRequest<PointsInvoiceRecord>(`/api/points-colombia/invoices/${id}/revoke`, {
       method: 'POST',
     }),
+  /** Quita la factura del panel. Solo se permite si nunca se operó en Puntos Colombia. */
+  remove: (id: number) =>
+    apiRequest<{ success: true; name: string }>(`/api/points-colombia/invoices/${id}`, {
+      method: 'DELETE',
+    }),
 };

@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Delete,
   ForbiddenException,
   Get,
   Param,
@@ -106,5 +107,15 @@ export class PointsInvoicesController {
   @RequirePermissions('loyalty.revoke')
   revoke(@Param('id') id: string, @Req() request: AuthenticatedRequest) {
     return this.points.revoke(parseInput(pointsInvoiceIdSchema, id), this.user(request));
+  }
+
+  /**
+   * Quitar una factura del panel. Su propio permiso, igual que revocar: borra el registro local y su
+   * historial, así que no puede depender de que alguien tenga la acumulación habilitada.
+   */
+  @Delete('invoices/:id')
+  @RequirePermissions('loyalty.delete')
+  remove(@Param('id') id: string, @Req() request: AuthenticatedRequest) {
+    return this.points.remove(parseInput(pointsInvoiceIdSchema, id), this.user(request));
   }
 }

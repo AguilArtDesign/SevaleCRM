@@ -27,6 +27,13 @@ export type NewPointsAccrual = {
   transactionIdentifier: Prisma.InputJsonValue;
 };
 
+/**
+ * Resultado de quitar una factura del panel. La factura solo se borra si nunca se operó en Puntos
+ * Colombia: los demás estados tienen puntos en el programa o un intento sin conciliar.
+ */
+export type PointsInvoiceRemoval =
+  { outcome: 'NOT_FOUND' } | { outcome: 'NOT_DELETABLE' } | { outcome: 'DELETED'; name: string };
+
 const invoiceInclude = {
   createdBy: { select: { id: true, name: true, email: true } },
   accruals: {
@@ -110,6 +117,39 @@ export class PointsInvoicesRepository {
 
   byName(name: string) {
     return this.prisma.pointsInvoice.findFirst({ where: { name } });
+  }
+
+  /**
+   * Borra la factura del panel cuando nunca llegó a operarse en Puntos Colombia.
+   *
+   * La condición va en el `where` y no solo en el servicio: así dos peticiones simultáneas no pueden
+   * borrar una factura que otra acaba de acumular entre la comprobación y el borrado. `PENDING` es
+   * «registrada y sin intentos» y `FAILED` es «se intentó y no acreditó»; los demás estados tienen
+   * puntos en el programa o un intento sin conciliar, y su rastro no se puede perder.
+   */
+  async remove(id: number): Promise<PointsInvoiceRemoval> {
+    return this.prisma.$transaction(async (transaction) => {
+      const invoice = await transaction.pointsInvoice.findUnique({
+        where: { id },
+        select: { id: true, name: true, status: true },
+      });
+      if (!invoice) return { outcome: 'NOT_FOUND' };
+      if (invoice.status !== 'PENDING' && invoice.status !== 'FAILED') {
+        return { outcome: 'NOT_DELETABLE' };
+      }
+      // Un intento completado, en curso o sin conciliar bloquea el borrado aunque el estado de la
+      // factura diga otra cosa: el historial es la única prueba de lo que pasó con esos puntos.
+      const guarded = await transaction.pointsAccrual.count({
+        where: { invoiceId: id, status: { in: ['COMPLETED', 'PROCESSING', 'UNVERIFIED'] } },
+      });
+      if (guarded > 0) return { outcome: 'NOT_DELETABLE' };
+
+      const deleted = await transaction.pointsInvoice.deleteMany({
+        where: { id, status: { in: ['PENDING', 'FAILED'] } },
+      });
+      if (deleted.count !== 1) return { outcome: 'NOT_DELETABLE' };
+      return { outcome: 'DELETED', name: invoice.name };
+    });
   }
 
   /** Los prefijos configurados: el administrador elige el contexto cuando un prefijo se repite. */

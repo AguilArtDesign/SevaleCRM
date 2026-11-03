@@ -443,6 +443,41 @@ export class PointsInvoicesService {
   }
 
   /**
+   * Quita una factura del panel. Solo se permite mientras no se haya operado en Puntos Colombia: una
+   * factura acumulada o revocada tiene puntos reales en el programa y su borrado perdería el rastro,
+   * y una que quedó por verificar necesita conciliarse antes. Sirve para deshacer un registro
+   * equivocado sin dejar en la tabla facturas que nadie va a usar.
+   */
+  async remove(id: number, user: SessionUser) {
+    const invoice = await this.invoices.detail(id);
+    if (!invoice) throw new NotFoundException('La factura no existe en el panel.');
+    if (invoice.source === 'SIIGO' && user.role !== 'ADMIN') {
+      const own = await this.ownPrefix(user.id);
+      if (!own?.sellerId || invoice.sellerId !== own.sellerId) {
+        throw businessError(
+          ForbiddenException,
+          'POINTS_INVOICE_NOT_OWNED',
+          'La factura pertenece a otro vendedor.',
+        );
+      }
+    }
+
+    const result = await this.invoices.remove(id);
+    if (result.outcome === 'NOT_FOUND') {
+      throw new NotFoundException('La factura no existe en el panel.');
+    }
+    if (result.outcome === 'NOT_DELETABLE') {
+      throw businessError(
+        ConflictException,
+        'POINTS_INVOICE_NOT_DELETABLE',
+        'Solo se puede eliminar una factura que todavía no se haya operado en Puntos Colombia.',
+      );
+    }
+    this.logger.log(`Factura ${result.name} eliminada del panel por ${user.id}.`);
+    return { success: true as const, name: result.name };
+  }
+
+  /**
    * Anula los puntos ya acreditados de una factura. Necesita dos identificadores: el original, que
    * quedó guardado cuando se acumuló, y uno nuevo para la anulación. El nuevo se genera y se guarda
    * antes del envío, igual que en la acumulación, para que un resultado incierto siga siendo

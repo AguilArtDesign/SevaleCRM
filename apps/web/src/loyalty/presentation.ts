@@ -30,6 +30,18 @@ export function canRevoke(invoice: PointsInvoiceRecord) {
   return status === null || status === undefined || status === 'FAILED';
 }
 
+/**
+ * Quitar la factura del panel solo mientras no se haya operado en Puntos Colombia. Es el caso del
+ * registro equivocado: si no se borra, la tabla acumula facturas que nadie va a usar. Las que ya
+ * tienen puntos —acreditados o devueltos— o un intento sin conciliar conservan su rastro y no se
+ * tocan. La regla se repite en el backend, que es quien la aplica.
+ */
+export function canDelete(invoice: PointsInvoiceRecord) {
+  if (invoice.status !== 'PENDING' && invoice.status !== 'FAILED') return false;
+  const accrual = invoice.accrual?.status;
+  return accrual !== 'COMPLETED' && accrual !== 'PROCESSING' && accrual !== 'UNVERIFIED';
+}
+
 /** Fecha de factura tal como llega (`YYYY-MM-DD`), sin pasar por la zona del navegador. */
 export function invoiceDate(value: string) {
   const [year, month, day] = value.slice(0, 10).split('-');

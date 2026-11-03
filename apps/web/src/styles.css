@@ -3,6 +3,8 @@
 
 :root {
   --font-inter: 'Inter Variable', 'Inter', sans-serif;
+  /* Color de marca de Puntos Colombia: solo se usa mezclado, nunca como fondo plano. */
+  --puntos-colombia: #5e00cc;
 }
 
 :root,
@@ -5200,6 +5202,13 @@ select {
   max-height: calc(100dvh - 2.5rem);
 }
 
+/* La acumulación solo lleva dos campos y el resultado, así que va en ancho pequeño y conserva los
+   separadores del modal de cotización. */
+.siigo-quotation-modal.points-accrual-modal {
+  width: min(24rem, calc(100vw - 2rem));
+  max-width: 24rem;
+}
+
 /* Separadores del modal: sin ellos el encabezado, el cuerpo y el pie se leen como un solo bloque. */
 .siigo-quotation-modal .modal__header {
   padding-bottom: 0.9rem;
@@ -5236,6 +5245,7 @@ select {
   align-content: start;
   gap: 0.9rem;
   padding-bottom: 1.25rem;
+  margin-top: 0.75rem;
 }
 
 .siigo-quotation-brand {
@@ -6886,6 +6896,69 @@ select {
   margin: 0.25rem 0 0;
   color: var(--danger);
   font-size: 0.75rem;
+}
+
+/* El logotipo encabeza el modal, centrado: es una operación de marca, no una ficha interna. El
+   texto del logotipo hereda `currentColor`, así que sigue el tema claro u oscuro. */
+.points-accrual-header {
+  display: grid;
+  justify-items: center;
+  gap: 0.25rem;
+  text-align: center;
+}
+
+.points-accrual-logo {
+  display: block;
+  width: 145px;
+  height: auto;
+  margin: 0 auto 0.95rem;
+  color: var(--foreground);
+}
+
+/* El chip de la factura va pegado al título, no al ras: 0.25rem de aire. */
+.points-accrual-header .modal__heading {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+/* En este modal el bloque de puntos cierra la cabecera, así que el separador sobra. */
+.points-accrual-modal .modal__header {
+  border-bottom: 0;
+}
+
+/* Los puntos que se van a acreditar: el dato que el operador le dice al cliente. */
+.points-accrual-amount {
+  width: 100%;
+  margin: 0.95rem 0 0;
+  padding: 0.8rem 1rem;
+  background: color-mix(in oklch, var(--puntos-colombia) 18%, transparent);
+  border-radius: var(--field-radius);
+  color: var(--foreground);
+  font-size: 1rem;
+  font-weight: 500;
+  text-align: center;
+}
+
+.points-accrual-amount strong {
+  font-size: 1.5rem;
+  line-height: 1;
+}
+
+/* Aviso del resultado de la consulta: fondo tenue y sin borde, para no competir con los campos. */
+.points-accrual-notice {
+  margin: 0;
+  padding: 0.55rem 1rem;
+  background: color-mix(in oklch, var(--warning) 18%, transparent);
+  border-radius: var(--field-radius);
+  color: color-mix(in srgb, var(--warning) 70%, var(--foreground));
+  font-size: 0.8125rem;
+  text-align: center;
+}
+
+.points-accrual-notice[data-tone='success'] {
+  background: color-mix(in oklch, var(--success) 18%, transparent);
+  color: color-mix(in srgb, var(--success) 70%, var(--foreground));
 }
 
 /* El selector de rango ocupa el ancho de los dos campos de fecha que reemplazó. */

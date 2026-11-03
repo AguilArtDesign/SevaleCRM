@@ -13,6 +13,7 @@ import {
   Modal,
   RangeCalendar,
   SearchField,
+  Separator,
   Spinner,
   Table,
 } from '@heroui/react';
@@ -23,7 +24,8 @@ import {
   Eye,
   FileText,
   Gem,
-  Magnifier,
+  SquarePlus,
+  TrashBin,
   Xmark,
 } from '@gravity-ui/icons';
 import { pointsDocumentTypes, type PointsDocumentType } from '@sevale/validation';
@@ -33,15 +35,26 @@ import { getPaginationItems, Pagination } from '../components/Pagination';
 import { Select } from '../components/Select';
 import { formattedMoneyWithCode } from '../orders/presentation';
 import { useCurrentUser } from '../users/useCurrentUser';
+import { PointsColombiaLogo } from './PointsColombiaLogo';
 import {
   pointsColombiaApi,
   type PointsInvoiceRecord,
   type PointsInvoiceStatus,
   type PointsPrefixOption,
 } from './api';
-import { accrualTimestamp, canAccrue, canRevoke, invoiceDate, statusMeta } from './presentation';
+import {
+  accrualTimestamp,
+  canAccrue,
+  canDelete,
+  canRevoke,
+  invoiceDate,
+  statusMeta,
+} from './presentation';
 
 type DateRangeValue = { start: CalendarDate; end: CalendarDate };
+
+/** Datos mínimos para consultar o acumular: el tipo de documento no se hereda de la factura. */
+type LookupRequest = { document: string; type: PointsDocumentType };
 
 /**
  * Panel de Puntos Colombia. Mientras el proveedor certifica, el módulo es exclusivo del
@@ -53,6 +66,8 @@ export function PointsColombiaPage() {
   // Revocar es destructivo y tiene su propio permiso: el botón no se muestra si el rol no lo tiene,
   // así el usuario no descubre el límite con un 403.
   const canRevokePoints = Boolean(user && hasPermission(user.role, 'loyalty.revoke'));
+  // Quitar una factura borra el registro y su historial: permiso propio, no el de acumular.
+  const canDeletePoints = Boolean(user && hasPermission(user.role, 'loyalty.delete'));
   // El vendedor solo lo usa la administración: un comercial opera sus propias facturas y la columna
   // le repetiría su propio nombre en todas las filas.
   const isAdmin = user?.role === 'ADMIN';
@@ -65,6 +80,7 @@ export function PointsColombiaPage() {
   const [searchOpen, setSearchOpen] = useState(false);
   const [accrualTarget, setAccrualTarget] = useState<PointsInvoiceRecord | null>(null);
   const [revokeTarget, setRevokeTarget] = useState<PointsInvoiceRecord | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<PointsInvoiceRecord | null>(null);
   const [detailTarget, setDetailTarget] = useState<PointsInvoiceRecord | null>(null);
 
   const listQuery = useQuery({
@@ -375,6 +391,7 @@ export function PointsColombiaPage() {
                                 if (String(key) === 'accrue') setAccrualTarget(invoice);
                                 if (String(key) === 'detail') setDetailTarget(invoice);
                                 if (String(key) === 'revoke') setRevokeTarget(invoice);
+                                if (String(key) === 'delete') setDeleteTarget(invoice);
                               }}
                             >
                               <Dropdown.Section>
@@ -382,7 +399,7 @@ export function PointsColombiaPage() {
                                     factura completada no puede volver a acumular. */}
                                 {canAccrue(invoice) && (
                                   <Dropdown.Item id="accrue" textValue="Acumular puntos">
-                                    <Gem
+                                    <SquarePlus
                                       className="size-4 shrink-0 text-muted"
                                       aria-hidden="true"
                                     />
@@ -409,6 +426,27 @@ export function PointsColombiaPage() {
                                   </Dropdown.Item>
                                 )}
                               </Dropdown.Section>
+                              {/* Quitar solo aparece mientras la factura no se haya operado en
+                                  Puntos Colombia: es para deshacer un registro equivocado, así que
+                                  va apartado del resto de acciones. */}
+                              {canDelete(invoice) && canDeletePoints && (
+                                <>
+                                  <Separator />
+                                  <Dropdown.Section>
+                                    <Dropdown.Item
+                                      id="delete"
+                                      textValue="Eliminar"
+                                      variant="danger"
+                                    >
+                                      <TrashBin
+                                        className="size-4 shrink-0 text-danger"
+                                        aria-hidden="true"
+                                      />
+                                      <Label>Eliminar</Label>
+                                    </Dropdown.Item>
+                                  </Dropdown.Section>
+                                </>
+                              )}
                             </Dropdown.Menu>
                           </Dropdown.Popover>
                         </Dropdown>
@@ -521,6 +559,15 @@ export function PointsColombiaPage() {
         onClose={() => setRevokeTarget(null)}
         onDone={() => {
           setRevokeTarget(null);
+          void refresh();
+        }}
+      />
+
+      <DeleteInvoiceModal
+        invoice={deleteTarget}
+        onClose={() => setDeleteTarget(null)}
+        onDone={() => {
+          setDeleteTarget(null);
           void refresh();
         }}
       />
@@ -908,7 +955,8 @@ function AccrualModal({
   onDone: () => void;
 }) {
   const [documentNumber, setDocumentNumber] = useState<string | null>(null);
-  const [documentType, setDocumentType] = useState<PointsDocumentType>('2');
+  // Sin tipo elegido: el operador tiene que decidir cuál aplica en vez de heredar la cédula.
+  const [documentType, setDocumentType] = useState<PointsDocumentType | null>(null);
   const [error, setError] = useState('');
   const [result, setResult] = useState<{
     pointsEarned: number;
@@ -917,12 +965,14 @@ function AccrualModal({
   } | null>(null);
 
   const lookupMutation = useMutation({
-    mutationFn: () => pointsColombiaApi.lookupAccount(currentDocument().value, documentType),
+    mutationFn: ({ document, type }: LookupRequest) =>
+      pointsColombiaApi.lookupAccount(document, type),
     onError: (failure: Error) => setError(failure.message),
     onSuccess: () => setError(''),
   });
   const accrueMutation = useMutation({
-    mutationFn: () => pointsColombiaApi.accrue(invoice!.id, currentDocument().value, documentType),
+    mutationFn: ({ document, type }: LookupRequest) =>
+      pointsColombiaApi.accrue(invoice!.id, document, type),
     onError: (failure: Error) => setError(failure.message),
     onSuccess: (data) => {
       setError('');
@@ -946,7 +996,10 @@ function AccrualModal({
   if (!invoice) return null;
   const shownDocument = currentDocument().value;
   const lookup = lookupMutation.data;
-  const canSubmit = lookup?.found === true && lookup.balance.allowAccrual;
+  const canSubmit = Boolean(documentType) && lookup?.found === true && lookup.balance.allowAccrual;
+  /** Consulta y acumulación comparten los mismos requisitos: documento y tipo de documento. */
+  const lookupRequest = (): LookupRequest | null =>
+    documentType && shownDocument ? { document: shownDocument, type: documentType } : null;
   const invalidate = () => {
     lookupMutation.reset();
     setError('');
@@ -963,18 +1016,24 @@ function AccrualModal({
   return (
     <Modal isOpen onOpenChange={(open) => !open && close()}>
       <Modal.Backdrop>
-        <Modal.Container placement="center">
-          <Modal.Dialog className="siigo-quotation-modal">
+        <Modal.Container placement="center" size="sm">
+          <Modal.Dialog className="siigo-quotation-modal points-accrual-modal">
             <Modal.CloseTrigger aria-label="Cerrar acumulación" />
             <Modal.Header>
-              <div>
+              <div className="points-accrual-header">
+                <PointsColombiaLogo className="points-accrual-logo" />
                 <Modal.Heading>
-                  Acumular puntos
+                  Acumular Puntos
                   <Chip color="default">{invoice.name}</Chip>
                 </Modal.Heading>
                 <p className="siigo-quotation-subtitle">
-                  {formattedMoneyWithCode(invoice.total, 'COP')} · {invoice.points} puntos
+                  Valor de {formattedMoneyWithCode(invoice.total, 'COP')}
                 </p>
+                {!result && (
+                  <div className="points-accrual-amount">
+                    <strong>{invoice.points}</strong> Puntos
+                  </div>
+                )}
               </div>
             </Modal.Header>
             <Modal.Body>
@@ -1014,9 +1073,12 @@ function AccrualModal({
                     <Select
                       aria-label="Tipo de documento"
                       value={documentType}
+                      placeholder="Seleccionar tipo"
                       variant="secondary"
                       onChange={(value) => {
-                        setDocumentType(String(value) as PointsDocumentType);
+                        setDocumentType(
+                          value === null ? null : (String(value) as PointsDocumentType),
+                        );
                         invalidate();
                       }}
                     >
@@ -1046,7 +1108,10 @@ function AccrualModal({
                         setDocumentNumber(value);
                         invalidate();
                       }}
-                      onSubmit={() => shownDocument && lookupMutation.mutate()}
+                      onSubmit={() => {
+                        const request = lookupRequest();
+                        if (request) lookupMutation.mutate(request);
+                      }}
                     >
                       <SearchField.Group>
                         <SearchField.SearchIcon />
@@ -1055,39 +1120,21 @@ function AccrualModal({
                       </SearchField.Group>
                     </SearchField>
                   </div>
-                  <div>
-                    <Button
-                      variant="secondary"
-                      isPending={lookupMutation.isPending}
-                      isDisabled={!shownDocument}
-                      onPress={() => lookupMutation.mutate()}
-                    >
-                      <Magnifier width={16} height={16} />
-                      Consultar cuenta
-                    </Button>
-                  </div>
 
                   {lookup?.found === false && (
-                    <Alert status="warning">
-                      <Alert.Content>
-                        <Alert.Description>
-                          El cliente no está registrado en Puntos Colombia.
-                        </Alert.Description>
-                      </Alert.Content>
-                    </Alert>
+                    <p className="points-accrual-notice">
+                      Cliente no registrado en Puntos Colombia.
+                    </p>
                   )}
                   {lookup?.found === true && (
-                    <Alert status={canSubmit ? 'success' : 'warning'}>
-                      <Alert.Content>
-                        <Alert.Description>
-                          {canSubmit
-                            ? 'Puede acumular. Saldo actual: ' +
-                              lookup.balance.pointsAmount +
-                              ' puntos.'
-                            : 'Cuenta encontrada, pero no habilitada para acumular puntos.'}
-                        </Alert.Description>
-                      </Alert.Content>
-                    </Alert>
+                    <p
+                      className="points-accrual-notice"
+                      data-tone={canSubmit ? 'success' : 'warning'}
+                    >
+                      {canSubmit
+                        ? 'Cliente registrado en Puntos Colombia.'
+                        : 'Cuenta encontrada, pero no habilitada para acumular puntos.'}
+                    </p>
                   )}
                 </>
               )}
@@ -1106,11 +1153,13 @@ function AccrualModal({
                     variant="primary"
                     isPending={accrueMutation.isPending}
                     isDisabled={!canSubmit}
-                    onPress={() => accrueMutation.mutate()}
+                    onPress={() => {
+                      const request = lookupRequest();
+                      if (request) accrueMutation.mutate(request);
+                    }}
                   >
-                    <Gem width={16} height={16} />
                     Acumular puntos
-                  </Button>
+                  </Button>{' '}
                 </>
               )}
             </Modal.Footer>
@@ -1221,6 +1270,83 @@ function RevokeModal({
               >
                 <ArrowRotateLeft width={16} height={16} />
                 Revocar puntos
+              </Button>
+            </Modal.Footer>
+          </Modal.Dialog>
+        </Modal.Container>
+      </Modal.Backdrop>
+    </Modal>
+  );
+}
+
+/**
+ * Quita del panel una factura que todavía no se operó en Puntos Colombia. Se confirma aparte porque
+ * el registro y su historial desaparecen: es la forma de deshacer una factura agregada por error sin
+ * dejar en la tabla filas que nadie va a usar.
+ */
+function DeleteInvoiceModal({
+  invoice,
+  onClose,
+  onDone,
+}: {
+  invoice: PointsInvoiceRecord | null;
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const [error, setError] = useState('');
+  const deleteMutation = useMutation({
+    mutationFn: () => pointsColombiaApi.remove(invoice!.id),
+    onError: (failure: Error) => setError(failure.message),
+    onSuccess: onDone,
+  });
+
+  if (!invoice) return null;
+
+  return (
+    <Modal isOpen onOpenChange={(open) => !open && onClose()}>
+      <Modal.Backdrop>
+        <Modal.Container placement="center">
+          <Modal.Dialog className="siigo-quotation-modal">
+            <Modal.CloseTrigger aria-label="Cerrar eliminación" />
+            <Modal.Header>
+              <div>
+                <Modal.Heading>
+                  Eliminar factura
+                  <Chip color="default">{invoice.name}</Chip>
+                </Modal.Heading>
+                <p className="siigo-quotation-subtitle">
+                  {invoice.customerIdentification} · {formattedMoneyWithCode(invoice.total, 'COP')}
+                </p>
+              </div>
+            </Modal.Header>
+            <Modal.Body>
+              {error && (
+                <Alert status="danger">
+                  <Alert.Content>
+                    <Alert.Description>{error}</Alert.Description>
+                  </Alert.Content>
+                </Alert>
+              )}
+              <Alert status="warning">
+                <Alert.Content>
+                  <Alert.Description>
+                    La factura se quitará del panel con su historial. Si la vuelves a necesitar,
+                    tendrás que agregarla otra vez desde Siigo.
+                  </Alert.Description>
+                </Alert.Content>
+              </Alert>
+            </Modal.Body>
+            <Modal.Footer>
+              <Button variant="tertiary" onPress={onClose} isDisabled={deleteMutation.isPending}>
+                Cancelar
+              </Button>
+              <Button
+                variant="danger"
+                isPending={deleteMutation.isPending}
+                onPress={() => deleteMutation.mutate()}
+              >
+                <TrashBin width={16} height={16} />
+                Eliminar
               </Button>
             </Modal.Footer>
           </Modal.Dialog>

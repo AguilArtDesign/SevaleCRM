@@ -205,6 +205,20 @@ const repository = {
   byName(name: string) {
     return resolved([...invoices.values()].find((row) => row.name === name) ?? null);
   },
+  /** Borra la factura solo si nunca se operó en Puntos Colombia, igual que el repositorio real. */
+  remove(id: number) {
+    const row = invoices.get(id);
+    if (!row) return resolved({ outcome: 'NOT_FOUND' });
+    if (row.status !== 'PENDING' && row.status !== 'FAILED') {
+      return resolved({ outcome: 'NOT_DELETABLE' });
+    }
+    const guarded = row.accruals.some((accrual) =>
+      ['COMPLETED', 'PROCESSING', 'UNVERIFIED'].includes(String(accrual.status)),
+    );
+    if (guarded) return resolved({ outcome: 'NOT_DELETABLE' });
+    invoices.delete(id);
+    return resolved({ outcome: 'DELETED', name: row.name });
+  },
   invoicePrefixes() {
     return resolved(users);
   },
@@ -644,6 +658,60 @@ try {
     'Un comercial no puede acumular la factura de otro seller.',
   );
   assert(businessCode(foreign) === 'POINTS_INVOICE_NOT_OWNED', 'Debe rechazarse por pertenencia.');
+
+  // --- Eliminar factura ---------------------------------------------------------------------------
+
+  // Solo se quita una factura que nunca se operó en Puntos Colombia: es el registro equivocado.
+  const deletable = newRow({
+    name: 'FV-1-970',
+    siigoInvoiceId: 'siigo-970',
+    total: '110000.00',
+    status: 'PENDING',
+  });
+  const removed = await service.remove(deletable.id, admin);
+  assert(removed.success, 'Una factura sin operar debería poder eliminarse.');
+  assert(!invoices.has(deletable.id), 'La factura eliminada no debería seguir en el panel.');
+  const removedAgain = await rejects(
+    service.remove(deletable.id, admin),
+    'Una factura ya eliminada no puede volver a eliminarse.',
+  );
+  assert(
+    removedAgain instanceof Error && removedAgain.message.includes('no existe'),
+    'Eliminar dos veces debería responder que la factura no existe.',
+  );
+
+  // Con puntos acreditados el registro es la prueba de lo que pasó: no se borra.
+  const accruedNotDeletable = newRow({
+    name: 'FV-1-971',
+    siigoInvoiceId: 'siigo-971',
+    total: '110000.00',
+    status: 'COMPLETED',
+  });
+  const notDeletable = await rejects(
+    service.remove(accruedNotDeletable.id, admin),
+    'Una factura acumulada no debería poder eliminarse.',
+  );
+  assert(
+    businessCode(notDeletable) === 'POINTS_INVOICE_NOT_DELETABLE',
+    'Código de factura no eliminable.',
+  );
+  assert(invoices.has(accruedNotDeletable.id), 'La factura acumulada debe seguir en el panel.');
+
+  // Un intento sin conciliar conserva el rastro hasta que se resuelva con el proveedor.
+  const unverifiedNotDeletable = newRow({
+    name: 'FV-1-972',
+    siigoInvoiceId: 'siigo-972',
+    total: '110000.00',
+    status: 'UNVERIFIED',
+  });
+  const unverifiedRemoval = await rejects(
+    service.remove(unverifiedNotDeletable.id, admin),
+    'Una factura por verificar no debería poder eliminarse.',
+  );
+  assert(
+    businessCode(unverifiedRemoval) === 'POINTS_INVOICE_NOT_DELETABLE',
+    'Por verificar también bloquea el borrado.',
+  );
 
   // --- Anulación ---------------------------------------------------------------------------------
 
