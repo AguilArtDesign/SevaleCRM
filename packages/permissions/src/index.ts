@@ -63,6 +63,11 @@ export const permissions = [
   // Anular puntos ya acreditados es destructivo y no reversible desde el CRM: se separa de acumular
   // para poder cerrarlo sin cerrar el resto del panel cuando se habiliten los comerciales.
   'loyalty.revoke',
+  // Reabrir una operación completada para corregirla. Es una decisión administrativa y no una
+  // edición normal: dejar la operación en `PENDING` permite cambiarla, pero los pedidos que ya
+  // existen en WooCommerce no se actualizan, así que la tienda y el CRM quedan desalineados hasta
+  // que alguien los ajuste. Por eso no lo tiene el comercial, que sí puede editar una pendiente.
+  'orders.reopen',
   // Bitácora de las llamadas a las APIs externas. Contiene cuerpos con datos de clientes y pedidos,
   // así que es exclusiva de la administración; vaciarla es un acto aparte.
   'logs.read',

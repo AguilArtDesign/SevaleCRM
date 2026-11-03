@@ -124,6 +124,18 @@ export type RetryClaim =
   | { outcome: 'NOTHING_TO_RETRY' }
   | { outcome: 'CLAIMED'; orderIds: number[] };
 
+/**
+ * Reabrir devuelve una operación completada a `PENDING` para poder corregirla.
+ *
+ * No toca el estado de sincronización de los pedidos a propósito: uno que ya existe en WooCommerce
+ * sigue existiendo, y la sincronización del CRM solo crea pedidos, nunca actualiza los que ya están.
+ * Marcarlo como pendiente haría creer que se va a reenviar, y no es así.
+ */
+export type ReopenClaim =
+  | { outcome: 'NOT_FOUND' }
+  | { outcome: 'NOT_REOPENABLE' }
+  | { outcome: 'REOPENED'; operation: OrderOperationDetail };
+
 export type RetryOrderClaim =
   | { outcome: 'NOT_FOUND' }
   | { outcome: 'NOT_RETRYABLE' }
@@ -476,6 +488,41 @@ export class OrdersRepository {
       }
       if (orderIds.length === 0) return { outcome: 'NOTHING_TO_RETRY' };
       return { outcome: 'CLAIMED', orderIds };
+    });
+  }
+
+  /**
+   * Devuelve una operación completada a `PENDING` para poder corregirla. La transición solo se
+   * aplica si sigue completada: dos peticiones simultáneas no pueden reabrirla dos veces, y el
+   * total editado no se pisa si alguien más ya la movió.
+   *
+   * Los pedidos quedan como están. Uno que ya existe en WooCommerce sigue existiendo, y el CRM no
+   * envía actualizaciones, así que reiniciar su estado solo generaría una falsa expectativa.
+   */
+  reopen(id: number, userId: string): Promise<ReopenClaim> {
+    return this.prisma.$transaction(async (transaction) => {
+      const operation = await transaction.orderOperation.findFirst({
+        where: { id, deletedAt: null },
+        select: { source: true, status: true },
+      });
+      if (!operation) return { outcome: 'NOT_FOUND' };
+      // Reabrir una operación que nació en la tienda no tiene sentido: no hay nada que el CRM
+      // edite y el pedido ya vive en WooCommerce.
+      if (operation.source !== 'CRM' || operation.status !== 'COMPLETED') {
+        return { outcome: 'NOT_REOPENABLE' };
+      }
+
+      const reopened = await transaction.orderOperation.updateMany({
+        where: { id, source: 'CRM', status: 'COMPLETED', deletedAt: null },
+        data: { status: 'PENDING', updatedByUserId: userId, updatedByAt: new Date() },
+      });
+      if (reopened.count === 0) return { outcome: 'NOT_REOPENABLE' };
+
+      const updated = await transaction.orderOperation.findUniqueOrThrow({
+        where: { id },
+        include: orderDetailInclude,
+      });
+      return { outcome: 'REOPENED', operation: updated };
     });
   }
 

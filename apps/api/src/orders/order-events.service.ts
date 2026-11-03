@@ -170,6 +170,28 @@ export class OrderEventsService {
     );
   }
 
+  /**
+   * Reabrir se registra como `UPDATED` con el cambio de estado, y no como una acción nueva, para no
+   * añadir un valor al enum `OrderEventAction` solo por esto. El mensaje deja claro que fue una
+   * reapertura y no una edición cualquiera.
+   */
+  recordReopened(operation: OrderOperationDetail, userId: string) {
+    return this.safe(
+      () =>
+        this.events.record({
+          operationId: operation.id,
+          action: 'UPDATED',
+          userId,
+          operationCode: operation.operationCode,
+          customerName: operation.customer.displayName,
+          changes: [{ field: 'status', from: 'COMPLETED', to: 'PENDING' }],
+          message:
+            'Operación reabierta para corregirla. Los pedidos ya creados en la tienda no se modifican.',
+        }),
+      'reapertura de la operación',
+    );
+  }
+
   recordCompleted(operation: OrderOperationDetail, userId: string) {
     return this.safe(
       () =>
