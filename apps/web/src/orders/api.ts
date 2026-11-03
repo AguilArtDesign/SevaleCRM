@@ -40,6 +40,11 @@ export type OrderListRecord = {
    * ve el cliente (`C-1-844`) y `url` el enlace público del documento.
    */
   quotation: { number: string | null; name: string; url: string | null } | null;
+  /**
+   * Si el pedido admite que se le cree o actualice la cotización. Lo decide el backend porque ahí
+   * vive la regla del corte de los pedidos completados.
+   */
+  quotationAllowed: boolean;
   customer: Pick<
     CustomerRecord,
     'id' | 'displayName' | 'personType' | 'documentType' | 'documentNumber' | 'email'

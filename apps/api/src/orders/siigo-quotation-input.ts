@@ -136,22 +136,56 @@ function currencyRule(currency: string): (typeof taxRules)[QuotationCurrency] | 
   return currency === 'COP' || currency === 'USD' ? taxRules[currency] : null;
 }
 
+/** El corte en el formato que se lee en el panel: `03/11/2026`. */
+function formattedCutoff(): string {
+  const [year, month, day] = closedQuotationFrom().split('-');
+  return `${day}/${month}/${year}`;
+}
+
 /**
- * Estados de WooCommerce con el pedido todavía abierto. Completado, cancelado, reembolsado y fallido
- * ya cerraron el pedido, así que cotizarlos sería ofrecer algo que ya se vendió o se perdió.
+ * Estados de WooCommerce con el pedido todavía abierto. Pago pendiente, en preparación o en espera:
+ * la venta aún no se cerró, así que cotizarla siempre tiene sentido.
  */
 const quotableWooStatuses = new Set(['pending', 'processing', 'on-hold']);
 
 /**
- * Un pedido del CRM que todavía no existe en WooCommerce no tiene estado de tienda: sigue pendiente
- * y la cotización se arma con los datos del CRM, así que no depende de la tienda.
+ * Fecha desde la cual un pedido ya completado en la tienda también se cotiza desde el CRM.
+ *
+ * En Siigo toda venta pasa por una cotización antes de facturarse, así que un pedido completado
+ * necesita la suya igual que uno abierto. El corte existe solo por el historial: en los pedidos
+ * anteriores esa cotización se creó a mano en Siigo y volver a crearla desde aquí la duplicaría. Se
+ * lee del entorno, como el comprobante, para poder moverla sin desplegar código.
  */
-function hasOpenOrder(operation: QuotationOperation): boolean {
-  return operation.orders.some((order) => {
-    const wooStatus = order.wooStatus?.trim().toLocaleLowerCase('en') ?? '';
-    if (!wooStatus) return operation.status === 'PENDING';
-    return quotableWooStatuses.has(wooStatus);
-  });
+export function closedQuotationFrom(): string {
+  const value = (process.env.SIIGO_QUOTATION_CLOSED_FROM ?? '').trim();
+  return /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : '2026-11-03';
+}
+
+/**
+ * Si un pedido admite que se le cree o actualice su cotización en Siigo.
+ *
+ * - Abierto en la tienda: sí.
+ * - Sin estado de tienda (lo creó el CRM): solo mientras la operación siga pendiente.
+ * - Completado: sí si es de los nuevos, para no duplicar la cotización hecha a mano en Siigo.
+ * - Cancelado, reembolsado o fallido: nunca; esa venta no se cotiza.
+ */
+export function quotableOrder(
+  wooStatus: string | null | undefined,
+  orderDate: Date,
+  operationStatus: string,
+): boolean {
+  const status = wooStatus?.trim().toLocaleLowerCase('en') ?? '';
+  if (!status) return operationStatus === 'PENDING';
+  if (quotableWooStatuses.has(status)) return true;
+  if (status === 'completed') return bogotaDate(orderDate) >= closedQuotationFrom();
+  return false;
+}
+
+/** Un pedido del CRM que todavía no existe en WooCommerce no tiene estado de tienda. */
+function hasQuotableOrder(operation: QuotationOperation): boolean {
+  return operation.orders.some((order) =>
+    quotableOrder(order.wooStatus, order.wooCreatedAt ?? operation.createdAt, operation.status),
+  );
 }
 
 /**
@@ -207,14 +241,12 @@ export function buildQuotation(
     });
   }
 
-  // La cotización solo tiene sentido mientras el pedido sigue abierto en la tienda. El panel aplica
-  // la misma regla para esconder la acción; aquí se vuelve a comprobar porque la ruta se puede
-  // llamar directamente. Basta con que un pedido de la operación siga abierto.
-  if (!hasOpenOrder(operation)) {
+  // El panel aplica la misma regla para esconder la acción; aquí se vuelve a comprobar porque la
+  // ruta se puede llamar directamente. Basta con que un pedido de la operación admita cotizarse.
+  if (!hasQuotableOrder(operation)) {
     issues.push({
       code: 'SIIGO_QUOTATION_ORDER_CLOSED',
-      message:
-        'El pedido ya está cerrado en WooCommerce (completado, cancelado, reembolsado o fallido) y no se puede cotizar.',
+      message: `El pedido se cerró en WooCommerce antes del ${formattedCutoff()} y su cotización se crea directamente en Siigo.`,
     });
   }
   for (const { item } of lines) {

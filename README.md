@@ -329,6 +329,14 @@ El borrado se propaga a las dos tiendas **antes** de eliminar el registro local.
 
 Como el precio manual nunca puede superar el valor original, toda modificación es por definición una baja: `price_modified` es verdadero exactamente en los productos que quedan fuera de la base del cupón. `npm run test:orders` verifica ese límite exacto, el rechazo por excederlo y la exclusión del cupón.
 
+### Regla de la cotización en Siigo
+
+En Siigo toda venta pasa por una cotización antes de facturarse, así que el pedido necesita la suya tanto si sigue abierto en la tienda como si ya se completó. La cotización se arma con los productos de todas las tiendas de la operación, porque Siigo distingue por SKU y no por tienda: hay un documento por operación, no uno por pedido de tienda.
+
+Los pedidos cancelados, reembolsados y fallidos no se cotizan nunca. Un pedido del CRM que todavía no existe en WooCommerce se cotiza mientras la operación siga pendiente. Un pedido completado se cotiza solo desde `SIIGO_QUOTATION_CLOSED_FROM` (por defecto `2026-11-03`): los anteriores quedan fuera porque su cotización se creó a mano en Siigo y volver a crearla desde aquí la duplicaría.
+
+La regla vive en un solo sitio, `quotableOrder`, que usan la vista previa, la sincronización y el listado del panel: la fila recibe `quotationAllowed` ya resuelto en lugar de repetir el cálculo en React. `npm run test:orders:siigo-quotation` cubre el corte por fecha, los estados que nunca se cotizan y que el corte se pueda mover desde el entorno.
+
 ## Puntos Colombia
 
 El panel de Puntos Colombia permite buscar una factura de Siigo por su número, registrarla en el CRM y acumular los puntos del cliente en el programa. Mientras el proveedor certifica, el módulo es exclusivo de `ADMIN`: lo cierran el permiso `loyalty.accrue`, la bandera `PCO_ADMIN_ONLY` y la propia pantalla.

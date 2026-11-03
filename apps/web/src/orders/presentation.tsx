@@ -119,33 +119,23 @@ export function allowsShipment(order: { status: OrderStatus }): boolean {
 }
 
 /**
- * Estados de WooCommerce con el pedido todavía abierto: pago pendiente, en preparación o en espera.
- * Completado, cancelado, reembolsado y fallido ya cerraron el pedido, así que cotizarlos sería
- * ofrecer algo que ya se vendió o se perdió.
- */
-const quotableWooStatuses = new Set(['pending', 'processing', 'on-hold']);
-
-/**
  * Cuándo se ofrece la acción de Siigo en el menú de la fila.
  *
- * Consultar una cotización que ya existe no depende de que el pedido siga abierto: el documento está
- * en Siigo y el comercial puede volver a verlo aunque la operación ya esté completada. Lo que sí
- * exige un pedido abierto es crearlo o actualizarlo, porque eso cambia lo que hay en Siigo.
+ * Consultar una cotización que ya existe no depende del estado del pedido: el documento está en
+ * Siigo y el comercial puede volver a verlo aunque la operación ya esté completada. Para crear o
+ * actualizar, manda `quotationAllowed`, que el backend calcula: un pedido completado sí se cotiza si
+ * es de los nuevos, y los históricos quedan fuera para no duplicar lo que ya se hizo en Siigo.
  */
 export function allowsSiigoQuotation(order: {
   status: OrderStatus;
-  wooStatus?: string | null;
   quotationAction: 'CREATE' | 'UPDATE' | 'VIEW';
+  quotationAllowed: boolean;
 }): boolean {
   // Una operación cancelada no se cotiza: el backend responde NOT_ALLOWED.
   if (order.status === 'CANCELLED') return false;
   // `VIEW` significa que la cotización existe y coincide con el pedido: solo se consulta.
   if (order.quotationAction === 'VIEW') return true;
-  const wooStatus = order.wooStatus?.trim().toLocaleLowerCase('en') ?? '';
-  // Un pedido del CRM que todavía no existe en WooCommerce no tiene estado de tienda. Sigue
-  // pendiente, y la cotización se arma con los datos del CRM, así que no depende de la tienda.
-  if (!wooStatus) return order.status === 'PENDING';
-  return quotableWooStatuses.has(wooStatus);
+  return order.quotationAllowed;
 }
 
 /**

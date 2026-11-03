@@ -58,6 +58,7 @@ El archivo `.env.production.example` contiene únicamente placeholders y sirve c
 | `SIIGO_PARTNER_ID`                                             | Sí                    | Identificador requerido por Siigo.                    |
 | `SIIGO_QUOTATION_DOCUMENT_ID`                                  | No                    | Comprobante de cotización; por defecto `8652`.        |
 | `SIIGO_COST_CENTER_ID`                                         | No                    | Centro de costo de la cotización; por defecto `1388`. |
+| `SIIGO_QUOTATION_CLOSED_FROM`                                  | No                    | Desde qué día se cotizan los pedidos completados.     |
 | `TRM_API_URL`                                                  | No                    | Fuente de la TRM; solo se usa al cotizar en dólares.  |
 | `SERATUS_API_URL`                                              | Sí                    | Base HTTPS de WooCommerce Seratus.                    |
 | `WOOCOMMERCE_SERATUS_CK`                                       | Sí                    | Consumer key privada.                                 |
@@ -88,7 +89,7 @@ No usar las credenciales de prueba de Turnstile en producción. El backend recha
 
 ### Variables opcionales de Siigo
 
-Las tres son opcionales porque el código trae un valor por defecto. Configurarlas solo documenta el valor real y permite cambiarlo sin desplegar:
+Las tres primeras son opcionales porque el código trae un valor por defecto. Configurarlas solo documenta el valor real y permite cambiarlo sin desplegar:
 
 ```env
 SIIGO_QUOTATION_DOCUMENT_ID=8652
@@ -99,6 +100,18 @@ TRM_API_URL=https://www.datos.gov.co/resource/32sa-8pi3.json
 El valor por defecto se aplica cuando la variable no existe, viene vacía o no es un entero positivo. Un valor verosímil pero equivocado, por ejemplo `865`, **no** cae al valor por defecto: se envía así y Siigo lo rechaza. Conviene copiar los valores del panel de Siigo tal cual.
 
 `TRM_API_URL` solo se consulta al cotizar en dólares. Si todas las cotizaciones son en pesos, no se usa.
+
+#### Cotizar pedidos ya completados
+
+En Siigo toda venta pasa por una cotización antes de facturarse, así que un pedido completado en la tienda también necesita la suya. `SIIGO_QUOTATION_CLOSED_FROM` marca desde qué día se permite crearla desde el CRM:
+
+```env
+SIIGO_QUOTATION_CLOSED_FROM=2026-11-03
+```
+
+Los pedidos completados **antes** de esa fecha quedan fuera a propósito: su cotización se creó a mano en Siigo y crearla otra vez desde el CRM la duplicaría. La fecha se compara en hora de Colombia y el día del corte ya entra. Ausente equivale a `2026-11-03`, que es el día en que la regla se publicó.
+
+Los pedidos cancelados, reembolsados y fallidos no se cotizan nunca, sea cual sea la fecha: esa venta no se hizo. Un pedido del CRM que todavía no existe en WooCommerce se cotiza mientras la operación siga pendiente.
 
 ### Variables de Puntos Colombia
 

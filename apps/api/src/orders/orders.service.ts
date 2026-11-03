@@ -32,6 +32,7 @@ import type {
 import { WooOrderOutboundService } from './woo-order-outbound.service.js';
 import { ShipmentSyncService } from './shipment-sync.service.js';
 import { SiigoQuotationService } from './siigo-quotation.service.js';
+import { quotableOrder } from './siigo-quotation-input.js';
 import { OrderEventPublisher } from './order-event-publisher.service.js';
 import { OrderEventsService } from './order-events.service.js';
 
@@ -218,6 +219,15 @@ export class OrdersService {
               url: operation.siigoQuotation.url,
             }
           : null,
+        /**
+         * Si el pedido admite que se le cree o actualice la cotización. El panel lo usa en vez de
+         * repetir la regla: el corte de los pedidos completados vive en un solo sitio.
+         */
+        quotationAllowed: quotableOrder(
+          order.wooStatus,
+          order.wooCreatedAt ?? operation.createdAt,
+          operation.status,
+        ),
         wooOrderId: order.wooOrderId?.toString() ?? null,
         wooStatus: order.wooStatus,
         subtotal: money(order.subtotal),

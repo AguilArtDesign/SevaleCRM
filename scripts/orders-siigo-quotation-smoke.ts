@@ -5,6 +5,7 @@ import { SiigoQuotationService } from '../apps/api/src/orders/siigo-quotation.se
 import {
   buildQuotation,
   quotationFingerprint,
+  quotableOrder,
 } from '../apps/api/src/orders/siigo-quotation-input.js';
 import type { IntegrationLogsService } from '../apps/api/src/integration-logs/integration-logs.service.js';
 import type { OrderEventsRepository } from '../apps/api/src/orders/order-events.repository.js';
@@ -133,11 +134,14 @@ const previousEnvironment = {
   SIIGO_PARTNER_ID: process.env.SIIGO_PARTNER_ID,
   SIIGO_QUOTATION_DOCUMENT_ID: process.env.SIIGO_QUOTATION_DOCUMENT_ID,
   SIIGO_COST_CENTER_ID: process.env.SIIGO_COST_CENTER_ID,
+  SIIGO_QUOTATION_CLOSED_FROM: process.env.SIIGO_QUOTATION_CLOSED_FROM,
   TRM_API_URL: process.env.TRM_API_URL,
 };
 process.env.SIIGO_API_URL = `http://127.0.0.1:${address.port}/v1`;
 process.env.SIIGO_PARTNER_ID = 'quotation-smoke';
 process.env.TRM_API_URL = `http://127.0.0.1:${address.port}/v1/trm`;
+// Corte fijo: los pedidos del 27/10/2026 quedan por debajo, así que representan el historial.
+process.env.SIIGO_QUOTATION_CLOSED_FROM = '2026-11-03';
 delete process.env.SIIGO_QUOTATION_DOCUMENT_ID;
 delete process.env.SIIGO_COST_CENTER_ID;
 
@@ -177,6 +181,9 @@ function operation(overrides: Record<string, unknown> = {}) {
     operationCode: 'OP20261027TEST',
     status: 'PENDING',
     currency: 'COP',
+    // El corte de los pedidos completados se prueba con fechas fijas: la operación y sus pedidos
+    // llevan fecha propia para que el resultado no dependa del día en que se ejecute el smoke.
+    createdAt: new Date('2026-10-27T15:00:00.000Z'),
     subtotal: { toNumber: () => 280_000 },
     discountTotal: { toNumber: () => 28_000 },
     shippingTotal: { toNumber: () => 15_000 },
@@ -190,11 +197,13 @@ function operation(overrides: Record<string, unknown> = {}) {
       {
         store: 'SERATUS',
         wooStatus: 'pending',
+        wooCreatedAt: new Date('2026-10-27T15:00:00.000Z'),
         items: [item('SERATUS-SKU', 'Producto Seratus', 2, 100_000)],
       },
       {
         store: 'PALI',
         wooStatus: 'pending',
+        wooCreatedAt: new Date('2026-10-27T15:00:00.000Z'),
         items: [item('PALI-SKU', 'Producto Pali', 1, 80_000)],
       },
     ],
@@ -203,11 +212,20 @@ function operation(overrides: Record<string, unknown> = {}) {
 }
 
 /** Operación con los dos pedidos de la tienda en el mismo estado de WooCommerce. */
-function operationWithWooStatus(wooStatus: string | null, status = 'PENDING') {
+function operationWithWooStatus(
+  wooStatus: string | null,
+  status = 'PENDING',
+  wooCreatedAt = new Date('2026-10-27T15:00:00.000Z'),
+) {
   return operation({
     status,
     orders: [
-      { store: 'SERATUS', wooStatus, items: [item('SERATUS-SKU', 'Producto Seratus', 2, 100_000)] },
+      {
+        store: 'SERATUS',
+        wooStatus,
+        wooCreatedAt,
+        items: [item('SERATUS-SKU', 'Producto Seratus', 2, 100_000)],
+      },
     ],
   });
 }
@@ -369,18 +387,64 @@ try {
     );
     assert(open.input !== null, `Un pedido en ${openStatus} debería generar la cotización.`);
   }
-  for (const closedStatus of ['completed', 'cancelled', 'refunded', 'failed']) {
-    const closed = buildQuotation(operationWithWooStatus(closedStatus), {
-      seller,
-      exchangeRate: null,
-      exchangeRateDate: null,
-    });
+  // Un pedido cerrado se cotiza desde el CRM solo si es de los nuevos: en Siigo toda venta pasa por
+  // una cotización y en los pedidos históricos esa cotización ya se creó a mano.
+  for (const closedStatus of ['completed']) {
+    const historical = buildQuotation(
+      operationWithWooStatus(closedStatus, 'PENDING', new Date('2026-10-27T15:00:00.000Z')),
+      { seller, exchangeRate: null, exchangeRateDate: null },
+    );
+    assert(
+      historical.preview.issues.some(({ code }) => code === 'SIIGO_QUOTATION_ORDER_CLOSED'),
+      `Un pedido en ${closedStatus} anterior al corte no debería poder cotizarse.`,
+    );
+    assert(
+      historical.input === null,
+      `Un pedido en ${closedStatus} anterior al corte no debería generar la cotización.`,
+    );
+
+    const recent = buildQuotation(
+      operationWithWooStatus(closedStatus, 'PENDING', new Date('2026-11-03T15:00:00.000Z')),
+      { seller, exchangeRate: null, exchangeRateDate: null },
+    );
+    assert(
+      !recent.preview.issues.some(({ code }) => code === 'SIIGO_QUOTATION_ORDER_CLOSED'),
+      `Un pedido en ${closedStatus} desde el corte debería poder cotizarse.`,
+    );
+    assert(
+      recent.input !== null,
+      `Un pedido en ${closedStatus} desde el corte debería generar la cotización.`,
+    );
+  }
+  // El corte es por día en hora de Colombia: un pedido del mismo día del corte ya entra.
+  assert(
+    quotableOrder('completed', new Date('2026-11-03T05:00:00.000Z'), 'COMPLETED'),
+    'Un pedido completado el mismo día del corte debería cotizarse.',
+  );
+  assert(
+    !quotableOrder('completed', new Date('2026-11-03T04:59:59.000Z'), 'COMPLETED'),
+    'Un pedido completado un segundo antes del corte no debería cotizarse.',
+  );
+  // Cancelado, reembolsado y fallido no se cotizan nunca, ni siquiera siendo nuevos: esa venta no
+  // se hizo.
+  for (const closedStatus of ['cancelled', 'refunded', 'failed']) {
+    const closed = buildQuotation(
+      operationWithWooStatus(closedStatus, 'PENDING', new Date('2026-11-03T15:00:00.000Z')),
+      { seller, exchangeRate: null, exchangeRateDate: null },
+    );
     assert(
       closed.preview.issues.some(({ code }) => code === 'SIIGO_QUOTATION_ORDER_CLOSED'),
       `Un pedido en ${closedStatus} no debería poder cotizarse.`,
     );
     assert(closed.input === null, `Un pedido en ${closedStatus} no debería generar la cotización.`);
   }
+  // El corte sale del entorno, así que se puede mover sin desplegar código.
+  process.env.SIIGO_QUOTATION_CLOSED_FROM = '2027-01-01';
+  assert(
+    !quotableOrder('completed', new Date('2026-11-03T15:00:00.000Z'), 'COMPLETED'),
+    'El corte debería leerse del entorno y no de una constante fija.',
+  );
+  process.env.SIIGO_QUOTATION_CLOSED_FROM = '2026-11-03';
   assert(
     buildQuotation(operationWithWooStatus('Processing'), {
       seller,
