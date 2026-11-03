@@ -96,17 +96,6 @@ export class OrdersController {
     return this.orders.retrySync(parseInput(orderOperationIdSchema, id), request.auth.user.id);
   }
 
-  /**
-   * Reabre una operación completada para corregirla. Permiso propio y no `orders.update`: reabrir
-   * desalinea el CRM de la tienda en los pedidos que ya existen, así que es una decisión
-   * administrativa.
-   */
-  @Post(':id/reopen')
-  @RequirePermissions('orders.reopen')
-  reopen(@Param('id') id: string, @Req() request: AuthenticatedRequest) {
-    return this.orders.reopen(parseInput(orderOperationIdSchema, id), request.auth.user.id);
-  }
-
   @Post('rows/:id/sync')
   @RequirePermissions('orders.sync.retry')
   retryOrderSync(@Param('id') id: string, @Req() request: AuthenticatedRequest) {

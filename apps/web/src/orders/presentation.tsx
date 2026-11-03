@@ -226,29 +226,18 @@ export function ProductThumb({ src }: { src?: string | null }) {
 
 // El chip refleja el estado real de la tienda cuando el pedido ya existe en WooCommerce; mientras no
 // se haya creado, solo hay estado local del CRM.
-//
-// La excepción es una operación del CRM reabierta: vuelve a `PENDING` pero el pedido sigue existiendo
-// en la tienda con su estado anterior. Mostrar «Completado» ahí contradiría el menú, que ya ofrece
-// editarla, así que manda el estado de la operación.
-export function resolveOrderStatus(
-  status: OrderStatus,
-  wooStatus?: string | null,
-  source?: OrderSource,
-) {
-  if (source === 'CRM' && status === 'PENDING') return statusMeta[status];
+export function resolveOrderStatus(status: OrderStatus, wooStatus?: string | null) {
   return wooStatus ? resolveWooStatus(wooStatus) : statusMeta[status];
 }
 
 export function OrderStatusChip({
   status,
   wooStatus,
-  source,
 }: {
   status: OrderStatus;
   wooStatus?: string | null;
-  source?: OrderSource;
 }) {
-  const meta = resolveOrderStatus(status, wooStatus, source);
+  const meta = resolveOrderStatus(status, wooStatus);
   return <Chip color={meta.color}>{meta.label}</Chip>;
 }
 

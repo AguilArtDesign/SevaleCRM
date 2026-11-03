@@ -372,9 +372,6 @@ export const ordersApi = {
     request<OrderDetailRecord>(`/api/orders/${id}/complete`, { method: 'POST' }),
   retrySync: (id: number) =>
     request<OrderDetailRecord>(`/api/orders/${id}/sync`, { method: 'POST' }),
-  /** Reabre una operación completada para corregirla. Solo el administrador lo tiene. */
-  reopen: (id: number) =>
-    request<OrderDetailRecord>(`/api/orders/${id}/reopen`, { method: 'POST' }),
   retryOrderSync: (id: number) =>
     request<OrderDetailRecord>(`/api/orders/rows/${id}/sync`, { method: 'POST' }),
   updateShipment: (id: number, input: UpdateShipmentInput) =>

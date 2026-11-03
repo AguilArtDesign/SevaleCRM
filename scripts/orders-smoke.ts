@@ -1051,49 +1051,6 @@ try {
     409,
     'Edición de operación completada',
   );
-
-  // Reabrir: el comercial no puede, el administrador sí, y devuelve la operación a pendiente para
-  // poder corregirla. Los pedidos no cambian de estado de sincronización.
-  expectStatus(
-    await api(`/api/orders/${completed.id}/reopen`, commercialCookie, { method: 'POST' }),
-    403,
-    'Reapertura por un comercial',
-  );
-  const beforeReopen = await prisma.order.findMany({
-    where: { operationId: completed.id },
-    orderBy: { id: 'asc' },
-    select: { id: true, syncStatus: true },
-  });
-  expectStatus(
-    await api(`/api/orders/${completed.id}/reopen`, adminCookie, { method: 'POST' }),
-    201,
-    'Reapertura administrativa',
-  );
-  const reopened = await prisma.orderOperation.findUniqueOrThrow({
-    where: { id: completed.id },
-    select: { status: true, orders: { orderBy: { id: 'asc' }, select: { syncStatus: true } } },
-  });
-  if (reopened.status !== 'PENDING') {
-    throw new Error(`Reabrir no devolvió la operación a pendiente: ${reopened.status}.`);
-  }
-  // Reabrir no toca la sincronización: los pedidos ya enviados siguen igual en la tienda y el CRM
-  // solo crea, nunca actualiza.
-  const changedSync = reopened.orders
-    .map((order, index) => ({ before: beforeReopen[index]?.syncStatus, after: order.syncStatus }))
-    .filter(({ before, after }) => before !== after);
-  if (changedSync.length > 0) {
-    throw new Error(`Reabrir no debe reiniciar la sincronización: ${JSON.stringify(changedSync)}.`);
-  }
-  const reopenAgain = await api(`/api/orders/${completed.id}/reopen`, adminCookie, {
-    method: 'POST',
-  });
-  expectStatus(reopenAgain, 409, 'Reapertura de una operación pendiente');
-  // Se deja completada otra vez para que el resto del smoke siga probando una operación cerrada.
-  await prisma.orderOperation.update({
-    where: { id: completed.id },
-    data: { status: 'COMPLETED' },
-  });
-
   expectStatus(
     await api(`/api/orders/${completed.id}/siigo-quotation`, logisticsCookie, {
       method: 'POST',

@@ -18,7 +18,6 @@ import {
   toast,
 } from '@heroui/react';
 import {
-  ArrowRotateLeft,
   ArrowRotateRight,
   Box,
   Check,
@@ -322,7 +321,6 @@ export function OrdersPage() {
   const [selectedKeys, setSelectedKeys] = useState<Selection>(new Set());
   const [deleteTarget, setDeleteTarget] = useState<OrderListRecord | null>(null);
   const [completeTarget, setCompleteTarget] = useState<OrderListRecord | null>(null);
-  const [reopenTarget, setReopenTarget] = useState<OrderListRecord | null>(null);
   const [activityTarget, setActivityTarget] = useState<{
     id: number;
     operationCode: string;
@@ -377,14 +375,6 @@ export function OrdersPage() {
     onSuccess: async (order) => {
       queryClient.setQueryData(['orders', 'detail', order.id], order);
       setCompleteTarget(null);
-      await queryClient.invalidateQueries({ queryKey: ['orders'] });
-    },
-  });
-  const reopenOrder = useMutation({
-    mutationFn: (operationId: number) => ordersApi.reopen(operationId),
-    onSuccess: async (order) => {
-      queryClient.setQueryData(['orders', 'detail', order.id], order);
-      setReopenTarget(null);
       await queryClient.invalidateQueries({ queryKey: ['orders'] });
     },
   });
@@ -466,15 +456,6 @@ export function OrdersPage() {
     try {
       await deleteOrder.mutateAsync(deleteTarget);
       toast.success('Pedido eliminado del CRM.');
-    } catch (error) {
-      toast.danger(messageFrom(error));
-    }
-  };
-  const confirmReopen = async () => {
-    if (!reopenTarget || reopenOrder.isPending) return;
-    try {
-      await reopenOrder.mutateAsync(reopenTarget.operationId);
-      toast.success('Operación reabierta. Ya puedes editarla.');
     } catch (error) {
       toast.danger(messageFrom(error));
     }
@@ -742,11 +723,7 @@ export function OrdersPage() {
                       <OrderSourceChip source={order.source} />
                     </Table.Cell>
                     <Table.Cell onClick={stopRowSelection} onPointerDown={stopRowSelection}>
-                      <OrderStatusChip
-                        status={order.status}
-                        wooStatus={order.wooStatus}
-                        source={order.source}
-                      />
+                      <OrderStatusChip status={order.status} wooStatus={order.wooStatus} />
                     </Table.Cell>
                     <Table.Cell onClick={stopRowSelection} onPointerDown={stopRowSelection}>
                       <strong className="order-total">
@@ -784,7 +761,6 @@ export function OrdersPage() {
                                   });
                                 if (key === 'edit') openEdit(order.operationId);
                                 if (key === 'complete') setCompleteTarget(order);
-                                if (key === 'reopen') setReopenTarget(order);
                                 if (key === 'retry') void retryOrderSync(order);
                                 if (key === 'delete') setDeleteTarget(order);
                                 if (key === 'activity')
@@ -850,23 +826,6 @@ export function OrdersPage() {
                                     >
                                       <ArrowRotateRight className="size-4 shrink-0 text-muted" />
                                       <Label>Reintentar sincronización Woo</Label>
-                                    </Dropdown.Item>
-                                  )}
-                                {/* Reabrir devuelve la operación a Pendiente para editarla. Es una
-                                    corrección de administración: la tienda no se entera. */}
-                                {isAdmin &&
-                                  order.source === 'CRM' &&
-                                  order.status === 'COMPLETED' && (
-                                    <Dropdown.Item
-                                      id="reopen"
-                                      textValue="Reabrir para corregir"
-                                      variant="danger"
-                                    >
-                                      <ArrowRotateLeft
-                                        className="size-4 shrink-0 text-danger"
-                                        aria-hidden="true"
-                                      />
-                                      <Label>Reabrir para corregir</Label>
                                     </Dropdown.Item>
                                   )}
                               </Dropdown.Section>
@@ -1137,50 +1096,6 @@ export function OrdersPage() {
                   isPending={completeOrder.isPending}
                 >
                   Completar
-                </Button>
-              </AlertDialog.Footer>
-            </AlertDialog.Dialog>
-          </AlertDialog.Container>
-        </AlertDialog.Backdrop>
-      </AlertDialog>
-
-      <AlertDialog
-        isOpen={reopenTarget !== null}
-        onOpenChange={(open) => !open && setReopenTarget(null)}
-      >
-        <AlertDialog.Backdrop>
-          <AlertDialog.Container size="sm">
-            <AlertDialog.Dialog>
-              <AlertDialog.Header>
-                <AlertDialog.Icon status="warning">
-                  <ArrowRotateLeft />
-                </AlertDialog.Icon>
-                <AlertDialog.Heading>Reabrir operación</AlertDialog.Heading>
-              </AlertDialog.Header>
-              <AlertDialog.Body>
-                <strong>{reopenTarget?.operationCode}</strong> volverá a estar pendiente y podrás
-                editarla: quitar y volver a agregar un producto lo coloca en el pedido de la tienda
-                a la que pertenece hoy.
-                <br />
-                <br />
-                Los pedidos que ya existen en WooCommerce <strong>no se actualizan</strong>. Si
-                quitaste un producto que ya está en la tienda, retíralo también allá. Al volver a
-                completar solo se crearán los pedidos que aún no tienen número.
-              </AlertDialog.Body>
-              <AlertDialog.Footer>
-                <Button
-                  variant="ghost"
-                  onPress={() => setReopenTarget(null)}
-                  isDisabled={reopenOrder.isPending}
-                >
-                  Cancelar
-                </Button>
-                <Button
-                  variant="danger"
-                  onPress={() => void confirmReopen()}
-                  isPending={reopenOrder.isPending}
-                >
-                  Reabrir
                 </Button>
               </AlertDialog.Footer>
             </AlertDialog.Dialog>

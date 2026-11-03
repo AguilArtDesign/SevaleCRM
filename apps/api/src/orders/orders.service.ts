@@ -472,30 +472,6 @@ export class OrdersService {
     return this.detail(id);
   }
 
-  /**
-   * Reabre una operación completada para corregirla. Es el camino para arreglar una operación cuyo
-   * reparto por tienda quedó obsoleto (un producto que cambió de tienda), sin tocar la base a mano.
-   *
-   * No reenvía nada: el pedido que ya existe en WooCommerce sigue igual y hay que ajustarlo en la
-   * tienda. Al volver a completar, solo se crean los pedidos que aún no tienen número.
-   */
-  async reopen(id: number, userId: string) {
-    const result = await this.orders.reopen(id, userId);
-    if (result.outcome === 'NOT_FOUND') {
-      throw businessError(NotFoundException, 'ORDER_NOT_FOUND', 'La operación no existe.');
-    }
-    if (result.outcome === 'NOT_REOPENABLE') {
-      throw businessError(
-        ConflictException,
-        'ORDER_NOT_REOPENABLE',
-        'Solo una operación completada y creada en el CRM puede reabrirse.',
-      );
-    }
-    this.events.operationUpdated(result.operation);
-    await this.trail.recordReopened(result.operation, userId);
-    return serializeDetail(result.operation);
-  }
-
   async retrySync(id: number, userId: string) {
     const claim = await this.orders.claimRetry(id);
     if (claim.outcome === 'NOT_FOUND') {
