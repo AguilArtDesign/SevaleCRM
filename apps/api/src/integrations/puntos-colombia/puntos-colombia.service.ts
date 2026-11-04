@@ -49,6 +49,20 @@ export class PointsCancellationRejectedError extends Error {
   }
 }
 
+/**
+ * El proveedor rechazó la acumulación sin aplicarla. Salvo un duplicado, es definitivo y se puede
+ * reintentar: nada quedó acreditado. Sin distinguirlo, un `400` de negocio acababa marcado como
+ * «por verificar» y bloqueaba la factura para siempre.
+ */
+export class PointsAccrualRejectedError extends Error {
+  constructor(
+    readonly resultCode: string,
+    message: string,
+  ) {
+    super(message);
+  }
+}
+
 export type TransactionIdentifier = {
   terminalId: string;
   transactionId: string;
@@ -217,12 +231,25 @@ export class PuntosColombiaService {
     body: UnknownRecord,
   ): Promise<PointsAccrualResult> {
     const url = integrationUrl(config.baseUrl, 'pos-management/v1/transactions/processsale');
-    const payload = await integrationPost(
-      url,
-      { ...puntosColombiaHeaders(config, token), 'content-type': 'application/json' },
-      body,
-      'Puntos Colombia',
-    );
+    let payload: unknown;
+    try {
+      payload = await integrationPost(
+        url,
+        { ...puntosColombiaHeaders(config, token), 'content-type': 'application/json' },
+        body,
+        'Puntos Colombia',
+      );
+    } catch (error) {
+      // Un 4xx es un rechazo del proveedor, no un fallo incierto: se informa como tal para que no
+      // quede como «por verificar» algo que el proveedor ya descartó.
+      if (error instanceof IntegrationRequestRejectedException) {
+        throw new PointsAccrualRejectedError(
+          error.providerCode ?? String(error.statusCode),
+          error.providerDetail ?? 'Puntos Colombia rechazó la acumulación.',
+        );
+      }
+      throw error;
+    }
     if (!isRecord(payload)) throw invalidIntegrationResponse('Puntos Colombia');
     const balance = isRecord(payload.mainBalance) ? payload.mainBalance : null;
     if (!balance) throw invalidIntegrationResponse('Puntos Colombia');

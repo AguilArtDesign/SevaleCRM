@@ -103,6 +103,8 @@ export class IntegrationRequestRejectedException extends BadGatewayException {
     integration: string,
     readonly statusCode: number,
     readonly providerDetail: string | null,
+    /** `resultCode` del proveedor: clasifica el rechazo sin depender del texto. */
+    readonly providerCode: string | null = null,
   ) {
     super({
       success: false,
@@ -114,6 +116,19 @@ export class IntegrationRequestRejectedException extends BadGatewayException {
       },
     });
   }
+}
+
+/**
+ * Código propio del proveedor, para clasificar un rechazo sin leer su texto. Puntos Colombia usa
+ * `resultCode` y la REST API de WooCommerce `code`.
+ */
+function integrationResultCode(payload: unknown): string | null {
+  if (!isRecord(payload)) return null;
+  for (const key of ['resultCode', 'code']) {
+    const value = payload[key];
+    if (typeof value === 'string' && value.trim()) return value.trim().slice(0, 64);
+  }
+  return null;
 }
 
 export function integrationErrorCode(error: unknown): string | null {
@@ -355,7 +370,12 @@ async function performRequest(
       // Un 4xx es un rechazo de negocio: quien llama puede decidir si lo informa como fallo
       // definitivo en vez de tratarlo como resultado incierto.
       if (!transientFailure) {
-        throw new IntegrationRequestRejectedException(integration, response.status, detail);
+        throw new IntegrationRequestRejectedException(
+          integration,
+          response.status,
+          detail,
+          integrationResultCode(payload),
+        );
       }
       throw new BadGatewayException({
         success: false,

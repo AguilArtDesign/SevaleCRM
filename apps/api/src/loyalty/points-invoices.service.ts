@@ -18,10 +18,12 @@ import type {
 import { SiigoService, type SiigoInvoice } from '../integrations/siigo/siigo.service.js';
 import {
   IntegrationAuthenticationException,
+  IntegrationRequestRejectedException,
   IntegrationResourceMissingException,
 } from '../integrations/integration-http.js';
 import {
   PointsAccountNotFoundError,
+  PointsAccrualRejectedError,
   PointsCancellationRejectedError,
   PuntosColombiaService,
   puntoColombiaDate,
@@ -57,8 +59,24 @@ function businessError(
  * haber acreditado. Sin correlacionar no es ni un fallo definitivo ni un éxito, y reintentar con
  * otro identificador arriesga una segunda acumulación.
  */
+/**
+ * Un error ambiguo deja la acumulación abierta; uno definitivo permite reintentar.
+ *
+ * Lo ambiguo es lo que no se sabe si el proveedor aplicó: un timeout, un `5xx` o una transacción que
+ * ya conoce y que por tanto pudo haber acreditado. Un rechazo `4xx` no acreditó nada, así que la
+ * factura queda fallida y se puede reintentar cuando el cliente resuelva el motivo.
+ */
 function isAmbiguous(error: unknown): boolean {
-  if (error instanceof Error && error.message.includes('POS_DUPLICATE_TRANSACTION')) return true;
+  if (error instanceof PointsAccrualRejectedError) {
+    // Lo único de un rechazo que no se puede reintentar a ciegas.
+    return error.resultCode === 'POS_DUPLICATE_TRANSACTION';
+  }
+  if (
+    error instanceof IntegrationRequestRejectedException ||
+    error instanceof IntegrationResourceMissingException
+  ) {
+    return false;
+  }
   return (
     error instanceof GatewayTimeoutException ||
     (typeof error === 'object' &&

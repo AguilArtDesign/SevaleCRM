@@ -56,6 +56,8 @@ const uatAccounts = new Map<string, { pointsAmount: number; allowAccrual: boolea
   ['0000000000', { pointsAmount: 500, allowAccrual: false }],
   ['500500500', { pointsAmount: 300, allowAccrual: true }],
   ['600600600', { pointsAmount: 700, allowAccrual: true }],
+  ['700700700', { pointsAmount: 900, allowAccrual: true }],
+  ['800800800', { pointsAmount: 0, allowAccrual: true }],
 ]);
 let unauthorizedBalanceRequests = 0;
 
@@ -89,6 +91,15 @@ const server = createServer((request, response) => {
           resultCode: 'POS_DUPLICATE_TRANSACTION',
           resultMsg: 'La transacción ya fue procesada.',
         });
+      // Cuenta bloqueada: rechazo definitivo, nada quedó acreditado y se puede reintentar.
+      if (payload.documentNo === '700700700')
+        return json(response, 400, {
+          resultCode: 'POS_ACCOUNT_WRONG_STATUS',
+          resultMsg: 'Status of retrieved Account does not allow this operation',
+        });
+      // Una cuenta inexistente es un 404: también definitivo.
+      if (payload.documentNo === '800800800')
+        return json(response, 404, { resultCode: 'POS_CUSTOMER_NOT_FOUND' });
       const granted = Number(payload.mainPoints ?? 0);
       return json(response, 200, {
         approbationNumber: 'AP-9001',
@@ -644,6 +655,61 @@ try {
   assert(
     invoices.get(duplicateRow.id)?.status === 'UNVERIFIED',
     'El duplicado debe bloquear el reenvío hasta conciliar.',
+  );
+
+  // Cuenta bloqueada: rechazo definitivo. Antes quedaba «por verificar» y la factura no se podía
+  // reintentar nunca, que es lo que pasó con las facturas de UAT al bloquearse las cuentas.
+  const blockedRow = newRow({
+    name: 'FV-1-902',
+    siigoInvoiceId: 'siigo-902',
+    total: '900000.00',
+  });
+  const blockedStatus = await rejects(
+    service.accrue(blockedRow.id, { documentNumber: '700700700', documentType: '2' }, admin),
+    'Una cuenta bloqueada debe rechazarse.',
+  );
+  assert(
+    businessCode(blockedStatus) === 'POINTS_ACCRUAL_FAILED',
+    'Un 400 de negocio es un fallo definitivo, no una acumulación por verificar.',
+  );
+  assert(
+    invoices.get(blockedRow.id)?.status === 'FAILED',
+    'La factura debe quedar fallida para poder reintentarse.',
+  );
+  assert(
+    invoices
+      .get(blockedRow.id)
+      ?.accruals.at(-1)
+      ?.errorMessage?.toString()
+      .includes('does not allow this operation'),
+    'El motivo que dio el proveedor debe conservarse.',
+  );
+  const retriedBlocked = await rejects(
+    service.accrue(blockedRow.id, { documentNumber: '700700700', documentType: '2' }, admin),
+    'Una factura fallida debe poder reintentarse.',
+  );
+  assert(
+    businessCode(retriedBlocked) === 'POINTS_ACCRUAL_FAILED',
+    'El reintento debe volver a consultar al proveedor en lugar de quedar bloqueado.',
+  );
+
+  // Un 404 de la acumulación también es definitivo: la cuenta no existe.
+  const missingRow = newRow({
+    name: 'FV-1-903',
+    siigoInvoiceId: 'siigo-903',
+    total: '500000.00',
+  });
+  const missing = await rejects(
+    service.accrue(missingRow.id, { documentNumber: '800800800', documentType: '2' }, admin),
+    'Una cuenta inexistente debe rechazarse.',
+  );
+  assert(
+    businessCode(missing) === 'POINTS_ACCRUAL_FAILED',
+    'Un 404 de la acumulación también es un fallo definitivo.',
+  );
+  assert(
+    invoices.get(missingRow.id)?.status === 'FAILED',
+    'La factura de una cuenta inexistente debe quedar fallida, no por verificar.',
   );
 
   // Factura de otro seller: el comercial no puede acumularla aunque conozca el id.
