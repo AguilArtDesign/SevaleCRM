@@ -130,7 +130,7 @@ export function PointsColombiaPage() {
       <header className="customers-heading">
         <div>
           <h2>Puntos Colombia</h2>
-          <span className="customers-count">{result?.pagination.total ?? 0}</span>
+          <Chip>{result?.pagination.total ?? 0}</Chip>
         </div>
         <Button variant="primary" onPress={() => setSearchOpen(true)}>
           <FileText width={16} height={16} />
@@ -138,8 +138,8 @@ export function PointsColombiaPage() {
         </Button>
       </header>
 
-      <div className="orders-toolbar">
-        <div className="orders-filters">
+      <div className="customers-toolbar">
+        <div className="customers-filters">
           <Select
             aria-label="Filtrar por estado"
             value={status}
@@ -256,21 +256,22 @@ export function PointsColombiaPage() {
             </Button>
           )}
         </div>
-        <SearchField
-          className="orders-search"
-          value={search}
-          aria-label="Buscar factura o documento"
-          onChange={(value) => {
-            setSearch(value);
-            setPage(1);
-          }}
-        >
-          <SearchField.Group>
-            <SearchField.SearchIcon />
-            <SearchField.Input placeholder="Factura o documento" />
-            <SearchField.ClearButton />
-          </SearchField.Group>
-        </SearchField>
+        <div className="customers-search">
+          <SearchField
+            value={search}
+            aria-label="Buscar factura o documento"
+            onChange={(value) => {
+              setSearch(value);
+              setPage(1);
+            }}
+          >
+            <SearchField.Group>
+              <SearchField.SearchIcon />
+              <SearchField.Input placeholder="Factura o documento" />
+              <SearchField.ClearButton />
+            </SearchField.Group>
+          </SearchField>
+        </div>
       </div>
 
       {listQuery.isError && (
@@ -288,7 +289,11 @@ export function PointsColombiaPage() {
               <Table.Column isRowHeader>Factura</Table.Column>
               <Table.Column>Fecha</Table.Column>
               <Table.Column>Documento</Table.Column>
-              {isAdmin && <Table.Column>Vendedor</Table.Column>}
+              {/* La columna se renderiza siempre. Si dependiera de `isAdmin`, el número de columnas
+                  cambiaría mientras `useCurrentUser` carga: la cabecera tendría 8 y las filas 9, y
+                  HeroUI lanza «Cell count must match column count» y desmonta la pantalla. Por eso
+                  quien se condiciona es el contenido de la celda, no la columna. */}
+              <Table.Column>Vendedor</Table.Column>
               <Table.Column>Total COP</Table.Column>
               <Table.Column>Puntos</Table.Column>
               <Table.Column>Estado</Table.Column>
@@ -347,9 +352,10 @@ export function PointsColombiaPage() {
                       </div>
                     </Table.Cell>
                     <Table.Cell>
-                      {isAdmin &&
-                        (invoice.sellerName ??
-                          (invoice.sellerId === null ? '—' : `Siigo #${invoice.sellerId}`))}
+                      {isAdmin
+                        ? (invoice.sellerName ??
+                          (invoice.sellerId === null ? '—' : `Siigo #${invoice.sellerId}`))
+                        : '—'}
                     </Table.Cell>
                     <Table.Cell>{formattedMoneyWithCode(invoice.total, 'COP')}</Table.Cell>
                     <Table.Cell>

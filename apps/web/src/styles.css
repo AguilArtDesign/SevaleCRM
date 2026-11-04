@@ -2272,6 +2272,18 @@ select {
   border-bottom: 0;
 }
 
+/* Ninguna tabla cierra con un borde inferior: la última fila no tiene nada debajo y el trazo se lee
+   como una fila vacía. El borde lo pinta HeroUI en todas las celdas, así que cada tabla lo anula;
+   aquí van las tres que faltaban. */
+.inventory-products-table .table__row:last-child > td,
+.inventory-products-table .table__row:only-child > td,
+.orders-table .table__row:last-child > td,
+.orders-table .table__row:only-child > td,
+.points-table .table__row:last-child > td,
+.points-table .table__row:only-child > td {
+  border-bottom-width: 0;
+}
+
 .customer-name-cell span,
 .customer-country-cell span,
 .customer-copy span,
@@ -3573,6 +3585,11 @@ select {
 
   .customers-filters .select,
   .customers-filters .customer-autocomplete {
+    width: 100%;
+    max-width: none;
+  }
+
+  .customers-filters .points-date-range {
     width: 100%;
     max-width: none;
   }
@@ -6861,6 +6878,13 @@ select {
   font-weight: 500;
 }
 
+/* Los valores no se parten en varias líneas: en una pantalla estrecha la tabla se desplaza en
+   horizontal, que es para lo que está. Sin esto, el navegador reparte el ancho disponible y apila
+   «$999.000 / COP» o la fecha en dos renglones. */
+.points-table :is(th, td) {
+  white-space: nowrap;
+}
+
 .points-table .table__content {
   min-width: 70rem;
 }
@@ -6869,9 +6893,39 @@ select {
   min-height: 3.75rem;
 }
 
-/* La columna de acciones va sin título y el botón se alinea al borde derecho de la celda. */
-.points-actions-column {
+/* La columna de acciones queda fija a la derecha, como en Pedidos: al desplazar la tabla en
+   horizontal el botón sigue a la vista. Las celdas son translúcidas, así que la fija lleva un fondo
+   opaco para que el contenido que pasa por debajo no se transparente. */
+.points-table thead th:last-child,
+.points-table tbody .table__row > td:last-child {
+  position: sticky;
+  right: 0;
+  z-index: 2;
+}
+
+.points-table thead th:last-child {
+  z-index: 3;
+  background: var(--surface-secondary);
+  /* Sin texto en la cabecera, la columna se ajusta al botón en lugar de reservar el ancho de
+     «Acciones». */
+  width: 3.5rem;
   text-align: right;
+  padding-inline: 0.5rem;
+}
+
+.points-table tbody .table__row > td:last-child {
+  background: var(--surface);
+}
+
+/* Las celdas fijas no pueden dejar pasar el tinte que HeroUI pinta en el resto de la fila, porque
+   su fondo es opaco: el hover y la selección se replican aquí con los mismos porcentajes que usa la
+   tabla (40 % al pasar el cursor, 10 % al seleccionar). */
+.points-table tbody .table__row:is(:hover, [data-hovered='true']) > td:last-child {
+  background: color-mix(in srgb, var(--surface) 40%, var(--surface-secondary));
+}
+
+.points-table tbody .table__row[data-selected='true'] > td:last-child {
+  background: color-mix(in srgb, var(--surface) 10%, var(--surface-secondary));
 }
 
 .points-table .inventory-row-actions {
@@ -6891,11 +6945,16 @@ select {
   object-fit: contain;
 }
 
-/* Solo el mensaje de error del último intento: la tabla no es el lugar para el diagnóstico. */
+/* Solo el mensaje de error del último intento: la tabla no es el lugar para el diagnóstico. Va en
+   una línea y recortado, porque un mensaje largo ensancharía la columna sin aportar nada: el texto
+   completo está en el detalle de la factura. */
 .points-invoice-error {
+  max-width: 16rem;
   margin: 0.25rem 0 0;
   color: var(--danger);
   font-size: 0.75rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* El logotipo encabeza el modal, centrado: es una operación de marca, no una ficha interna. El
