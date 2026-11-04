@@ -14,6 +14,7 @@ import type {
   PointsAccrualInput,
   PointsInvoiceListQuery,
   PointsInvoiceSearchInput,
+  PointsUatInvoiceInput,
 } from '@sevale/validation';
 import { SiigoService, type SiigoInvoice } from '../integrations/siigo/siigo.service.js';
 import {
@@ -314,7 +315,52 @@ export class PointsInvoicesService {
     return this.detail(created.id);
   }
 
-  /** Consulta de cuenta: valida en Puntos Colombia si el cliente puede acumular. */
+  /**
+   * Alta manual de una factura de prueba. Existe porque en UAT no hay facturas de Siigo con los datos
+   * que el proveedor tiene cargados, y probar la acumulación exigía sembrarlas por código. La factura
+   * nace `PENDING` y marcada como `UAT_SEED`, así que nunca se confunde con una real: la tabla la
+   * distingue con su chip y no guarda `siigoInvoiceId`.
+   */
+  async createUat(input: PointsUatInvoiceInput, user: SessionUser) {
+    const total = new Prisma.Decimal(input.total);
+    const points = pointsForTotal(total);
+    if (points <= 0) {
+      throw businessError(
+        BadRequestException,
+        'POINTS_INVOICE_TOO_SMALL',
+        'La factura no alcanza el mínimo de $1.000 para generar puntos.',
+      );
+    }
+    if (await this.invoices.byName(input.name)) {
+      throw businessError(
+        ConflictException,
+        'POINTS_INVOICE_DUPLICATE',
+        `Ya existe una factura con el nombre ${input.name} en el panel.`,
+      );
+    }
+
+    const created = await this.invoices.create({
+      source: 'UAT_SEED',
+      siigoInvoiceId: null,
+      name: input.name,
+      invoiceDate: new Date(`${input.invoiceDate}T00:00:00.000Z`),
+      sellerId: null,
+      customerIdentification: input.customerIdentification,
+      customerDocumentType: input.documentType,
+      total,
+      // El formulario no pide líneas de producto y el dato no interviene en la acumulación.
+      itemCount: 1,
+      points,
+      status: 'PENDING',
+      createdByUserId: user.id,
+    });
+    this.logger.log(`Factura de prueba ${created.name} agregada por ${user.id}.`);
+    return this.detail(created.id);
+  }
+
+  /**
+   * Consulta de cuenta: valida en Puntos Colombia si el cliente puede acumular.
+   */
   async lookupAccount(input: PointsAccountLookupInput) {
     try {
       const balance = await this.puntos.lookupAccount(input.documentNumber, input.documentType);
@@ -461,10 +507,15 @@ export class PointsInvoicesService {
   }
 
   /**
-   * Quita una factura del panel. Solo se permite mientras no se haya operado en Puntos Colombia: una
-   * factura acumulada o revocada tiene puntos reales en el programa y su borrado perdería el rastro,
-   * y una que quedó por verificar necesita conciliarse antes. Sirve para deshacer un registro
-   * equivocado sin dejar en la tabla facturas que nadie va a usar.
+   * Quita una factura del panel.
+   *
+   * Una factura de Siigo solo se puede borrar mientras no se haya operado en Puntos Colombia: una
+   * acumulada o revocada tiene puntos reales en el programa y su borrado perdería el rastro, y una
+   * que quedó por verificar necesita conciliarse antes.
+   *
+   * Una factura de prueba se borra en cualquier estado: existe para ensayar la acumulación y tiene que
+   * poder retirarse al terminar el ensayo, aunque haya quedado completada. La regla vive también en el
+   * repositorio, que es quien la aplica con la condición dentro de la transacción.
    */
   async remove(id: number, user: SessionUser) {
     const invoice = await this.invoices.detail(id);

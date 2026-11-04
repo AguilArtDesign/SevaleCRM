@@ -67,6 +67,9 @@ export const permissions = [
   // porque borra el registro y su historial: habilitar la acumulación a los comerciales no debe
   // habilitar el borrado.
   'loyalty.delete',
+  // Crear facturas de prueba desde el panel. Es una ayuda de certificación, no una función de
+  // negocio: en producción el ambiente real del proveedor debe tenerla apagada con `PCO_UAT_ENABLED`.
+  'loyalty.uat',
   // Bitácora de las llamadas a las APIs externas. Contiene cuerpos con datos de clientes y pedidos,
   // así que es exclusiva de la administración; vaciarla es un acto aparte.
   'logs.read',

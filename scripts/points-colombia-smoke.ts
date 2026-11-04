@@ -216,10 +216,17 @@ const repository = {
   byName(name: string) {
     return resolved([...invoices.values()].find((row) => row.name === name) ?? null);
   },
-  /** Borra la factura solo si nunca se operó en Puntos Colombia, igual que el repositorio real. */
+  /**
+   * Borra la factura con la misma regla que el repositorio real: una de prueba se va en cualquier
+   * estado, una de Siigo solo si nunca se operó en Puntos Colombia.
+   */
   remove(id: number) {
     const row = invoices.get(id);
     if (!row) return resolved({ outcome: 'NOT_FOUND' });
+    if (row.source === 'UAT_SEED') {
+      invoices.delete(id);
+      return resolved({ outcome: 'DELETED', name: row.name });
+    }
     if (row.status !== 'PENDING' && row.status !== 'FAILED') {
       return resolved({ outcome: 'NOT_DELETABLE' });
     }
@@ -252,6 +259,14 @@ const repository = {
       source: typeof input.source === 'string' ? input.source : undefined,
     });
     row.status = String(input.status);
+    // Datos que el alta manual guarda y que una factura de Siigo no trae.
+    if (typeof input.customerIdentification === 'string') {
+      row.customerIdentification = input.customerIdentification;
+    }
+    if (typeof input.customerDocumentType === 'string') {
+      row.customerDocumentType = input.customerDocumentType;
+    }
+    if (input.invoiceDate instanceof Date) row.invoiceDate = input.invoiceDate;
     return resolved({ ...row, createdBy: users[0], accruals: [] });
   },
   claim(id: number, userId: string, accrual: Record<string, unknown>) {
@@ -934,6 +949,90 @@ try {
   const retried = await puntos.lookupAccount('401401401', '2');
   assert(retried.pointsAmount === 0, 'El reintento con token nuevo debe resolver la consulta.');
   assert(tokenRefreshes === refreshesBefore + 1, 'El 401 debe renovar el token una única vez.');
+
+  // Alta manual de facturas de prueba: es la vía para no depender del seed.
+  const uat = await service.createUat(
+    {
+      name: 'FV-9-801',
+      invoiceDate: '2026-11-04',
+      customerIdentification: '1011237867',
+      documentType: '2',
+      total: '250000.00',
+    },
+    admin,
+  );
+  assert(uat.source === 'UAT_SEED', 'El alta manual debe marcar la factura como de prueba.');
+  assert(uat.status === 'PENDING', 'Una factura de prueba nace pendiente.');
+  assert(uat.points === 250, 'Los puntos deben calcularse con la misma regla de siempre.');
+  assert(uat.siigoInvoiceId === null, 'Una factura de prueba no puede tener UUID de Siigo.');
+  assert(uat.customerDocumentType === '2', 'El tipo de documento debe quedar guardado.');
+  assert(uat.invoiceDate === '2026-11-04', 'La fecha debe guardarse sin desfase de zona.');
+  const duplicates = await rejects(
+    service.createUat(
+      {
+        name: 'FV-9-801',
+        invoiceDate: '2026-11-04',
+        customerIdentification: '1011237867',
+        documentType: '2',
+        total: '250000.00',
+      },
+      admin,
+    ),
+    'No se puede repetir el nombre de una factura.',
+  );
+  assert(
+    businessCode(duplicates) === 'POINTS_INVOICE_DUPLICATE',
+    'El nombre repetido debe rechazarse con su propio código.',
+  );
+  const uatTooSmall = await rejects(
+    service.createUat(
+      {
+        name: 'FV-9-802',
+        invoiceDate: '2026-11-04',
+        customerIdentification: '1011237867',
+        documentType: '2',
+        total: '999.00',
+      },
+      admin,
+    ),
+    'Una factura de prueba por debajo del mínimo no genera puntos.',
+  );
+  assert(
+    businessCode(uatTooSmall) === 'POINTS_INVOICE_TOO_SMALL',
+    'La factura de prueba debe respetar el mínimo de $1.000.',
+  );
+
+  // La factura de prueba se puede eliminar en cualquier estado: existe para ensayar y hay que poder
+  // retirarla al terminar, aunque haya quedado completada o por verificar.
+  const removedUat = await service.remove(uat.id, admin);
+  assert(removedUat.name === 'FV-9-801', 'La factura de prueba debe poder eliminarse.');
+  assert(invoices.get(uat.id) === undefined, 'La factura eliminada no debe quedar en el panel.');
+
+  for (const status of ['COMPLETED', 'UNVERIFIED', 'REVOKED', 'REVOKING'] as const) {
+    const row = newRow({
+      name: `FV-9-${status}`,
+      siigoInvoiceId: null,
+      total: '110000.00',
+      status,
+      source: 'UAT_SEED',
+    });
+    const removal = await service.remove(row.id, admin);
+    assert(
+      removal.name === row.name,
+      `Una factura de prueba en estado ${status} también debe poder eliminarse.`,
+    );
+    assert(invoices.get(row.id) === undefined, `La factura ${status} no debe quedar en el panel.`);
+  }
+
+  // Una factura de Siigo en esos mismos estados sigue protegida.
+  const siigoCompleted = await service.remove(accruedNotDeletable.id, admin).then(
+    () => null,
+    (error: unknown) => error,
+  );
+  assert(
+    siigoCompleted !== null && businessCode(siigoCompleted) === 'POINTS_INVOICE_NOT_DELETABLE',
+    'Una factura real completada no puede eliminarse.',
+  );
 
   console.log('Puntos Colombia: comprobaciones correctas.');
 } finally {

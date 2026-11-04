@@ -1521,6 +1521,53 @@ export const pointsAccountLookupSchema = z.object({
 
 export const pointsAccrualSchema = pointsAccountLookupSchema;
 
+/**
+ * Importe escrito a mano. Se acepta como se teclea en Colombia: `250.000`, `250,50` o `250000`. El
+ * punto se interpreta como separador de miles solo cuando agrupa de tres en tres; en cualquier otro
+ * caso es decimal. Así `1.234.567` y `1234.56` significan lo que parecen.
+ */
+const pointsMoneySchema = z
+  .string()
+  .trim()
+  .min(1, 'Ingresa el total de la factura.')
+  .transform((value) => value.replace(/\s/g, ''))
+  .transform((value) =>
+    /^\d{1,3}(\.\d{3})+$/.test(value) ? value.replace(/\./g, '') : value.replace(',', '.'),
+  )
+  .refine(
+    (value) => /^\d{1,12}(\.\d{1,2})?$/.test(value),
+    'El total solo admite números, con hasta dos decimales.',
+  )
+  .transform((value) => {
+    const [whole, fraction = ''] = value.split('.');
+    return `${whole}.${fraction.padEnd(2, '0')}`;
+  });
+
+/**
+ * Alta manual de una factura de prueba. El nombre no viene de Siigo, así que se escribe a mano; el
+ * resto son los datos que el proveedor necesita para acumular sobre esa factura.
+ */
+export const pointsUatInvoiceSchema = z.object({
+  name: z
+    .string()
+    .trim()
+    .min(1, 'Ingresa el nombre de la factura.')
+    .max(64, 'El nombre de la factura es demasiado largo.')
+    .regex(/^[A-Za-z0-9][A-Za-z0-9-]*$/, 'El nombre solo admite letras, números y guiones.'),
+  invoiceDate: z
+    .string()
+    .trim()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, 'Selecciona la fecha de la factura.'),
+  customerIdentification: z
+    .string()
+    .trim()
+    .min(1, 'Ingresa el número de documento.')
+    .max(32, 'El número de documento es demasiado largo.')
+    .regex(/^\d+$/, 'El número de documento solo admite dígitos.'),
+  documentType: pointsDocumentTypeSchema,
+  total: pointsMoneySchema,
+});
+
 /** Identificador interno de la factura del panel, igual que el resto de módulos. */
 export const pointsInvoiceIdSchema = z.coerce
   .number()
@@ -1551,5 +1598,6 @@ export const pointsInvoiceListQuerySchema = z.object({
 export type PointsInvoiceSearchInput = z.infer<typeof pointsInvoiceSearchSchema>;
 export type PointsAccountLookupInput = z.infer<typeof pointsAccountLookupSchema>;
 export type PointsAccrualInput = z.infer<typeof pointsAccrualSchema>;
+export type PointsUatInvoiceInput = z.infer<typeof pointsUatInvoiceSchema>;
 export type PointsInvoiceListQuery = z.infer<typeof pointsInvoiceListQuerySchema>;
 export type PointsDocumentType = (typeof pointsDocumentTypes)[number]['value'];

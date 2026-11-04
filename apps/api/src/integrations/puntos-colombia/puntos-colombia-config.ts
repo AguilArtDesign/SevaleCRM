@@ -46,3 +46,14 @@ export function puntosColombiaAdminOnly(): boolean {
   // Ausente significa encendido: es la configuración segura mientras se certifica.
   return value !== 'false';
 }
+
+/**
+ * Alta manual de facturas de prueba desde el panel. Es una ayuda de certificación, no una función de
+ * negocio: cuando el CRM apunte al ambiente real del proveedor debe apagarse, para que nadie meta
+ * facturas inventadas en un historial que ya es de producción. Ausente equivale a encendido, igual
+ * que la bandera de administrador, porque hoy el único ambiente conectado es UAT.
+ */
+export function puntosColombiaUatEnabled(): boolean {
+  const value = process.env.PCO_UAT_ENABLED?.trim().toLowerCase();
+  return value !== 'false';
+}

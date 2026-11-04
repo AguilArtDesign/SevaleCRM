@@ -120,20 +120,33 @@ export class PointsInvoicesRepository {
   }
 
   /**
-   * Borra la factura del panel cuando nunca llegó a operarse en Puntos Colombia.
+   * Borra la factura del panel.
    *
-   * La condición va en el `where` y no solo en el servicio: así dos peticiones simultáneas no pueden
-   * borrar una factura que otra acaba de acumular entre la comprobación y el borrado. `PENDING` es
-   * «registrada y sin intentos» y `FAILED` es «se intentó y no acreditó»; los demás estados tienen
-   * puntos en el programa o un intento sin conciliar, y su rastro no se puede perder.
+   * Una factura de prueba (`UAT_SEED`) se puede borrar en cualquier estado: existe para ensayar la
+   * acumulación y hay que poder retirarla cuando el ensayo termina, incluso si quedó completada o por
+   * verificar. Su historial no prueba nada sobre puntos reales.
+   *
+   * Una factura de Siigo solo se borra cuando nunca llegó a operarse en Puntos Colombia. La condición
+   * va en el `where` y no solo en el servicio: así dos peticiones simultáneas no pueden borrar una
+   * factura que otra acaba de acumular entre la comprobación y el borrado. `PENDING` es «registrada y
+   * sin intentos» y `FAILED` es «se intentó y no acreditó»; los demás estados tienen puntos en el
+   * programa o un intento sin conciliar, y su rastro no se puede perder.
    */
   async remove(id: number): Promise<PointsInvoiceRemoval> {
     return this.prisma.$transaction(async (transaction) => {
       const invoice = await transaction.pointsInvoice.findUnique({
         where: { id },
-        select: { id: true, name: true, status: true },
+        select: { id: true, name: true, status: true, source: true },
       });
       if (!invoice) return { outcome: 'NOT_FOUND' };
+
+      // Las de prueba se van con sus intentos: el `onDelete: Cascade` del esquema los arrastra.
+      if (invoice.source === 'UAT_SEED') {
+        const deletedUat = await transaction.pointsInvoice.deleteMany({ where: { id } });
+        if (deletedUat.count !== 1) return { outcome: 'NOT_DELETABLE' };
+        return { outcome: 'DELETED', name: invoice.name };
+      }
+
       if (invoice.status !== 'PENDING' && invoice.status !== 'FAILED') {
         return { outcome: 'NOT_DELETABLE' };
       }

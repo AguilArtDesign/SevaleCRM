@@ -16,11 +16,15 @@ import {
   pointsInvoiceListQuerySchema,
   pointsInvoiceIdSchema,
   pointsInvoiceSearchSchema,
+  pointsUatInvoiceSchema,
 } from '@sevale/validation';
 import type { ZodType } from 'zod';
 import type { AuthenticatedRequest } from '../auth/auth.guard.js';
 import { RequirePermissions } from '../permissions/require-permissions.decorator.js';
-import { puntosColombiaAdminOnly } from '../integrations/puntos-colombia/puntos-colombia-config.js';
+import {
+  puntosColombiaAdminOnly,
+  puntosColombiaUatEnabled,
+} from '../integrations/puntos-colombia/puntos-colombia-config.js';
 import { PointsInvoicesService, type SessionUser } from './points-invoices.service.js';
 
 function parseInput<T>(schema: ZodType<T>, input: unknown): T {
@@ -82,6 +86,26 @@ export class PointsInvoicesController {
   @Post('invoices')
   register(@Body() body: unknown, @Req() request: AuthenticatedRequest) {
     return this.points.register(parseInput(pointsInvoiceSearchSchema, body), this.user(request));
+  }
+
+  /**
+   * Alta manual de una factura de prueba. Se cierra con `PCO_UAT_ENABLED`, además del permiso: cuando
+   * el CRM apunte al ambiente real del proveedor debe desaparecer sin desplegar código.
+   */
+  @Post('invoices/uat')
+  @RequirePermissions('loyalty.uat')
+  createUat(@Body() body: unknown, @Req() request: AuthenticatedRequest) {
+    const user = this.user(request);
+    if (!puntosColombiaUatEnabled()) {
+      throw new ForbiddenException({
+        success: false,
+        error: {
+          code: 'POINTS_UAT_DISABLED',
+          message: 'La creación de facturas de prueba está deshabilitada en este entorno.',
+        },
+      });
+    }
+    return this.points.createUat(parseInput(pointsUatInvoiceSchema, body), user);
   }
 
   @Post('accounts/lookup')
