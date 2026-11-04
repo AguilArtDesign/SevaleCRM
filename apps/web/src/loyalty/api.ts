@@ -146,9 +146,23 @@ export const pointsColombiaApi = {
     apiRequest<PointsInvoiceRecord>(`/api/points-colombia/invoices/${id}/revoke`, {
       method: 'POST',
     }),
-  /** Quita la factura del panel. Solo se permite si nunca se operó en Puntos Colombia. */
+  /**
+   * Quita la factura del panel. Solo se permite si nunca se operó en Puntos Colombia.
+   */
   remove: (id: number) =>
     apiRequest<{ success: true; name: string }>(`/api/points-colombia/invoices/${id}`, {
       method: 'DELETE',
+    }),
+  /** Alta manual de una factura de prueba, para no depender del seed. */
+  createUat: (input: {
+    name: string;
+    invoiceDate: string;
+    customerIdentification: string;
+    documentType: PointsDocumentType;
+    total: string;
+  }) =>
+    apiRequest<PointsInvoiceRecord>('/api/points-colombia/invoices/uat', {
+      method: 'POST',
+      body: JSON.stringify(input),
     }),
 };

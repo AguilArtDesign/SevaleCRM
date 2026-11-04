@@ -5226,6 +5226,12 @@ select {
   max-width: 24rem;
 }
 
+/* El alta de una factura de prueba son cinco campos cortos: en 32rem sobraba media pantalla vacía. */
+.siigo-quotation-modal.points-uat-modal {
+  width: min(24rem, calc(100vw - 2rem));
+  max-width: 24rem;
+}
+
 /* Separadores del modal: sin ellos el encabezado, el cuerpo y el pie se leen como un solo bloque. */
 .siigo-quotation-modal .modal__header {
   padding-bottom: 0.9rem;
@@ -6861,6 +6867,30 @@ select {
   display: flex;
   align-items: center;
   gap: 0.4rem;
+}
+
+/* Los dos botones del encabezado van juntos a la derecha, uno al lado del otro. */
+.points-heading-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* El alta de facturas de prueba no es una acción de negocio como «Agregar factura», así que no
+   compite con el botón principal: lleva el morado de la marca en Puntos Colombia. */
+.points-uat-button {
+  color: oklch(99.11% 0.0015 253.83);
+  background: #5e00cc;
+}
+
+.points-uat-button:hover,
+.points-uat-button[data-hovered='true'] {
+  background: color-mix(in srgb, #5e00cc 85%, white);
+}
+
+.points-uat-button:active,
+.points-uat-button[data-pressed='true'] {
+  background: color-mix(in srgb, #5e00cc 85%, black);
 }
 
 /* Misma altura y pie que las demás tablas del CRM: el listado se lee igual que Clientes o Pedidos. */

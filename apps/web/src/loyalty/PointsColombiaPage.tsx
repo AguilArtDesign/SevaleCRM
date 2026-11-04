@@ -31,6 +31,7 @@ import {
 import { pointsDocumentTypes, type PointsDocumentType } from '@sevale/validation';
 import { hasPermission } from '@sevale/permissions';
 import { Chip } from '../components/Chip';
+import { Input } from '../components/Input';
 import { getPaginationItems, Pagination } from '../components/Pagination';
 import { Select } from '../components/Select';
 import { formattedMoneyWithCode } from '../orders/presentation';
@@ -68,6 +69,8 @@ export function PointsColombiaPage() {
   const canRevokePoints = Boolean(user && hasPermission(user.role, 'loyalty.revoke'));
   // Quitar una factura borra el registro y su historial: permiso propio, no el de acumular.
   const canDeletePoints = Boolean(user && hasPermission(user.role, 'loyalty.delete'));
+  // Crear facturas de prueba es una ayuda de certificación, separada de operar el panel.
+  const canCreateUat = Boolean(user && hasPermission(user.role, 'loyalty.uat'));
   // El vendedor solo lo usa la administración: un comercial opera sus propias facturas y la columna
   // le repetiría su propio nombre en todas las filas.
   const isAdmin = user?.role === 'ADMIN';
@@ -78,6 +81,7 @@ export function PointsColombiaPage() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [uatOpen, setUatOpen] = useState(false);
   const [accrualTarget, setAccrualTarget] = useState<PointsInvoiceRecord | null>(null);
   const [revokeTarget, setRevokeTarget] = useState<PointsInvoiceRecord | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<PointsInvoiceRecord | null>(null);
@@ -132,10 +136,21 @@ export function PointsColombiaPage() {
           <h2>Puntos Colombia</h2>
           <Chip>{result?.pagination.total ?? 0}</Chip>
         </div>
-        <Button variant="primary" onPress={() => setSearchOpen(true)}>
-          <FileText width={16} height={16} />
-          Agregar factura
-        </Button>
+        <div className="points-heading-actions">
+          {/* Va primero porque es la ayuda de ensayo, la que se usa mientras se certifica; y aparte
+              del botón principal porque no es una función de negocio. Se cierra con
+              `PCO_UAT_ENABLED`. */}
+          {canCreateUat && (
+            <Button className="points-uat-button" onPress={() => setUatOpen(true)}>
+              <FileText width={16} height={16} />
+              Factura UAT
+            </Button>
+          )}
+          <Button variant="primary" onPress={() => setSearchOpen(true)}>
+            <FileText width={16} height={16} />
+            Agregar factura
+          </Button>
+        </div>
       </header>
 
       <div className="customers-toolbar">
@@ -549,6 +564,17 @@ export function PointsColombiaPage() {
         }}
       />
 
+      {canCreateUat && (
+        <UatInvoiceModal
+          isOpen={uatOpen}
+          onClose={() => setUatOpen(false)}
+          onCreated={() => {
+            setUatOpen(false);
+            void refresh();
+          }}
+        />
+      )}
+
       <InvoiceDetailModal invoice={detailTarget} onClose={() => setDetailTarget(null)} />
 
       <AccrualModal
@@ -769,6 +795,136 @@ const revocationLabels: Record<string, string> = {
   UNVERIFIED: 'Por verificar',
 };
 
+/** Borrador del alta manual: todo texto, porque es lo que se teclea en el formulario. */
+type UatDraft = {
+  name: string;
+  invoiceDate: string;
+  customerIdentification: string;
+  documentType: PointsDocumentType | null;
+  total: string;
+};
+
+function emptyUatDraft(): UatDraft {
+  return {
+    name: '',
+    invoiceDate: '',
+    customerIdentification: '',
+    documentType: null,
+    total: '',
+  };
+}
+
+/** Solo los importes con al menos un dígito pueden enviarse; el backend valida el resto. */
+function uatComplete(draft: UatDraft): boolean {
+  return (
+    draft.name.trim() !== '' &&
+    /^\d{4}-\d{2}-\d{2}$/.test(draft.invoiceDate) &&
+    draft.customerIdentification.trim() !== '' &&
+    draft.documentType !== null &&
+    /\d/.test(draft.total)
+  );
+}
+
+function uatPayload(draft: UatDraft) {
+  return {
+    name: draft.name.trim(),
+    invoiceDate: draft.invoiceDate,
+    customerIdentification: draft.customerIdentification.trim(),
+    documentType: draft.documentType as PointsDocumentType,
+    // Se envía tal cual se escribió: el backend acepta tanto `250.000` como `250000`.
+    total: draft.total.trim(),
+  };
+}
+
+/**
+ * Datos de una factura de prueba. No pide líneas de producto porque el proveedor no las necesita
+ * para acumular y el panel solo las muestra como referencia.
+ */
+function UatInvoiceFields({
+  value,
+  onChange,
+}: {
+  value: UatDraft;
+  onChange: (next: UatDraft) => void;
+}) {
+  const set = <K extends keyof UatDraft>(key: K, next: UatDraft[K]) =>
+    onChange({ ...value, [key]: next });
+
+  return (
+    <>
+      <div className="customer-field">
+        <Label>Nombre de la factura</Label>
+        <Input
+          variant="secondary"
+          aria-label="Nombre de la factura"
+          placeholder="FV-1-001"
+          value={value.name}
+          onChange={(event) => set('name', event.target.value.toUpperCase())}
+        />
+        <Description>Como se buscará en el panel. Solo letras, números y guiones.</Description>
+      </div>
+      <div className="customer-field">
+        <Label>Fecha de la factura</Label>
+        <Input
+          type="date"
+          variant="secondary"
+          aria-label="Fecha de la factura"
+          value={value.invoiceDate}
+          onChange={(event) => set('invoiceDate', event.target.value)}
+        />
+      </div>
+      <div className="customer-field">
+        <Label>Número de documento</Label>
+        <Input
+          variant="secondary"
+          aria-label="Número de documento"
+          placeholder="1011237867"
+          inputMode="numeric"
+          value={value.customerIdentification}
+          onChange={(event) => set('customerIdentification', event.target.value)}
+        />
+      </div>
+      <div className="customer-field">
+        <Label>Tipo de documento</Label>
+        <Select
+          aria-label="Tipo de documento"
+          placeholder="Seleccionar tipo"
+          value={value.documentType ?? ''}
+          variant="secondary"
+          onChange={(selected) => set('documentType', String(selected) as PointsDocumentType)}
+        >
+          <Select.Trigger>
+            <Select.Value />
+            <Select.Indicator />
+          </Select.Trigger>
+          <Select.Popover>
+            <ListBox>
+              {pointsDocumentTypes.map((option) => (
+                <ListBox.Item key={option.value} id={option.value} textValue={option.label}>
+                  {option.label}
+                  <ListBox.ItemIndicator />
+                </ListBox.Item>
+              ))}
+            </ListBox>
+          </Select.Popover>
+        </Select>
+      </div>
+      <div className="customer-field">
+        <Label>Total COP</Label>
+        <Input
+          variant="secondary"
+          aria-label="Total de la factura en pesos"
+          placeholder="110000"
+          inputMode="numeric"
+          value={value.total}
+          onChange={(event) => set('total', event.target.value)}
+        />
+        <Description>Los puntos se calculan al guardar: uno por cada $1.000.</Description>
+      </div>
+    </>
+  );
+}
+
 /**
  * Busca la factura en Siigo. El operador solo escribe el número: el prefijo lo pone el backend desde
  * su usuario, así que desde aquí no se puede pedir la factura de otro vendedor.
@@ -821,7 +977,7 @@ function InvoiceSearchModal({
             <Modal.CloseTrigger aria-label="Cerrar búsqueda" />
             <Modal.Header>
               <div>
-                <Modal.Heading>Buscar factura</Modal.Heading>
+                <Modal.Heading>Agregar factura</Modal.Heading>
                 <p className="siigo-quotation-subtitle">
                   Consulta la factura en Siigo antes de agregarla al panel
                 </p>
@@ -938,6 +1094,85 @@ function InvoiceSearchModal({
                 onPress={() => registerMutation.mutate()}
               >
                 Usar factura
+              </Button>
+            </Modal.Footer>
+          </Modal.Dialog>
+        </Modal.Container>
+      </Modal.Backdrop>
+    </Modal>
+  );
+}
+
+/**
+ * Alta manual de una factura de prueba. Siigo no tiene cargadas las facturas con las que el
+ * proveedor ensaya, así que crearlas aquí evita sembrarlas por código. Vive en su propio modal y no
+ * como una pestaña del buscador: son dos operaciones distintas, una de negocio y una de ensayo.
+ */
+function UatInvoiceModal({
+  isOpen,
+  onClose,
+  onCreated,
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  onCreated: () => void;
+}) {
+  const [draft, setDraft] = useState<UatDraft>(emptyUatDraft);
+  const [error, setError] = useState('');
+
+  const createMutation = useMutation({
+    mutationFn: () => pointsColombiaApi.createUat(uatPayload(draft)),
+    onSuccess: () => {
+      setDraft(emptyUatDraft());
+      setError('');
+      createMutation.reset();
+      onCreated();
+    },
+    onError: (failure: Error) => setError(failure.message),
+  });
+
+  const close = () => {
+    setDraft(emptyUatDraft());
+    setError('');
+    createMutation.reset();
+    onClose();
+  };
+
+  return (
+    <Modal isOpen={isOpen} onOpenChange={(open) => !open && close()}>
+      <Modal.Backdrop>
+        <Modal.Container placement="center">
+          <Modal.Dialog className="siigo-quotation-modal points-uat-modal">
+            <Modal.CloseTrigger aria-label="Cerrar factura UAT" />
+            <Modal.Header>
+              <div>
+                <Modal.Heading>Factura UAT</Modal.Heading>
+                <p className="siigo-quotation-subtitle">
+                  Factura de prueba: queda pendiente y marcada como UAT
+                </p>
+              </div>
+            </Modal.Header>
+            <Modal.Body>
+              {error && (
+                <Alert status="danger">
+                  <Alert.Content>
+                    <Alert.Description>{error}</Alert.Description>
+                  </Alert.Content>
+                </Alert>
+              )}
+              <UatInvoiceFields value={draft} onChange={setDraft} />
+            </Modal.Body>
+            <Modal.Footer>
+              <Button variant="tertiary" onPress={close}>
+                Cancelar
+              </Button>
+              <Button
+                className="points-uat-button"
+                isPending={createMutation.isPending}
+                isDisabled={!uatComplete(draft)}
+                onPress={() => createMutation.mutate()}
+              >
+                Agregar factura UAT
               </Button>
             </Modal.Footer>
           </Modal.Dialog>
@@ -1158,12 +1393,16 @@ function AccrualModal({
                   <Button
                     variant="primary"
                     isPending={accrueMutation.isPending}
-                    isDisabled={!canSubmit}
+                    isDisabled={!canSubmit || accrueMutation.isPending}
                     onPress={() => {
                       const request = lookupRequest();
                       if (request) accrueMutation.mutate(request);
                     }}
                   >
+                    {/* HeroUI no dibuja nada con `isPending`, así que el indicador se arma aquí,
+                        igual que en el resto de modales del CRM. Sin él la petición tarda varios
+                        segundos y el botón parece no responder. */}
+                    {accrueMutation.isPending && <Spinner color="current" size="sm" />}
                     Acumular puntos
                   </Button>{' '}
                 </>
@@ -1272,9 +1511,14 @@ function RevokeModal({
               <Button
                 variant="danger"
                 isPending={revokeMutation.isPending}
+                isDisabled={revokeMutation.isPending}
                 onPress={() => revokeMutation.mutate()}
               >
-                <ArrowRotateLeft width={16} height={16} />
+                {revokeMutation.isPending ? (
+                  <Spinner color="current" size="sm" />
+                ) : (
+                  <ArrowRotateLeft width={16} height={16} />
+                )}
                 Revocar puntos
               </Button>
             </Modal.Footer>
@@ -1336,8 +1580,9 @@ function DeleteInvoiceModal({
               <Alert status="warning">
                 <Alert.Content>
                   <Alert.Description>
-                    La factura se quitará del panel con su historial. Si la vuelves a necesitar,
-                    tendrás que agregarla otra vez desde Siigo.
+                    {invoice.source === 'UAT_SEED'
+                      ? 'La factura de prueba se quitará del panel con su historial. Si la vuelves a necesitar, puedes crearla otra vez desde el formulario.'
+                      : 'La factura se quitará del panel con su historial. Si la vuelves a necesitar, tendrás que agregarla otra vez desde Siigo.'}
                   </Alert.Description>
                 </Alert.Content>
               </Alert>
@@ -1349,9 +1594,14 @@ function DeleteInvoiceModal({
               <Button
                 variant="danger"
                 isPending={deleteMutation.isPending}
+                isDisabled={deleteMutation.isPending}
                 onPress={() => deleteMutation.mutate()}
               >
-                <TrashBin width={16} height={16} />
+                {deleteMutation.isPending ? (
+                  <Spinner color="current" size="sm" />
+                ) : (
+                  <TrashBin width={16} height={16} />
+                )}
                 Eliminar
               </Button>
             </Modal.Footer>

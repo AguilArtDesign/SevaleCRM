@@ -358,9 +358,18 @@ PCO_REMOTE_IPV4=
 PCO_TERMINAL_ID=PCAliados-01
 PCO_CASHIER_ID=Yohander-01
 PCO_ADMIN_ONLY=true
+PCO_UAT_ENABLED=true
 ```
 
-`PCO_CLIENT_ID` y `PCO_CLIENT_SECRET` son secretos y viven solo en el servidor. La tokenización envía el secreto en la URL, así que `integration-http` la registra como confidencial: guarda el origen y la ruta en `integration_logs`, nunca la cadena de consulta ni el cuerpo de la respuesta, que contiene el token. `PCO_REMOTE_IPV4` es informativo y `PCO_ADMIN_ONLY` ausente equivale a `true`.
+`PCO_CLIENT_ID` y `PCO_CLIENT_SECRET` son secretos y viven solo en el servidor. La tokenización envía el secreto en la URL, así que `integration-http` la registra como confidencial: guarda el origen y la ruta en `integration_logs`, nunca la cadena de consulta ni el cuerpo de la respuesta, que contiene el token. `PCO_REMOTE_IPV4` es informativo. `PCO_ADMIN_ONLY` y `PCO_UAT_ENABLED` ausentes equivalen a `true`.
+
+### Facturas de prueba
+
+En UAT no hay facturas de Siigo con los datos que el proveedor tiene cargados, así que el panel permite crearlas a mano: **Agregar factura → Factura de prueba**. El botón **Factura UAT**, junto a _Agregar factura_, abre un formulario propio que pide nombre, fecha, documento del cliente, tipo de documento y total; los puntos se calculan al guardar con la misma regla de siempre y la factura nace `PENDING` con el chip `UAT`.
+
+Los puntos se pueden escribir con separador de miles (`250.000`), coma decimal (`250,50`) o el número limpio (`250000`).
+
+Estas facturas nunca se confunden con una real: se guardan como `UAT_SEED` y sin `siigoInvoiceId`. Se pueden eliminar en **cualquier estado** —también completadas o por verificar—, porque existen para ensayar y hay que poder retirarlas al terminar; una factura real solo se borra mientras siga pendiente o fallida y sin intentos acreditados. La creación exige el permiso `loyalty.uat` y se cierra con `PCO_UAT_ENABLED=false`, que es el valor que trae `.env.production.example`: cuando el CRM apunte al ambiente real del proveedor nadie debe poder meter facturas inventadas en un historial de producción.
 
 ### Ensayo en UAT
 
@@ -421,8 +430,7 @@ npm run test:prospects:import
 npm run test:n8n
 npm run test:realtime
 npm run test:notifications
-npm run test:points-colombia
-npm run test:security
+npm run test:points-colombianpm run test:security
 npm run test:exposure
 npm run test:smoke
 npm run check:release

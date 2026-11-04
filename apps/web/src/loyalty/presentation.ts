@@ -31,12 +31,18 @@ export function canRevoke(invoice: PointsInvoiceRecord) {
 }
 
 /**
- * Quitar la factura del panel solo mientras no se haya operado en Puntos Colombia. Es el caso del
- * registro equivocado: si no se borra, la tabla acumula facturas que nadie va a usar. Las que ya
- * tienen puntos —acreditados o devueltos— o un intento sin conciliar conservan su rastro y no se
- * tocan. La regla se repite en el backend, que es quien la aplica.
+ * Quitar la factura del panel.
+ *
+ * Una de prueba se puede quitar siempre: existe para ensayar la acumulación y hay que poder retirarla
+ * al terminar el ensayo, incluso si quedó completada o por verificar.
+ *
+ * Una de Siigo solo mientras no se haya operado en Puntos Colombia. Es el caso del registro
+ * equivocado: si no se borra, la tabla acumula facturas que nadie va a usar. Las que ya tienen
+ * puntos —acreditados o devueltos— o un intento sin conciliar conservan su rastro y no se tocan. La
+ * regla se repite en el backend, que es quien la aplica.
  */
 export function canDelete(invoice: PointsInvoiceRecord) {
+  if (invoice.source === 'UAT_SEED') return true;
   if (invoice.status !== 'PENDING' && invoice.status !== 'FAILED') return false;
   const accrual = invoice.accrual?.status;
   return accrual !== 'COMPLETED' && accrual !== 'PROCESSING' && accrual !== 'UNVERIFIED';
