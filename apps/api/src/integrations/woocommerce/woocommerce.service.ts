@@ -121,15 +121,21 @@ export type WooCommerceOrderUpdatePayload = {
   set_paid?: true;
   billing: Record<string, string>;
   shipping: Record<string, string>;
-  line_items: Array<{
-    // Presente cuando la línea ya existe en la tienda; ausente cuando es un producto nuevo.
-    id?: number;
-    product_id?: number;
-    variation_id?: number;
-    quantity: number;
-    subtotal: string;
-    total: string;
-  }>;
+  /**
+   * Líneas del pedido. Las de producto llevan `id` cuando ya existen en la tienda y `product_id`
+   * cuando son nuevas; las que solo llevan `id` y `quantity: 0` se borran.
+   */
+  line_items: Array<
+    | {
+        id?: number;
+        product_id?: number;
+        variation_id?: number;
+        quantity: number;
+        subtotal: string;
+        total: string;
+      }
+    | { id: number; quantity: 0 }
+  >;
   shipping_lines?: Array<{
     // Presente cuando el envío ya existe en la tienda: reemplaza su importe en vez de duplicarlo.
     id?: number;

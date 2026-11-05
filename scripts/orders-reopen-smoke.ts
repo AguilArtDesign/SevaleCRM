@@ -67,13 +67,37 @@ async function handleWooRequest(request: IncomingMessage, response: ServerRespon
     const payload = await body(request);
     updates.push(payload);
     order.status = typeof payload.status === 'string' ? payload.status : order.status;
-    // WooCommerce reemplaza las líneas por las que llegan: las que no vienen se eliminan.
+    /**
+     * WooCommerce real: recorre las líneas que llegan y, para cada una, borra (quantity 0), actualiza
+     * (trae `id`) o agrega (trae `product_id`). Lo que no llega no se toca. Reemplazar el arreglo
+     * entero, como hacía antes este mock, escondía justo el fallo de las líneas que quedaban vivas.
+     */
     if (Array.isArray(payload.line_items)) {
-      order.line_items = (payload.line_items as Array<Record<string, unknown>>).map((line) => ({
-        ...line,
-        id: typeof line.id === 'number' ? line.id : 9000 + sequence++,
-        quantity: line.quantity ?? 1,
-      }));
+      for (const incoming of payload.line_items as Array<Record<string, unknown>>) {
+        const lineId = typeof incoming.id === 'number' ? incoming.id : null;
+        if (lineId !== null && incoming.quantity === 0) {
+          const index = order.line_items.findIndex((line) => line.id === lineId);
+          if (index < 0) return json(response, 400, { code: 'woocommerce_rest_invalid_item_id' });
+          order.line_items.splice(index, 1);
+          continue;
+        }
+        if (lineId !== null) {
+          const index = order.line_items.findIndex((line) => line.id === lineId);
+          if (index < 0) return json(response, 400, { code: 'woocommerce_rest_invalid_item_id' });
+          order.line_items[index] = {
+            ...order.line_items[index],
+            ...incoming,
+            id: lineId,
+            quantity: incoming.quantity ?? 1,
+          };
+          continue;
+        }
+        order.line_items.push({
+          ...incoming,
+          id: 9000 + sequence++,
+          quantity: incoming.quantity ?? 1,
+        });
+      }
     }
     if (Array.isArray(payload.shipping_lines)) {
       order.shipping_lines = (payload.shipping_lines as Array<Record<string, unknown>>).map(
@@ -297,6 +321,21 @@ try {
     `El alta debía cobrar 12000.00 de envío, cobró ${String(createdInWoo.shipping_lines[0]?.total)}.`,
   );
 
+  /**
+   * Alguien agrega una línea en WooCommerce que el CRM no tiene. Al completar hay que borrarla: si
+   * el PUT la omite, WooCommerce la deja viva y el pedido acaba con los productos viejos y los
+   * nuevos. Es lo que pasó en producción con un pedido reabierto al que le cambiaron las referencias.
+   */
+  const orphanLineId = 8888;
+  createdInWoo.line_items.push({
+    id: orphanLineId,
+    product_id: 999,
+    variation_id: 0,
+    quantity: 1,
+    subtotal: '50000.00',
+    total: '50000.00',
+  });
+
   // La tienda cierra el pedido por un pago abandonado: así llega al CRM. Se reproduce el estado que
   // deja el webhook de WooCommerce para no depender de la firma del webhook en esta prueba.
   await prisma.orderOperation.update({
@@ -456,7 +495,8 @@ try {
   );
   assert(sent.set_paid === true, 'El PUT debía marcar el pedido como pagado.');
   const lines = sent.line_items as Array<Record<string, unknown>>;
-  assert(lines.length === 2, `El PUT debía enviar dos líneas, envió ${lines.length}.`);
+  // Dos productos y el borrado de la línea que sobraba.
+  assert(lines.length === 3, `El PUT debía enviar tres entradas, envió ${lines.length}.`);
   const matched = lines.find((line) => line.id !== undefined);
   assert(
     matched?.id === existingLineId,
@@ -469,6 +509,32 @@ try {
     `La línea nueva debía viajar con product_id ${String(third.wooVariationId)}.`,
   );
   assert(!(added && 'variation_id' in added), 'Un producto simple no debe enviar variation_id.');
+
+  /**
+   * Y la línea que la tienda tenía de más viaja para borrarse. Sin esto el pedido se queda con las
+   * referencias viejas: WooCommerce solo toca las líneas que llegan en el arreglo.
+   */
+  const removed = lines.find((line) => line.id === orphanLineId);
+  assert(removed, `El PUT debía incluir el borrado de la línea ${orphanLineId}.`);
+  assert(
+    removed?.quantity === 0,
+    `El borrado debía viajar con quantity 0, envió ${String(removed?.quantity)}.`,
+  );
+  assert(
+    !('product_id' in removed) && !('subtotal' in removed),
+    'Una línea de borrado solo lleva su id y la cantidad en cero.',
+  );
+
+  // La tienda queda con las líneas que el CRM tiene, ni una más.
+  const storeLineCount: number = createdInWoo.line_items.length;
+  assert(
+    storeLineCount === 2,
+    `La tienda debía quedar con dos líneas, quedó con ${storeLineCount}.`,
+  );
+  assert(
+    !createdInWoo.line_items.some((line) => line.id === orphanLineId),
+    'La línea que sobraba debía haberse borrado en la tienda.',
+  );
 
   /**
    * El envío también se reemplaza. Si el pedido venía cobrando envío y el comercial lo pasó a gratis

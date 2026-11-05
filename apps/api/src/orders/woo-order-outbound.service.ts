@@ -224,8 +224,8 @@ function shippingLinesFor(
  *
  * Las líneas se emparejan por producto y variación contra lo que hoy tiene el pedido en WooCommerce,
  * consumiendo cada línea de la tienda una sola vez: dos líneas del CRM del mismo producto no pueden
- * apuntar al mismo `id`. Las líneas de la tienda que no aparezcan en el arreglo las elimina
- * WooCommerce, que es lo que se espera cuando el comercial quita un producto.
+ * apuntar al mismo `id`. Lo que la tienda tiene y el CRM ya no, se borra explícitamente: WooCommerce
+ * no toca las líneas que no llegan en el arreglo.
  */
 function reopenedOrderPayload(
   order: OutboundOrder,
@@ -240,18 +240,30 @@ function reopenedOrderPayload(
     else available.set(key, [line.id]);
   }
 
-  const lineItems = resolvedLines(order).map((line) => {
-    const candidates = available.get(lineKey(line.productId, line.variationId));
-    const existingId = candidates?.shift();
-    const amounts = { quantity: line.quantity, subtotal: line.subtotal, total: line.total };
-    return existingId === undefined
-      ? {
-          product_id: line.productId,
-          ...(line.variationId === null ? {} : { variation_id: line.variationId }),
-          ...amounts,
-        }
-      : { id: existingId, ...amounts };
-  });
+  const lineItems: WooCommerceOrderUpdatePayload['line_items'] = resolvedLines(order).map(
+    (line) => {
+      const candidates = available.get(lineKey(line.productId, line.variationId));
+      const existingId = candidates?.shift();
+      const amounts = { quantity: line.quantity, subtotal: line.subtotal, total: line.total };
+      return existingId === undefined
+        ? {
+            product_id: line.productId,
+            ...(line.variationId === null ? {} : { variation_id: line.variationId }),
+            ...amounts,
+          }
+        : { id: existingId, ...amounts };
+    },
+  );
+
+  /**
+   * Lo que quedó sin consumir es lo que el CRM ya no tiene. Va con `quantity: 0`, que es la única
+   * forma de borrar una línea: omitirla no sirve, porque WooCommerce actualiza las que llegan y deja
+   * intactas las demás. Así, quitar un producto en el CRM lo quita del pedido en la tienda en vez de
+   * dejar los productos viejos y los nuevos a la vez.
+   */
+  for (const id of [...available.values()].flat()) {
+    lineItems.push({ id, quantity: 0 });
+  }
 
   const shippingLines = shippingLinesFor(order, snapshot);
   const phoneCountry = operation.billingCountry ?? operation.customer.country;
