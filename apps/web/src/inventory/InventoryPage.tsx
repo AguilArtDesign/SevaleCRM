@@ -913,7 +913,7 @@ export function InventoryPage() {
                   </p>
                 </AlertDialog.Body>
                 <AlertDialog.Footer>
-                  <Button variant="secondary" onPress={() => setBulkDeleteOpen(false)}>
+                  <Button variant="tertiary" onPress={() => setBulkDeleteOpen(false)}>
                     Cancelar
                   </Button>
                   <Button
@@ -953,7 +953,7 @@ export function InventoryPage() {
               </AlertDialog.Body>
               <AlertDialog.Footer>
                 <Button
-                  variant="secondary"
+                  variant="tertiary"
                   isDisabled={deleteProduct.isPending}
                   onPress={() => setDeleteTarget(null)}
                 >

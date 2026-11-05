@@ -1117,7 +1117,7 @@ export function OrderForm({
                             <div className="order-billing-actions">
                               <Button
                                 type="button"
-                                variant="danger-soft"
+                                variant="tertiary"
                                 onPress={cancelBillingEditor}
                               >
                                 Cancelar
@@ -1531,7 +1531,7 @@ export function OrderForm({
                 </section>
               </Modal.Body>
               <Modal.Footer>
-                <Button variant="ghost" onPress={onClose} isDisabled={isSubmitting}>
+                <Button variant="tertiary" onPress={onClose} isDisabled={isSubmitting}>
                   Cancelar
                 </Button>
                 <Button type="submit" variant="primary" isPending={isSubmitting}>

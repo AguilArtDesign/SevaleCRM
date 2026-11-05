@@ -447,7 +447,11 @@ export function AgreementTasks({
               </div>
             </Modal.Body>
             <Modal.Footer>
-              <Button variant="ghost" isDisabled={isSubmitting} onPress={() => setFormOpen(false)}>
+              <Button
+                variant="tertiary"
+                isDisabled={isSubmitting}
+                onPress={() => setFormOpen(false)}
+              >
                 Cancelar
               </Button>
               <Button variant="primary" isPending={isSubmitting} onPress={() => void submit()}>
@@ -482,7 +486,7 @@ export function AgreementTasks({
               </AlertDialog.Body>
               <AlertDialog.Footer>
                 <Button
-                  variant="ghost"
+                  variant="tertiary"
                   isDisabled={isDeleting}
                   onPress={() => setDeleteTarget(null)}
                 >

@@ -1254,7 +1254,7 @@ export function CustomersPage() {
                 </AlertDialog.Body>
                 <AlertDialog.Footer>
                   <Button
-                    variant="secondary"
+                    variant="tertiary"
                     isDisabled={deleteCustomer.isPending}
                     onPress={() => setDeleteTarget(null)}
                   >

@@ -313,7 +313,7 @@ export function LinkProductModal({
             </Modal.Body>
 
             <Modal.Footer>
-              <Button variant="secondary" onPress={() => changeOpen(false)}>
+              <Button variant="tertiary" onPress={() => changeOpen(false)}>
                 Cancelar
               </Button>
               <Button

@@ -752,7 +752,7 @@ export function ProspectForm({
               </section>
             </Modal.Body>
             <Modal.Footer>
-              <Button variant="ghost" isDisabled={isSubmitting} onPress={onClose}>
+              <Button variant="tertiary" isDisabled={isSubmitting} onPress={onClose}>
                 Cancelar
               </Button>
               <Button type="submit" variant="primary" isPending={isSubmitting}>

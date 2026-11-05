@@ -944,7 +944,7 @@ export function CouponsPage() {
                   </TextField>
                 </Modal.Body>
                 <Modal.Footer>
-                  <Button variant="ghost" onPress={closeForm} isDisabled={isSubmitting}>
+                  <Button variant="tertiary" onPress={closeForm} isDisabled={isSubmitting}>
                     Cancelar
                   </Button>
                   <Button type="submit" variant="primary" isPending={isSubmitting}>
@@ -1023,7 +1023,7 @@ export function CouponsPage() {
               </AlertDialog.Body>
               <AlertDialog.Footer>
                 <Button
-                  variant="ghost"
+                  variant="tertiary"
                   onPress={() => setDeleteTarget(null)}
                   isDisabled={busyId !== null}
                 >

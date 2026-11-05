@@ -239,7 +239,7 @@ export function AgreementComments({
               </AlertDialog.Body>
               <AlertDialog.Footer>
                 <Button
-                  variant="ghost"
+                  variant="tertiary"
                   isDisabled={isDeleting}
                   onPress={() => setDeleteTarget(null)}
                 >
@@ -281,7 +281,11 @@ export function AgreementComments({
                 </p>
               </AlertDialog.Body>
               <AlertDialog.Footer>
-                <Button variant="ghost" isDisabled={isClearing} onPress={() => setClearOpen(false)}>
+                <Button
+                  variant="tertiary"
+                  isDisabled={isClearing}
+                  onPress={() => setClearOpen(false)}
+                >
                   Cancelar
                 </Button>
                 <Button

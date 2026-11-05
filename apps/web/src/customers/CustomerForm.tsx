@@ -1019,7 +1019,7 @@ export function CustomerForm({
                 </section>
               </Modal.Body>
               <Modal.Footer>
-                <Button variant="ghost" onPress={onClose} isDisabled={isSubmitting}>
+                <Button variant="tertiary" onPress={onClose} isDisabled={isSubmitting}>
                   Cancelar
                 </Button>
                 <Button

@@ -1121,7 +1121,7 @@ export function OrdersPage() {
               </AlertDialog.Body>
               <AlertDialog.Footer>
                 <Button
-                  variant="ghost"
+                  variant="tertiary"
                   onPress={() => setCompleteTarget(null)}
                   isDisabled={completeOrder.isPending}
                 >
@@ -1160,7 +1160,7 @@ export function OrdersPage() {
               </AlertDialog.Body>
               <AlertDialog.Footer>
                 <Button
-                  variant="ghost"
+                  variant="tertiary"
                   onPress={() => setDeleteTarget(null)}
                   isDisabled={deleteOrder.isPending}
                 >

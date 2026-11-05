@@ -196,7 +196,7 @@ export function ProductImportModal({
             </Modal.Body>
 
             <Modal.Footer>
-              <Button variant="secondary" isDisabled={isBusy} onPress={() => changeOpen(false)}>
+              <Button variant="tertiary" isDisabled={isBusy} onPress={() => changeOpen(false)}>
                 Cancelar
               </Button>
               <Button

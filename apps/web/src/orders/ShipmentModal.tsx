@@ -100,7 +100,7 @@ export function ShipmentModal({
                 </div>
               </Modal.Body>
               <Modal.Footer>
-                <Button variant="ghost" onPress={onClose} isDisabled={isSubmitting}>
+                <Button variant="tertiary" onPress={onClose} isDisabled={isSubmitting}>
                   Cancelar
                 </Button>
                 <Button type="submit" variant="primary" isPending={isSubmitting}>

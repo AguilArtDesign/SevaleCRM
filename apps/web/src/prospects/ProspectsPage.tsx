@@ -1050,7 +1050,7 @@ export function ProspectsPage() {
                 </AlertDialog.Body>
                 <AlertDialog.Footer>
                   <Button
-                    variant="secondary"
+                    variant="tertiary"
                     isDisabled={deleteProspect.isPending}
                     onPress={() => setDeleteTarget(null)}
                   >
