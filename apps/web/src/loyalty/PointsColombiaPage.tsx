@@ -2,8 +2,11 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Alert,
+  AlertDialog,
   Button,
+  Calendar,
   DateField,
+  DatePicker,
   DateRangePicker,
   Description,
   Dropdown,
@@ -17,7 +20,7 @@ import {
   Spinner,
   Table,
 } from '@heroui/react';
-import type { CalendarDate } from '@internationalized/date';
+import { parseDate, type CalendarDate } from '@internationalized/date';
 import {
   ArrowRotateLeft,
   EllipsisVertical,
@@ -825,6 +828,15 @@ function uatComplete(draft: UatDraft): boolean {
   );
 }
 
+/**
+ * El calendario trabaja con un `CalendarDate`, no con texto. El borrador guarda `YYYY-MM-DD` porque
+ * es lo que viaja al backend, así que se convierte en los dos sentidos.
+ */
+function dateValue(value: string): CalendarDate | null {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+  return parseDate(value);
+}
+
 function uatPayload(draft: UatDraft) {
   return {
     name: draft.name.trim(),
@@ -861,18 +873,46 @@ function UatInvoiceFields({
           value={value.name}
           onChange={(event) => set('name', event.target.value.toUpperCase())}
         />
-        <Description>Como se buscará en el panel. Solo letras, números y guiones.</Description>
       </div>
-      <div className="customer-field">
+      <DatePicker
+        value={dateValue(value.invoiceDate)}
+        onChange={(date) => set('invoiceDate', date ? date.toString() : '')}
+      >
         <Label>Fecha de la factura</Label>
-        <Input
-          type="date"
-          variant="secondary"
-          aria-label="Fecha de la factura"
-          value={value.invoiceDate}
-          onChange={(event) => set('invoiceDate', event.target.value)}
-        />
-      </div>
+        <DateField.Group fullWidth variant="secondary">
+          <DateField.Input>{(segment) => <DateField.Segment segment={segment} />}</DateField.Input>
+          <DateField.Suffix>
+            {/* El disparador va dentro del grupo, como en el resto del CRM: el botón envuelve los
+                campos y el foco se queda en los segmentos. */}
+            <DatePicker.Trigger>
+              <DatePicker.TriggerIndicator />
+            </DatePicker.Trigger>
+          </DateField.Suffix>
+        </DateField.Group>
+        <DatePicker.Popover>
+          <Calendar aria-label="Fecha de la factura">
+            <Calendar.Header>
+              <Calendar.YearPickerTrigger>
+                <Calendar.YearPickerTriggerHeading />
+                <Calendar.YearPickerTriggerIndicator />
+              </Calendar.YearPickerTrigger>
+              <Calendar.NavButton slot="previous" />
+              <Calendar.NavButton slot="next" />
+            </Calendar.Header>
+            <Calendar.Grid>
+              <Calendar.GridHeader>
+                {(day) => <Calendar.HeaderCell>{day}</Calendar.HeaderCell>}
+              </Calendar.GridHeader>
+              <Calendar.GridBody>{(date) => <Calendar.Cell date={date} />}</Calendar.GridBody>
+            </Calendar.Grid>
+            <Calendar.YearPickerGrid>
+              <Calendar.YearPickerGridBody>
+                {({ year }) => <Calendar.YearPickerCell year={year} />}
+              </Calendar.YearPickerGridBody>
+            </Calendar.YearPickerGrid>
+          </Calendar>
+        </DatePicker.Popover>
+      </DatePicker>
       <div className="customer-field">
         <Label>Número de documento</Label>
         <Input
@@ -919,7 +959,6 @@ function UatInvoiceFields({
           value={value.total}
           onChange={(event) => set('total', event.target.value)}
         />
-        <Description>Los puntos se calculan al guardar: uno por cada $1.000.</Description>
       </div>
     </>
   );
@@ -1147,9 +1186,7 @@ function UatInvoiceModal({
             <Modal.Header>
               <div>
                 <Modal.Heading>Factura UAT</Modal.Heading>
-                <p className="siigo-quotation-subtitle">
-                  Factura de prueba: queda pendiente y marcada como UAT
-                </p>
+                <p className="siigo-quotation-subtitle">Solo para entorno de desarrollo</p>
               </div>
             </Modal.Header>
             <Modal.Body>
@@ -1553,23 +1590,17 @@ function DeleteInvoiceModal({
   if (!invoice) return null;
 
   return (
-    <Modal isOpen onOpenChange={(open) => !open && onClose()}>
-      <Modal.Backdrop>
-        <Modal.Container placement="center">
-          <Modal.Dialog className="siigo-quotation-modal">
-            <Modal.CloseTrigger aria-label="Cerrar eliminación" />
-            <Modal.Header>
-              <div>
-                <Modal.Heading>
-                  Eliminar factura
-                  <Chip color="default">{invoice.name}</Chip>
-                </Modal.Heading>
-                <p className="siigo-quotation-subtitle">
-                  {invoice.customerIdentification} · {formattedMoneyWithCode(invoice.total, 'COP')}
-                </p>
-              </div>
-            </Modal.Header>
-            <Modal.Body>
+    <AlertDialog isOpen onOpenChange={(open) => !open && onClose()}>
+      <AlertDialog.Backdrop>
+        <AlertDialog.Container size="sm">
+          <AlertDialog.Dialog>
+            <AlertDialog.Header>
+              <AlertDialog.Icon status="danger">
+                <TrashBin />
+              </AlertDialog.Icon>
+              <AlertDialog.Heading>Eliminar factura</AlertDialog.Heading>
+            </AlertDialog.Header>
+            <AlertDialog.Body>
               {error && (
                 <Alert status="danger">
                   <Alert.Content>
@@ -1577,17 +1608,16 @@ function DeleteInvoiceModal({
                   </Alert.Content>
                 </Alert>
               )}
-              <Alert status="warning">
-                <Alert.Content>
-                  <Alert.Description>
-                    {invoice.source === 'UAT_SEED'
-                      ? 'La factura de prueba se quitará del panel con su historial. Si la vuelves a necesitar, puedes crearla otra vez desde el formulario.'
-                      : 'La factura se quitará del panel con su historial. Si la vuelves a necesitar, tendrás que agregarla otra vez desde Siigo.'}
-                  </Alert.Description>
-                </Alert.Content>
-              </Alert>
-            </Modal.Body>
-            <Modal.Footer>
+              <p>
+                Se quitará del panel la factura <strong>{invoice.name}</strong> (
+                {invoice.customerIdentification} · {formattedMoneyWithCode(invoice.total, 'COP')})
+                con su historial.{' '}
+                {invoice.source === 'UAT_SEED'
+                  ? 'Si la vuelves a necesitar, puedes crearla otra vez desde el formulario de factura UAT.'
+                  : 'Si la vuelves a necesitar, tendrás que agregarla otra vez desde Siigo.'}
+              </p>
+            </AlertDialog.Body>
+            <AlertDialog.Footer>
               <Button variant="tertiary" onPress={onClose} isDisabled={deleteMutation.isPending}>
                 Cancelar
               </Button>
@@ -1604,10 +1634,10 @@ function DeleteInvoiceModal({
                 )}
                 Eliminar
               </Button>
-            </Modal.Footer>
-          </Modal.Dialog>
-        </Modal.Container>
-      </Modal.Backdrop>
-    </Modal>
+            </AlertDialog.Footer>
+          </AlertDialog.Dialog>
+        </AlertDialog.Container>
+      </AlertDialog.Backdrop>
+    </AlertDialog>
   );
 }
