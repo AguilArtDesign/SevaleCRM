@@ -3,6 +3,7 @@ import type { OrderListQuery, UpdateShipmentInput } from '@sevale/validation';
 import { PrismaService } from '../database/prisma.service.js';
 import type { Prisma } from '../generated/prisma/client.js';
 import type { PreparedOperation, PreparedStoreOrder } from './orders.types.js';
+import { reopenableOrder } from './order-reopen-window.js';
 
 export const orderDetailInclude = {
   customer: true,
@@ -111,6 +112,12 @@ type UpdateResult =
 
 type DeleteResult =
   { outcome: 'NOT_FOUND' } | { outcome: 'UPDATED'; operation: OrderOperationDetail };
+
+export type ReopenResult =
+  | { outcome: 'NOT_FOUND' }
+  | { outcome: 'NOT_REOPENABLE' }
+  | { outcome: 'CLOSED' }
+  | { outcome: 'REOPENED'; operation: OrderOperationDetail };
 
 export type CompleteClaim =
   | { outcome: 'NOT_FOUND' }
@@ -316,6 +323,8 @@ export class OrdersRepository {
               currency: true,
               createdAt: true,
               updatedAt: true,
+              // La fila muestra «Reabierto» en vez del estado de la tienda mientras dure la marca.
+              reopenedAt: true,
               // El resumen de la cotización decide qué dice la acción de la fila: crear, actualizar
               // o ver. `externalId` distingue una cotización que ya vive en Siigo.
               siigoQuotation: {
@@ -414,16 +423,23 @@ export class OrdersRepository {
     return this.prisma.$transaction(async (transaction) => {
       const operation = await transaction.orderOperation.findFirst({
         where: { id, deletedAt: null },
-        select: { source: true, status: true },
+        select: { source: true, status: true, reopenedAt: true },
       });
       if (!operation) return { outcome: 'NOT_FOUND' };
-      if (operation.source !== 'CRM' || operation.status === 'CANCELLED') {
+      /**
+       * Un pedido de la tienda se puede cerrar desde el CRM solo si el comercial lo reabrió: así lo
+       * decide una persona y no el paso del tiempo. Sin reabrir, el ciclo lo lleva la tienda.
+       */
+      const closable =
+        operation.source === 'CRM' ||
+        (operation.source === 'WOOCOMMERCE' && !!operation.reopenedAt);
+      if (!closable || operation.status === 'CANCELLED') {
         return { outcome: 'NOT_COMPLETABLE' };
       }
       if (operation.status === 'COMPLETED') return { outcome: 'ALREADY_COMPLETED' };
 
       const completed = await transaction.orderOperation.updateMany({
-        where: { id, source: 'CRM', status: 'PENDING', deletedAt: null },
+        where: { id, status: 'PENDING', deletedAt: null },
         data: {
           status: 'COMPLETED',
           // Completar también modifica la operación: cuenta como última modificación de esta persona.
@@ -433,16 +449,26 @@ export class OrdersRepository {
       });
       if (completed.count === 0) return { outcome: 'ALREADY_COMPLETED' };
 
+      /**
+       * Qué pedidos hay que cerrar en la tienda. Los creados en el CRM todavía no existen allá y solo
+       * se dan de alta si quedaron pendientes o con error; los de la tienda ya existen y se
+       * actualizan siempre, aunque su sincronización anterior esté en orden.
+       */
+      const reset = {
+        syncStatus: 'SYNCING' as const,
+        lastSyncErrorCode: null,
+        lastSyncErrorMessage: null,
+      };
       await transaction.order.updateMany({
         where: { operationId: id, wooOrderId: null, syncStatus: { in: ['PENDING', 'ERROR'] } },
-        data: {
-          syncStatus: 'SYNCING',
-          lastSyncErrorCode: null,
-          lastSyncErrorMessage: null,
-        },
+        data: reset,
+      });
+      await transaction.order.updateMany({
+        where: { operationId: id, wooOrderId: { not: null } },
+        data: reset,
       });
       const orders = await transaction.order.findMany({
-        where: { operationId: id, wooOrderId: null, syncStatus: 'SYNCING' },
+        where: { operationId: id, syncStatus: 'SYNCING' },
         select: { id: true },
       });
       return { outcome: 'CLAIMED', orderIds: orders.map(({ id: orderId }) => orderId) };
@@ -515,7 +541,7 @@ export class OrdersRepository {
 
   outboundOrders(ids: number[]): Promise<OutboundOrder[]> {
     return this.prisma.order.findMany({
-      where: { id: { in: ids }, wooOrderId: null, syncStatus: 'SYNCING' },
+      where: { id: { in: ids }, syncStatus: 'SYNCING' },
       include: outboundOrderInclude,
     });
   }
@@ -526,7 +552,9 @@ export class OrdersRepository {
   ) {
     const syncedAt = new Date();
     return this.prisma.order.updateMany({
-      where: { id, wooOrderId: null, syncStatus: 'SYNCING' },
+      // También aplica a un pedido que ya existía en la tienda y se actualizó: `wooOrderId` se
+      // reescribe con el mismo valor y `wooStatus` toma el estado que devolvió WooCommerce.
+      where: { id, syncStatus: 'SYNCING' },
       data: {
         wooOrderId: BigInt(result.id),
         wooStatus: result.status,
@@ -542,7 +570,7 @@ export class OrdersRepository {
 
   markOrderError(id: number, code: string, message: string) {
     return this.prisma.order.updateMany({
-      where: { id, wooOrderId: null, syncStatus: 'SYNCING' },
+      where: { id, syncStatus: 'SYNCING' },
       data: {
         syncStatus: 'ERROR',
         lastSyncAt: new Date(),
@@ -869,6 +897,46 @@ export class OrdersRepository {
         include: orderDetailInclude,
       });
       return { outcome: 'UPDATED', operation: updated };
+    });
+  }
+
+  /**
+   * Devuelve a pendiente un pedido de la tienda que llegó cancelado, fallido o reembolsado, para que
+   * el comercial lo retome cuando el cliente decide continuar. La marca de reapertura es lo que
+   * permite distinguirlo de un pedido que la tienda sigue teniendo cancelado.
+   */
+  reopen(id: number, reopenedByUserId: string): Promise<ReopenResult> {
+    return this.prisma.$transaction(async (transaction) => {
+      const current = await transaction.orderOperation.findFirst({
+        where: { id, deletedAt: null },
+        select: {
+          source: true,
+          status: true,
+          createdAt: true,
+          orders: { select: { wooCreatedAt: true } },
+        },
+      });
+      if (!current) return { outcome: 'NOT_FOUND' };
+      // Solo tiene sentido reabrir lo que cerró la tienda: un pedido del CRM se cancela aquí y no
+      // hay nada que retomar desde la tienda.
+      if (current.source !== 'WOOCOMMERCE' || current.status !== 'CANCELLED') {
+        return { outcome: 'NOT_REOPENABLE' };
+      }
+      // Los pedidos anteriores al corte ya son historia: no se retoman.
+      const orderDate = current.orders.find(({ wooCreatedAt }) => wooCreatedAt)?.wooCreatedAt;
+      if (!reopenableOrder(orderDate ?? current.createdAt)) return { outcome: 'CLOSED' };
+      const reopened = await transaction.orderOperation.update({
+        where: { id },
+        data: {
+          status: 'PENDING',
+          reopenedAt: new Date(),
+          reopenedByUserId,
+          updatedByUserId: reopenedByUserId,
+          updatedByAt: new Date(),
+        },
+        include: orderDetailInclude,
+      });
+      return { outcome: 'REOPENED', operation: reopened };
     });
   }
 

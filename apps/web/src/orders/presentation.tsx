@@ -226,13 +226,21 @@ export function resolveOrderStatus(status: OrderStatus, wooStatus?: string | nul
   return wooStatus ? resolveWooStatus(wooStatus) : statusMeta[status];
 }
 
+/**
+ * Un pedido reabierto se trabaja en el CRM aunque la tienda lo siga teniendo cancelado: el chip lo
+ * dice para que nadie lea «Fallido» y piense que no se puede hacer nada. Solo mientras siga
+ * pendiente: al completarlo manda el estado que ya devolvió la tienda.
+ */
 export function OrderStatusChip({
   status,
   wooStatus,
+  reopenedAt,
 }: {
   status: OrderStatus;
   wooStatus?: string | null;
+  reopenedAt?: string | null;
 }) {
+  if (reopenedAt && status === 'PENDING') return <Chip color="warning">Reabierto</Chip>;
   const meta = resolveOrderStatus(status, wooStatus);
   return <Chip color={meta.color}>{meta.label}</Chip>;
 }

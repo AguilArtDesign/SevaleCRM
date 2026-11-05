@@ -18,6 +18,7 @@ import {
   toast,
 } from '@heroui/react';
 import {
+  ArrowRotateLeft,
   ArrowRotateRight,
   ArrowUpRightFromSquare,
   Box,
@@ -142,7 +143,11 @@ function OrderDetail({
               {order.operationCode} · {order.source === 'CRM' ? 'CRM' : 'WooCommerce'}
             </p>
             <span className="order-ticket-status">
-              <OrderStatusChip status={order.status} wooStatus={storeOrder.wooStatus} />
+              <OrderStatusChip
+                status={order.status}
+                wooStatus={storeOrder.wooStatus}
+                reopenedAt={order.reopenedAt}
+              />
             </span>
           </header>
 
@@ -288,7 +293,11 @@ function OrderDetail({
               >
                 <span className="order-detail-sibling-store">
                   <StoreChip store={sibling.store} />
-                  <OrderStatusChip status={order.status} wooStatus={sibling.wooStatus} />
+                  <OrderStatusChip
+                    status={order.status}
+                    wooStatus={sibling.wooStatus}
+                    reopenedAt={order.reopenedAt}
+                  />
                 </span>
                 <strong className="order-detail-sibling-code">
                   #{sibling.wooOrderId ?? sibling.id}
@@ -370,6 +379,13 @@ export function OrdersPage() {
       queryClient.removeQueries({ queryKey: ['orders', 'detail', order.id] });
       if (selectedId === order.id) setSelected(null);
       setDeleteTarget(null);
+      await queryClient.invalidateQueries({ queryKey: ['orders'] });
+    },
+  });
+  const reopenOrder = useMutation({
+    mutationFn: (order: OrderListRecord) => ordersApi.reopen(order.operationId),
+    onSuccess: async (order) => {
+      queryClient.setQueryData(['orders', 'detail', order.id], order);
       await queryClient.invalidateQueries({ queryKey: ['orders'] });
     },
   });
@@ -740,7 +756,11 @@ export function OrdersPage() {
                       <OrderSourceChip source={order.source} />
                     </Table.Cell>
                     <Table.Cell onClick={stopRowSelection} onPointerDown={stopRowSelection}>
-                      <OrderStatusChip status={order.status} wooStatus={order.wooStatus} />
+                      <OrderStatusChip
+                        status={order.status}
+                        wooStatus={order.wooStatus}
+                        reopenedAt={order.reopenedAt}
+                      />
                     </Table.Cell>
                     <Table.Cell onClick={stopRowSelection} onPointerDown={stopRowSelection}>
                       {/* La cotización vive en Siigo y su enlace público la abre sin salir del
@@ -795,6 +815,7 @@ export function OrdersPage() {
                                     store: order.store,
                                   });
                                 if (key === 'edit') openEdit(order.operationId);
+                                if (key === 'reopen') reopenOrder.mutate(order);
                                 if (key === 'complete') setCompleteTarget(order);
                                 if (key === 'retry') void retryOrderSync(order);
                                 if (key === 'delete') setDeleteTarget(order);
@@ -844,8 +865,21 @@ export function OrdersPage() {
                                     <Label>Editar</Label>
                                   </Dropdown.Item>
                                 )}
+                                {/*
+                                  Reabrir es para recuperar un pedido que la tienda cerró: el cliente
+                                  decidió continuar y el comercial lo retoma desde el CRM.
+                                */}
                                 {canManage &&
-                                  order.source === 'CRM' &&
+                                  order.source === 'WOOCOMMERCE' &&
+                                  order.status === 'CANCELLED' &&
+                                  order.reopenAllowed && (
+                                    <Dropdown.Item id="reopen" textValue="Reabrir pedido">
+                                      <ArrowRotateLeft className="size-4 shrink-0 text-warning" />
+                                      <Label>Reabrir</Label>
+                                    </Dropdown.Item>
+                                  )}
+                                {canManage &&
+                                  (order.source === 'CRM' || order.reopenedAt !== null) &&
                                   order.status === 'PENDING' && (
                                     <Dropdown.Item id="complete" textValue="Completar operación">
                                       <Check className="size-4 shrink-0 text-success" />

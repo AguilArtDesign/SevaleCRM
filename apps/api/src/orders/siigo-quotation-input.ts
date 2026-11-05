@@ -164,16 +164,19 @@ export function closedQuotationFrom(): string {
 /**
  * Si un pedido admite que se le cree o actualice su cotización en Siigo.
  *
+ * - Reabierto en el CRM: sí. Se está trabajando otra vez, aunque la tienda lo tenga en fallido.
  * - Abierto en la tienda: sí.
  * - Sin estado de tienda (lo creó el CRM): solo mientras la operación siga pendiente.
  * - Completado: sí si es de los nuevos, para no duplicar la cotización hecha a mano en Siigo.
- * - Cancelado, reembolsado o fallido: nunca; esa venta no se cotiza.
+ * - Cancelado, reembolsado o fallido sin reabrir: nunca; esa venta no se cotiza.
  */
 export function quotableOrder(
   wooStatus: string | null | undefined,
   orderDate: Date,
   operationStatus: string,
+  reopened = false,
 ): boolean {
+  if (reopened) return true;
   const status = wooStatus?.trim().toLocaleLowerCase('en') ?? '';
   if (!status) return operationStatus === 'PENDING';
   if (quotableWooStatuses.has(status)) return true;
@@ -184,7 +187,12 @@ export function quotableOrder(
 /** Un pedido del CRM que todavía no existe en WooCommerce no tiene estado de tienda. */
 function hasQuotableOrder(operation: QuotationOperation): boolean {
   return operation.orders.some((order) =>
-    quotableOrder(order.wooStatus, order.wooCreatedAt ?? operation.createdAt, operation.status),
+    quotableOrder(
+      order.wooStatus,
+      order.wooCreatedAt ?? operation.createdAt,
+      operation.status,
+      operation.reopenedAt !== null,
+    ),
   );
 }
 

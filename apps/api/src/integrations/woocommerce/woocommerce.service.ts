@@ -78,6 +78,68 @@ export type WooCommerceOrderReference = {
   dateModified: Date | null;
 };
 
+/**
+ * Línea del pedido tal como la tiene la tienda. El `id` es el de WooCommerce, que no se guarda en el
+ * CRM: al actualizar un pedido hay que leerlo antes para poder emparejar cada producto con su línea.
+ */
+export type WooCommerceOrderLine = {
+  id: number;
+  productId: number | null;
+  variationId: number | null;
+  quantity: number;
+};
+
+/**
+ * Línea de envío de la tienda. También lleva `id` por la misma razón que los productos: reenviarla
+ * sin él crea un envío nuevo en vez de reemplazar el que ya estaba cobrando.
+ */
+export type WooCommerceShippingLine = {
+  id: number;
+  methodId: string | null;
+  methodTitle: string | null;
+  total: string | null;
+};
+
+/** Pedido leído de la tienda, con lo justo para actualizarlo sin inventar líneas. */
+export type WooCommerceOrderSnapshot = {
+  id: string;
+  status: string;
+  lines: WooCommerceOrderLine[];
+  shippingLines: WooCommerceShippingLine[];
+};
+
+/**
+ * Cuerpo del `PUT orders/{id}`. Las líneas —de producto y de envío— viajan con su `id` cuando ya
+ * existen en la tienda: sin él, WooCommerce agrega una línea nueva en vez de reemplazar la anterior,
+ * y el pedido acabaría cobrando dos envíos.
+ */
+export type WooCommerceOrderUpdatePayload = {
+  status: string;
+  payment_method?: string;
+  payment_method_title?: string;
+  customer_note?: string;
+  set_paid?: true;
+  billing: Record<string, string>;
+  shipping: Record<string, string>;
+  line_items: Array<{
+    // Presente cuando la línea ya existe en la tienda; ausente cuando es un producto nuevo.
+    id?: number;
+    product_id?: number;
+    variation_id?: number;
+    quantity: number;
+    subtotal: string;
+    total: string;
+  }>;
+  shipping_lines?: Array<{
+    // Presente cuando el envío ya existe en la tienda: reemplaza su importe en vez de duplicarlo.
+    id?: number;
+    method_id: string;
+    method_title: string;
+    total: string;
+  }>;
+  meta_data: Array<{ key: string; value: string }>;
+};
+
 export type WooCommerceShipmentUpdate = {
   carrier: string;
   trackingNumber: string;
@@ -146,6 +208,60 @@ function normalizeOrder(value: unknown): WooCommerceOrderReference | null {
     status,
     dateCreated: date(value.date_created),
     dateModified: date(value.date_modified),
+  };
+}
+
+function orderLine(value: unknown): WooCommerceOrderLine | null {
+  if (!isRecord(value)) return null;
+  const lineId = finiteNumber(value.id);
+  const quantity = finiteNumber(value.quantity);
+  if (lineId === null || !Number.isSafeInteger(lineId) || quantity === null) return null;
+  return {
+    id: lineId,
+    productId: finiteNumber(value.product_id),
+    // `variation_id` llega como 0 cuando el producto es simple, y 0 no es una variación.
+    variationId: finiteNumber(value.variation_id) || null,
+    quantity,
+  };
+}
+
+function text(value: unknown): string | null {
+  if (typeof value === 'string') return value.trim() || null;
+  if (typeof value === 'number') return String(value);
+  return null;
+}
+
+function normalizeShippingLines(value: unknown): WooCommerceShippingLine[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((entry): WooCommerceShippingLine | null => {
+      if (!isRecord(entry)) return null;
+      const lineId = finiteNumber(entry.id);
+      if (lineId === null || !Number.isSafeInteger(lineId)) return null;
+      return {
+        id: lineId,
+        methodId: text(entry.method_id),
+        methodTitle: text(entry.method_title),
+        total: text(entry.total),
+      };
+    })
+    .filter((line): line is WooCommerceShippingLine => line !== null);
+}
+
+function normalizeOrderSnapshot(value: unknown): WooCommerceOrderSnapshot | null {
+  if (!isRecord(value)) return null;
+  const id = identifier(value.id);
+  const status = typeof value.status === 'string' ? value.status.trim() : '';
+  if (!id || !status) return null;
+  const rawLines = Array.isArray(value.line_items) ? value.line_items : [];
+  const lines = rawLines
+    .map(orderLine)
+    .filter((line): line is WooCommerceOrderLine => line !== null);
+  return {
+    id,
+    status,
+    lines,
+    shippingLines: normalizeShippingLines(value.shipping_lines),
   };
 }
 
@@ -307,6 +423,50 @@ export class WooCommerceService {
     if (!order || !externalKey || orderMetadata(response, 'sevale_crm_order_key') !== externalKey) {
       throw invalidIntegrationResponse(config.label);
     }
+    return order;
+  }
+
+  /**
+   * Lee un pedido de la tienda. Hace falta antes de actualizarlo porque el `id` de cada línea vive
+   * solo en WooCommerce: sin él, el `PUT` no puede distinguir un producto modificado de uno nuevo y
+   * duplicaría líneas.
+   */
+  async getOrder(store: Store, orderId: string): Promise<WooCommerceOrderSnapshot> {
+    const config = wooCommerceConfiguration(store);
+    const normalizedOrderId = identifier(orderId);
+    if (!normalizedOrderId) throw invalidIntegrationResponse(config.label);
+    const response = await integrationGet(
+      integrationUrl(config.apiUrl, `orders/${normalizedOrderId}`),
+      wooCommerceAuthorizationHeaders(config),
+      config.label,
+    );
+    const order = normalizeOrderSnapshot(response);
+    if (!order || order.id !== normalizedOrderId) throw invalidIntegrationResponse(config.label);
+    return order;
+  }
+
+  /**
+   * Actualiza un pedido existente. Solo se envía lo que el CRM controla: estado, datos de la
+   * operación y líneas. Las líneas que no viajan en `line_items` las borra WooCommerce, así que el
+   * arreglo debe traer el conjunto completo.
+   */
+  async updateOrder(
+    store: Store,
+    orderId: string,
+    body: WooCommerceOrderUpdatePayload,
+  ): Promise<WooCommerceOrderReference> {
+    const config = wooCommerceConfiguration(store);
+    const normalizedOrderId = identifier(orderId);
+    if (!normalizedOrderId) throw invalidIntegrationResponse(config.label);
+    const response = await integrationPut(
+      integrationUrl(config.apiUrl, `orders/${normalizedOrderId}`),
+      wooCommerceAuthorizationHeaders(config),
+      body,
+      config.label,
+      { timeoutMs: 30_000, retryCount: 1 },
+    );
+    const order = normalizeOrder(response);
+    if (!order || order.id !== normalizedOrderId) throw invalidIntegrationResponse(config.label);
     return order;
   }
 

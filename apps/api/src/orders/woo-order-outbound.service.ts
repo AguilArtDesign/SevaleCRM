@@ -5,6 +5,8 @@ import {
   WooCommerceService,
   type WooCommerceOrderCreatePayload,
   type WooCommerceOrderReference,
+  type WooCommerceOrderSnapshot,
+  type WooCommerceOrderUpdatePayload,
 } from '../integrations/woocommerce/woocommerce.service.js';
 import { OrdersRepository, type OutboundOrder } from './orders.repository.js';
 
@@ -104,6 +106,192 @@ function externalKey(order: OutboundOrder): string {
   return `${order.operation.operationCode}:${order.store}`;
 }
 
+/** Línea del CRM resuelta a los identificadores de la tienda, con el cupón ya repartido. */
+type ResolvedLine = {
+  productId: number;
+  variationId: number | null;
+  quantity: number;
+  subtotal: string;
+  total: string;
+};
+
+/**
+ * Traduce los productos de la operación a líneas de la tienda. Es el único sitio que valida el
+ * vínculo del producto y reparte el cupón, para que el alta y la actualización de un pedido en
+ * WooCommerce manden exactamente los mismos importes.
+ */
+function resolvedLines(order: OutboundOrder): ResolvedLine[] {
+  const discounts = distributedDiscounts(order);
+  return order.items.map((item) => {
+    const product = item.product;
+    if (!product || product.store !== order.store || !product.wooVariationId) {
+      throw new WooOrderOutboundError(
+        `${order.store}_PRODUCT_NOT_LINKED`,
+        `El producto ${item.skuSnapshot} no tiene un vínculo válido con ${storeLabel(order.store)}.`,
+      );
+    }
+    const productId = Number(product.wooParentId ?? product.wooVariationId);
+    const variationId = product.wooParentId ? Number(product.wooVariationId) : null;
+    if (
+      !Number.isSafeInteger(productId) ||
+      (variationId !== null && !Number.isSafeInteger(variationId))
+    ) {
+      throw new WooOrderOutboundError(
+        `${order.store}_PRODUCT_NOT_LINKED`,
+        `El producto ${item.skuSnapshot} no tiene un identificador válido en ${storeLabel(order.store)}.`,
+      );
+    }
+    const discount = discounts.get(item.id) ?? item.subtotal.times(0);
+    return {
+      productId,
+      variationId,
+      quantity: item.quantity,
+      subtotal: item.subtotal.toFixed(2),
+      // El descuento del cupón ya viene incluido en el total de la línea: no se envían `coupon_lines`.
+      total: item.subtotal.minus(discount).toFixed(2),
+    };
+  });
+}
+
+/** Clave con la que se empareja un producto del CRM con una línea del pedido en la tienda. */
+function lineKey(productId: number | null, variationId: number | null): string {
+  return `${productId ?? ''}:${variationId ?? ''}`;
+}
+
+/** Los metadatos que el CRM deja en el pedido de la tienda, iguales en el alta y en la actualización. */
+function orderMetadataFor(order: OutboundOrder): Array<{ key: string; value: string }> {
+  const operation = order.operation;
+  return [
+    { key: 'sevale_crm_order_key', value: externalKey(order) },
+    { key: 'sevale_crm_order_id', value: String(order.id) },
+    { key: 'sevale_crm_operation_code', value: operation.operationCode },
+    // Nombre que WooCommerce ya consume para identificar la operación del CRM.
+    { key: 'operation_id', value: operation.operationCode },
+    // Origen del pedido (CRM | WOOCOMMERCE): los webhooks lo usan para no reprocesar lo propio.
+    { key: 'origen', value: operation.source },
+    { key: 'billing_type_document', value: operation.customer.documentType },
+    { key: 'billing_identification', value: operation.customer.documentNumber },
+  ];
+}
+
+/**
+ * Líneas de envío del `PUT`. Se reenvía el `id` del envío que ya tiene el pedido para que WooCommerce
+ * reemplace su importe en vez de agregar otro: sin esto, pasar de envío gratis a cobrado —o al revés—
+ * dejaría dos envíos y el total del pedido no cuadraría con lo que ve el cliente.
+ *
+ * Si el CRM ya no cobra envío pero la tienda lo tenía cobrado, se manda el mismo envío en cero, que
+ * es exactamente lo que el comercial dejó escrito en el pedido.
+ */
+function shippingLinesFor(
+  order: OutboundOrder,
+  snapshot: WooCommerceOrderSnapshot,
+): WooCommerceOrderUpdatePayload['shipping_lines'] {
+  const existing = snapshot.shippingLines[0];
+  const chargesShipping = order.shippingTotal.greaterThan(0);
+
+  if (chargesShipping) {
+    if (!order.operation.shippingMethod || !order.operation.shippingMethodTitle) {
+      throw new WooOrderOutboundError(
+        `${order.store}_SHIPPING_METHOD_REQUIRED`,
+        `Completa el método de envío antes de actualizar el pedido en ${storeLabel(order.store)}.`,
+      );
+    }
+    return [
+      {
+        ...(existing ? { id: existing.id } : {}),
+        method_id: order.operation.shippingMethod,
+        method_title: order.operation.shippingMethodTitle,
+        total: order.shippingTotal.toFixed(2),
+      },
+    ];
+  }
+
+  // El envío del CRM quedó en cero: se conserva el método que tenía la tienda y se anula el importe.
+  if (!existing) return undefined;
+  return [
+    {
+      id: existing.id,
+      method_id: existing.methodId ?? 'free_shipping',
+      method_title: existing.methodTitle ?? 'Envío gratis',
+      total: '0.00',
+    },
+  ];
+}
+
+/**
+ * Cuerpo del `PUT` de un pedido que ya existe en la tienda y que el comercial reabrió para
+ * terminarlo desde el CRM.
+ *
+ * Las líneas se emparejan por producto y variación contra lo que hoy tiene el pedido en WooCommerce,
+ * consumiendo cada línea de la tienda una sola vez: dos líneas del CRM del mismo producto no pueden
+ * apuntar al mismo `id`. Las líneas de la tienda que no aparezcan en el arreglo las elimina
+ * WooCommerce, que es lo que se espera cuando el comercial quita un producto.
+ */
+function reopenedOrderPayload(
+  order: OutboundOrder,
+  snapshot: WooCommerceOrderSnapshot,
+): WooCommerceOrderUpdatePayload {
+  const operation = order.operation;
+  const available = new Map<string, number[]>();
+  for (const line of snapshot.lines) {
+    const key = lineKey(line.productId, line.variationId);
+    const current = available.get(key);
+    if (current) current.push(line.id);
+    else available.set(key, [line.id]);
+  }
+
+  const lineItems = resolvedLines(order).map((line) => {
+    const candidates = available.get(lineKey(line.productId, line.variationId));
+    const existingId = candidates?.shift();
+    const amounts = { quantity: line.quantity, subtotal: line.subtotal, total: line.total };
+    return existingId === undefined
+      ? {
+          product_id: line.productId,
+          ...(line.variationId === null ? {} : { variation_id: line.variationId }),
+          ...amounts,
+        }
+      : { id: existingId, ...amounts };
+  });
+
+  const shippingLines = shippingLinesFor(order, snapshot);
+  const phoneCountry = operation.billingCountry ?? operation.customer.country;
+  return {
+    status: 'completed',
+    ...(operation.paymentMethod ? { payment_method: operation.paymentMethod } : {}),
+    ...(operation.paymentMethodTitle ? { payment_method_title: operation.paymentMethodTitle } : {}),
+    ...(operation.customerNote ? { customer_note: operation.customerNote } : {}),
+    set_paid: true,
+    billing: compactAddress({
+      first_name: operation.billingFirstName,
+      last_name: operation.billingLastName,
+      company: operation.billingCompany,
+      address_1: upperAddress(operation.billingAddress1),
+      address_2: upperAddress(operation.billingAddress2),
+      city: operation.billingCity,
+      state: operation.billingState,
+      postcode: operation.billingPostcode,
+      country: operation.billingCountry,
+      email: operation.billingEmail,
+      phone: displayPhone(operation.billingPhone, phoneCountry),
+    }),
+    shipping: compactAddress({
+      first_name: operation.shippingFirstName,
+      last_name: operation.shippingLastName,
+      company: operation.shippingCompany,
+      address_1: upperAddress(operation.shippingAddress1),
+      address_2: upperAddress(operation.shippingAddress2),
+      city: operation.shippingCity,
+      state: operation.shippingState,
+      postcode: operation.shippingPostcode,
+      country: operation.shippingCountry,
+      phone: displayPhone(operation.shippingPhone, phoneCountry),
+    }),
+    line_items: lineItems,
+    ...(shippingLines ? { shipping_lines: shippingLines } : {}),
+    meta_data: orderMetadataFor(order),
+  };
+}
+
 function customerExternalId(order: OutboundOrder): string {
   const integration = order.operation.customer.integrations.find(
     ({ provider }) => provider === order.store,
@@ -127,36 +315,11 @@ export function orderPayload(
   externalCustomerId: string,
 ): WooCommerceOrderCreatePayload {
   const operation = order.operation;
-  const discounts = distributedDiscounts(order);
-  const lineItems = order.items.map((item) => {
-    const product = item.product;
-    if (!product || product.store !== order.store || !product.wooVariationId) {
-      throw new WooOrderOutboundError(
-        `${order.store}_PRODUCT_NOT_LINKED`,
-        `El producto ${item.skuSnapshot} no tiene un vínculo válido con ${storeLabel(order.store)}.`,
-      );
-    }
-    const productId = Number(product.wooParentId ?? product.wooVariationId);
-    const variationId = product.wooParentId ? Number(product.wooVariationId) : null;
-    if (
-      !Number.isSafeInteger(productId) ||
-      (variationId !== null && !Number.isSafeInteger(variationId))
-    ) {
-      throw new WooOrderOutboundError(
-        `${order.store}_PRODUCT_NOT_LINKED`,
-        `El producto ${item.skuSnapshot} no tiene un identificador válido en ${storeLabel(order.store)}.`,
-      );
-    }
-    const discount = discounts.get(item.id) ?? item.subtotal.times(0);
-    return {
-      product_id: productId,
-      ...(variationId === null ? {} : { variation_id: variationId }),
-      quantity: item.quantity,
-      subtotal: item.subtotal.toFixed(2),
-      // El descuento del cupón ya viene incluido en el total de la línea: no se envían `coupon_lines`.
-      total: item.subtotal.minus(discount).toFixed(2),
-    };
-  });
+  const lineItems = resolvedLines(order).map(({ productId, variationId, ...amounts }) => ({
+    product_id: productId,
+    ...(variationId === null ? {} : { variation_id: variationId }),
+    ...amounts,
+  }));
 
   // El teléfono se formatea con el país del número: el de facturación y, si no hay, el del cliente.
   const phoneCountry = operation.billingCountry ?? operation.customer.country;
@@ -223,23 +386,7 @@ export function orderPayload(
           ],
         }
       : {}),
-    meta_data: [
-      { key: 'sevale_crm_order_key', value: externalKey(order) },
-      { key: 'sevale_crm_order_id', value: String(order.id) },
-      { key: 'sevale_crm_operation_code', value: operation.operationCode },
-      // Nombre que WooCommerce ya consume para identificar la operación del CRM.
-      { key: 'operation_id', value: operation.operationCode },
-      // Origen del pedido (CRM | WOOCOMMERCE): los webhooks lo usan para no reprocesar lo propio.
-      { key: 'origen', value: operation.source },
-      {
-        key: 'billing_type_document',
-        value: operation.customer.documentType,
-      },
-      {
-        key: 'billing_identification',
-        value: operation.customer.documentNumber,
-      },
-    ],
+    meta_data: orderMetadataFor(order),
   };
 }
 
@@ -256,6 +403,9 @@ export class WooOrderOutboundService {
   }
 
   private async synchronizeOrder(order: OutboundOrder): Promise<OrderSyncOutcome> {
+    // Un pedido que ya vive en la tienda no se crea: se actualiza. Es el caso de un pedido de
+    // WooCommerce que el comercial reabrió para cerrarlo desde el CRM.
+    if (order.wooOrderId !== null) return this.updateExisting(order);
     try {
       const externalCustomerId = customerExternalId(order);
       const key = externalKey(order);
@@ -271,6 +421,26 @@ export class WooOrderOutboundService {
     } catch (error) {
       const message = safeIntegrationMessage(error, order.store);
       await this.orders.markOrderError(order.id, `${order.store}_ORDER_CREATE_FAILED`, message);
+      return { operationId: order.operationId, provider: order.store, status: 'ERROR', message };
+    }
+  }
+
+  /**
+   * Cierra en la tienda un pedido reabierto. Se lee primero para conocer el `id` de cada línea: es
+   * la única forma de modificar las existentes sin duplicarlas ni borrar las que siguen.
+   */
+  private async updateExisting(order: OutboundOrder): Promise<OrderSyncOutcome> {
+    try {
+      const snapshot = await this.wooCommerce.getOrder(order.store, String(order.wooOrderId));
+      const result = await this.wooCommerce.updateOrder(
+        order.store,
+        String(order.wooOrderId),
+        reopenedOrderPayload(order, snapshot),
+      );
+      return await this.confirm(order, result);
+    } catch (error) {
+      const message = safeIntegrationMessage(error, order.store);
+      await this.orders.markOrderError(order.id, `${order.store}_ORDER_UPDATE_FAILED`, message);
       return { operationId: order.operationId, provider: order.store, status: 'ERROR', message };
     }
   }

@@ -135,40 +135,41 @@ enum CouponSyncStatus {
 }
 
 model User {
-  id                     String             @id @default(uuid()) @db.VarChar(36)
-  name                   String             @db.VarChar(191)
-  email                  String             @unique @db.VarChar(191)
-  sellerId               Int?               @unique @map("seller_id")
+  id                      String             @id @default(uuid()) @db.VarChar(36)
+  name                    String             @db.VarChar(191)
+  email                   String             @unique @db.VarChar(191)
+  sellerId                Int?               @unique @map("seller_id")
   /// Prefijo con el que se arma el nombre de la factura que se busca en Siigo (`FV-2-`). No es
   /// único: en oficina varios comerciales comparten prefijo y se distinguen por el seller.
-  siigoInvoicePrefix     String?            @map("siigo_invoice_prefix") @db.VarChar(20)
-  emailVerified          Boolean            @default(false) @map("email_verified")
-  image                  String?            @db.Text
-  role                   Role               @default(COMMERCIAL)
-  active                 Boolean            @default(true)
-  lastLoginAt            DateTime?          @map("last_login_at")
-  createdAt              DateTime           @default(now()) @map("created_at")
-  updatedAt              DateTime           @updatedAt @map("updated_at")
-  sessions               Session[]
-  accounts               Account[]
-  notificationReads      NotificationRead[]
-  productSyncJobs        ProductSyncJob[]
-  orderOperations        OrderOperation[]   @relation("OrderOperationCreatedBy")
-  orderOperationsUpdated OrderOperation[]   @relation("OrderOperationUpdatedBy")
-  customersCreated       Customer[]         @relation("CustomerCreatedBy")
-  customerEvents         CustomerEvent[]    @relation("CustomerEventActor")
-  orderEvents            OrderEvent[]       @relation("OrderEventActor")
-  shipmentEvents         ShipmentEvent[]    @relation("ShipmentEventCreatedBy")
-  agreementsCreated      Agreement[]        @relation("AgreementCreatedBy")
-  agreementComments      AgreementComment[] @relation("AgreementCommentAuthor")
-  agreementTasksCreated  AgreementTask[]    @relation("AgreementTaskCreatedBy")
-  agreementTasksAssigned AgreementTask[]    @relation("AgreementTaskAssignee")
-  prospectsAssigned      Prospect[]         @relation("ProspectAssignee")
-  prospectsCreated       Prospect[]         @relation("ProspectCreator")
-  integrationLogs        IntegrationLog[]
-  pointsInvoicesCreated  PointsInvoice[]    @relation("PointsInvoiceCreatedBy")
-  pointsAccruals         PointsAccrual[]    @relation("PointsAccrualActor")
-  pointsAccrualsRevoked  PointsAccrual[]    @relation("PointsAccrualRevokedBy")
+  siigoInvoicePrefix      String?            @map("siigo_invoice_prefix") @db.VarChar(20)
+  emailVerified           Boolean            @default(false) @map("email_verified")
+  image                   String?            @db.Text
+  role                    Role               @default(COMMERCIAL)
+  active                  Boolean            @default(true)
+  lastLoginAt             DateTime?          @map("last_login_at")
+  createdAt               DateTime           @default(now()) @map("created_at")
+  updatedAt               DateTime           @updatedAt @map("updated_at")
+  sessions                Session[]
+  accounts                Account[]
+  notificationReads       NotificationRead[]
+  productSyncJobs         ProductSyncJob[]
+  orderOperations         OrderOperation[]   @relation("OrderOperationCreatedBy")
+  orderOperationsUpdated  OrderOperation[]   @relation("OrderOperationUpdatedBy")
+  orderOperationsReopened OrderOperation[]   @relation("OrderOperationReopenedBy")
+  customersCreated        Customer[]         @relation("CustomerCreatedBy")
+  customerEvents          CustomerEvent[]    @relation("CustomerEventActor")
+  orderEvents             OrderEvent[]       @relation("OrderEventActor")
+  shipmentEvents          ShipmentEvent[]    @relation("ShipmentEventCreatedBy")
+  agreementsCreated       Agreement[]        @relation("AgreementCreatedBy")
+  agreementComments       AgreementComment[] @relation("AgreementCommentAuthor")
+  agreementTasksCreated   AgreementTask[]    @relation("AgreementTaskCreatedBy")
+  agreementTasksAssigned  AgreementTask[]    @relation("AgreementTaskAssignee")
+  prospectsAssigned       Prospect[]         @relation("ProspectAssignee")
+  prospectsCreated        Prospect[]         @relation("ProspectCreator")
+  integrationLogs         IntegrationLog[]
+  pointsInvoicesCreated   PointsInvoice[]    @relation("PointsInvoiceCreatedBy")
+  pointsAccruals          PointsAccrual[]    @relation("PointsAccrualActor")
+  pointsAccrualsRevoked   PointsAccrual[]    @relation("PointsAccrualRevokedBy")
 
   @@map("users")
 }
@@ -515,6 +516,12 @@ model OrderOperation {
   /// que no corresponde a esa persona. Ambos quedan nulos mientras nadie la modifique.
   updatedByUserId     String?         @map("updated_by_user_id") @db.VarChar(36)
   updatedByAt         DateTime?       @map("updated_by_at")
+  /// Reapertura de un pedido de la tienda que llegó cancelado, fallido o reembolsado. El comercial
+  /// lo retoma cuando el cliente decide continuar: la operación vuelve a pendiente y, mientras la
+  /// tienda siga en ese mismo estado, sus webhooks no la vuelven a cancelar. Ambos quedan nulos
+  /// hasta que alguien reabre, y se limpian cuando la tienda deja de estar cancelada.
+  reopenedAt          DateTime?       @map("reopened_at")
+  reopenedByUserId    String?         @map("reopened_by_user_id") @db.VarChar(36)
   currency            String          @db.Char(3)
   paymentMethod       String?         @map("payment_method") @db.VarChar(191)
   paymentMethodTitle  String?         @map("payment_method_title") @db.VarChar(191)
@@ -559,6 +566,7 @@ model OrderOperation {
   coupon              Coupon?         @relation(fields: [couponId], references: [id], onDelete: SetNull)
   createdBy           User?           @relation("OrderOperationCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
   updatedBy           User?           @relation("OrderOperationUpdatedBy", fields: [updatedByUserId], references: [id], onDelete: SetNull)
+  reopenedBy          User?           @relation("OrderOperationReopenedBy", fields: [reopenedByUserId], references: [id], onDelete: SetNull)
   orders              Order[]
   shipment            Shipment?
   siigoQuotation      SiigoQuotation?

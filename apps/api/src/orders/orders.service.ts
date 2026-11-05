@@ -33,6 +33,7 @@ import { WooOrderOutboundService } from './woo-order-outbound.service.js';
 import { ShipmentSyncService } from './shipment-sync.service.js';
 import { SiigoQuotationService } from './siigo-quotation.service.js';
 import { quotableOrder } from './siigo-quotation-input.js';
+import { formattedReopenFrom, reopenableOrder } from './order-reopen-window.js';
 import { OrderEventPublisher } from './order-event-publisher.service.js';
 import { OrderEventsService } from './order-events.service.js';
 
@@ -196,6 +197,19 @@ export class OrdersService {
         currency: operation.currency,
         createdAt: operation.createdAt,
         updatedAt: operation.updatedAt,
+        /**
+         * Cuándo se reabrió un pedido de la tienda. La fila lo muestra en lugar del estado de la
+         * tienda, que seguirá diciendo que está cancelado hasta que allá lo muevan.
+         */
+        reopenedAt: operation.reopenedAt,
+        /**
+         * Si el pedido puede reabrirse. El panel lo usa en vez de repetir la regla del corte: un
+         * pedido anterior a la fecha de reapertura ya es historial y el backend lo rechazaría.
+         */
+        reopenAllowed:
+          operation.source === 'WOOCOMMERCE' &&
+          operation.status === 'CANCELLED' &&
+          reopenableOrder(order.wooCreatedAt ?? operation.createdAt),
         customer: withNormalizedCustomer(operation.customer),
         /**
          * Qué ofrece la acción de la fila. "Ver" cuando Siigo ya tiene exactamente este pedido;
@@ -227,6 +241,7 @@ export class OrdersService {
           order.wooStatus,
           order.wooCreatedAt ?? operation.createdAt,
           operation.status,
+          operation.reopenedAt !== null,
         ),
         wooOrderId: order.wooOrderId?.toString() ?? null,
         wooStatus: order.wooStatus,
@@ -492,6 +507,34 @@ export class OrdersService {
       return serializeDetail(updated);
     }
     return this.detail(id);
+  }
+
+  /**
+   * Reabre un pedido de la tienda que llegó cancelado, fallido o reembolsado. El comercial lo hace
+   * cuando el cliente decide continuar; a partir de ahí la operación se edita, se cotiza y se puede
+   * cerrar desde el CRM.
+   */
+  async reopen(id: number, userId: string) {
+    const result = await this.orders.reopen(id, userId);
+    if (result.outcome === 'NOT_FOUND') {
+      throw businessError(NotFoundException, 'ORDER_NOT_FOUND', 'La operación no existe.');
+    }
+    if (result.outcome === 'NOT_REOPENABLE') {
+      throw businessError(
+        ConflictException,
+        'ORDER_NOT_REOPENABLE',
+        'Solo se puede reabrir un pedido cancelado que venga de la tienda.',
+      );
+    }
+    if (result.outcome === 'CLOSED') {
+      throw businessError(
+        ConflictException,
+        'ORDER_REOPEN_CLOSED',
+        `Solo se pueden reabrir pedidos creados desde el ${formattedReopenFrom()}. Los anteriores ya son parte del historial.`,
+      );
+    }
+    this.events.operationUpdated(result.operation);
+    return serializeDetail(result.operation);
   }
 
   async retrySync(id: number, userId: string) {

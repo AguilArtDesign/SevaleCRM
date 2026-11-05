@@ -206,12 +206,22 @@ export class WooOrderInboundRepository {
         };
       }
 
+      /**
+       * Un pedido reabierto se queda pendiente mientras la tienda siga en el mismo estado que lo
+       * canceló. WooCommerce manda `order.updated` por muchas razones que no son el estado (una
+       * nota, el tracking), y sin esta guarda cualquiera de ellas desharía la reapertura. Cuando la
+       * tienda sí cambia de estado, se aplica y la marca desaparece.
+       */
+      const keepsReopened =
+        existingOrder?.operation.reopenedAt != null && input.status === 'CANCELLED';
       const operationData = {
         ...operationSnapshot(input),
         customerId: customer.id,
         ...(existingOrder?.operation.source === 'CRM'
           ? { status: existingOrder.operation.status }
-          : {}),
+          : keepsReopened
+            ? { status: 'PENDING' as const }
+            : { reopenedAt: null, reopenedByUserId: null }),
       };
       const itemData = input.items.map((item, index) => {
         const product = products[index] ?? null;

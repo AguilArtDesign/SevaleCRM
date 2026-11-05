@@ -33,6 +33,13 @@ export type OrderListRecord = {
   total: string;
   createdAt: string;
   updatedAt: string;
+  /**
+   * Cuándo el comercial reabrió un pedido que la tienda tenía cancelado. La fila muestra «Reabierto»
+   * en vez del estado de la tienda, que seguirá en cancelado hasta que allá lo muevan.
+   */
+  reopenedAt: string | null;
+  /** Si el pedido entra en la ventana de reapertura; el backend aplica la misma regla. */
+  reopenAllowed: boolean;
   /** Qué ofrece la acción de la fila: crear la cotización, actualizarla o abrir la que ya existe. */
   quotationAction: 'CREATE' | 'UPDATE' | 'VIEW';
   /**
@@ -74,6 +81,8 @@ export type OrderDetailRecord = {
   operationCode: string;
   source: OrderSource;
   status: OrderStatus;
+  /** Marca de reapertura: el pedido se está trabajando otra vez desde el CRM. */
+  reopenedAt: string | null;
   currency: 'COP' | 'USD';
   subtotal: string;
   discountTotal: string;
@@ -378,6 +387,8 @@ export const ordersApi = {
       body: JSON.stringify(input),
     }),
   delete: (id: number) => request<OrderDetailRecord>(`/api/orders/${id}`, { method: 'DELETE' }),
+  reopen: (id: number) =>
+    request<OrderDetailRecord>(`/api/orders/${id}/reopen`, { method: 'POST' }),
   complete: (id: number) =>
     request<OrderDetailRecord>(`/api/orders/${id}/complete`, { method: 'POST' }),
   retrySync: (id: number) =>

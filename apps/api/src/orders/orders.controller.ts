@@ -84,6 +84,12 @@ export class OrdersController {
     return this.orders.remove(parseInput(orderOperationIdSchema, id), request.auth.user.id);
   }
 
+  @Post(':id/reopen')
+  @RequirePermissions('orders.update')
+  reopen(@Param('id') id: string, @Req() request: AuthenticatedRequest) {
+    return this.orders.reopen(parseInput(orderOperationIdSchema, id), request.auth.user.id);
+  }
+
   @Post(':id/complete')
   @RequirePermissions('orders.complete')
   complete(@Param('id') id: string, @Req() request: AuthenticatedRequest) {
