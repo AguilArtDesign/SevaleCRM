@@ -879,7 +879,7 @@ export function OrdersPage() {
                                     </Dropdown.Item>
                                   )}
                                 {canManage &&
-                                  (order.source === 'CRM' || order.reopenedAt !== null) &&
+                                  (order.source === 'CRM' || Boolean(order.reopenedAt)) &&
                                   order.status === 'PENDING' && (
                                     <Dropdown.Item id="complete" textValue="Completar operación">
                                       <Check className="size-4 shrink-0 text-success" />

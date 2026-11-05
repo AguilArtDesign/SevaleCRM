@@ -241,7 +241,7 @@ export class OrdersService {
           order.wooStatus,
           order.wooCreatedAt ?? operation.createdAt,
           operation.status,
-          operation.reopenedAt !== null,
+          operation.reopenedAt != null,
         ),
         wooOrderId: order.wooOrderId?.toString() ?? null,
         wooStatus: order.wooStatus,

@@ -186,12 +186,14 @@ export function quotableOrder(
 
 /** Un pedido del CRM que todavía no existe en WooCommerce no tiene estado de tienda. */
 function hasQuotableOrder(operation: QuotationOperation): boolean {
+  // `Boolean` y no `!== null`: quien construye la operación en memoria puede no traer el campo.
+  const reopened = Boolean(operation.reopenedAt);
   return operation.orders.some((order) =>
     quotableOrder(
       order.wooStatus,
       order.wooCreatedAt ?? operation.createdAt,
       operation.status,
-      operation.reopenedAt !== null,
+      reopened,
     ),
   );
 }
