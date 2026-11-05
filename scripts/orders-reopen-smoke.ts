@@ -163,6 +163,7 @@ const runId = randomUUID();
 const password = `R-${randomUUID()}-9a!`;
 const userIds: string[] = [];
 const productIds: number[] = [];
+const webhookDeliveryIds: string[] = [];
 let customerId: number | null = null;
 
 function expectStatus(response: Response, status: number, context: string) {
@@ -378,8 +379,12 @@ try {
    * volvería a cancelado sin que nadie entienda por qué.
    */
   process.env.N8N_API_KEY ||= 'local-reopen-webhook-key';
-  const webhook = (status: string, modified: string) =>
-    fetch(`${baseUrl}/api/integrations/woocommerce/orders`, {
+  const webhook = (status: string, modified: string) => {
+    // La entrega se guarda en el CRM y, si no se borra, queda apuntando a un pedido que ya no
+    // existe. Se recuerda el identificador para limpiarla al final.
+    const deliveryId = randomUUID();
+    webhookDeliveryIds.push(deliveryId);
+    return fetch(`${baseUrl}/api/integrations/woocommerce/orders`, {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
@@ -388,7 +393,7 @@ try {
       body: JSON.stringify({
         provider: 'SERATUS',
         event: 'order.updated',
-        deliveryId: randomUUID(),
+        deliveryId,
         order: {
           id: String(createdInWoo.id),
           status,
@@ -451,6 +456,7 @@ try {
         },
       }),
     });
+  };
 
   // La tienda sigue en fallido: es un cambio que no toca el estado, así que no revierte la reapertura.
   expectStatus(
@@ -585,6 +591,11 @@ try {
 
   console.log('orders-reopen-smoke: ok');
 } finally {
+  // El borrado que hace la app limpia las entregas del webhook; este test borra la operación
+  // directamente, así que las quita a mano para no dejar filas apuntando a un pedido inexistente.
+  if (webhookDeliveryIds.length > 0) {
+    await prisma.wooOrderDelivery.deleteMany({ where: { deliveryId: { in: webhookDeliveryIds } } });
+  }
   if (customerId !== null) {
     await prisma.orderOperation.deleteMany({ where: { customerId } });
   }
