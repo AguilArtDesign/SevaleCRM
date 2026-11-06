@@ -20,8 +20,14 @@ export type IntegrationLogEntry = {
   userId?: string | null;
 };
 
-/** Claves que nunca deben quedar escritas, aunque la llamada no sea de autenticación. */
-const confidentialKeys = /token|password|secret|authorization|access_key/i;
+/**
+ * Claves que nunca deben quedar escritas, aunque la llamada no sea de autenticación.
+ *
+ * `otp` y `pin` no son credenciales del CRM pero sí secretos del cliente: el código de un solo uso y
+ * el PIN con el que se redimen sus puntos. Guardarlos en el log los dejaría visibles en el panel de
+ * Logs para cualquiera con acceso, que es justo lo que el código de un solo uso evita.
+ */
+const confidentialKeys = /token|password|secret|authorization|access_key|^pin$|^otp$|^otp_?code$/i;
 
 function redact(key: string, value: unknown): unknown {
   return confidentialKeys.test(key) ? '[omitido]' : value;

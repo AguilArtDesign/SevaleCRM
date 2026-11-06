@@ -7,6 +7,7 @@ import {
 } from '../apps/api/src/loyalty/points-invoices.service.js';
 import type { PuntosColombiaTokenService } from '../apps/api/src/integrations/puntos-colombia/puntos-colombia-token.service.js';
 import type { PointsInvoicesRepository } from '../apps/api/src/loyalty/points-invoices.repository.js';
+import type { PointsRedemptionsRepository } from '../apps/api/src/loyalty/points-redemptions.repository.js';
 import type { IntegrationLogsService } from '../apps/api/src/integration-logs/integration-logs.service.js';
 import type { SiigoService } from '../apps/api/src/integrations/siigo/siigo.service.js';
 import { siigoInvoicePrefixSchema } from '@sevale/validation';
@@ -435,8 +436,18 @@ const tokens = {
 } as unknown as PuntosColombiaTokenService;
 
 const puntos = new PuntosColombiaService(tokens);
+// Este smoke cubre la acumulación; el listado unido y la redención tienen el suyo.
+const redemptions = {
+  listSlice() {
+    return resolved([]);
+  },
+  count() {
+    return resolved(0);
+  },
+} as unknown as PointsRedemptionsRepository;
 const service = new PointsInvoicesService(
   repository as unknown as PointsInvoicesRepository,
+  redemptions,
   siigo,
   puntos,
   logs,

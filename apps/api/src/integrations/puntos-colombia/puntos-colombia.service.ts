@@ -25,12 +25,40 @@ export type PointsBalance = {
   pointsAmount: number;
   pointsValueInMoney: number;
   allowAccrual: boolean;
+  /** Si la cuenta puede redimir. Es una habilitación aparte de la de acumular. */
+  allowRedemption: boolean;
 };
 
 export type PointsAccrualResult = {
   pointsEarned: number;
   pointsBalance: number;
   approbationNumber: string | null;
+};
+
+/**
+ * Lo que el proveedor pide para redimir. Cuando el método es `OTP` envía un código al celular o al
+ * correo del cliente; cuando es `TOTP` el cliente lo genera en su app y el proveedor no envía nada.
+ */
+export type PointsRedemptionChallenge = {
+  validationMethod: string;
+  /** Texto sugerido por el proveedor para explicarle al cliente por dónde le llega el código. */
+  suggestedMessage: string | null;
+};
+
+/** Resultado de una redención aplicada: los puntos quemados y el saldo que queda. */
+export type PointsRedemptionResult = {
+  pointsRedeemed: number;
+  pointsBalance: number;
+  approbationNumber: string | null;
+};
+
+/** Datos que el proveedor necesita para quemar puntos de una cuenta. */
+export type PointsRedemptionRequest = {
+  documentNumber: string;
+  documentType: PointsDocumentType;
+  pin: string;
+  points: number;
+  transactionIdentifier: TransactionIdentifier;
 };
 
 /** El proveedor contestó que la cuenta no existe; es un resultado de negocio, no un fallo técnico. */
@@ -55,6 +83,20 @@ export class PointsCancellationRejectedError extends Error {
  * «por verificar» y bloqueaba la factura para siempre.
  */
 export class PointsAccrualRejectedError extends Error {
+  constructor(
+    readonly resultCode: string,
+    message: string,
+  ) {
+    super(message);
+  }
+}
+
+/**
+ * El proveedor rechazó la redención o la solicitud del código. Es definitivo: los puntos no se
+ * quemaron, así que el operador puede corregir y volver a intentar cuando el cliente resuelva el
+ * motivo (sin saldo, código vencido, cuenta inhabilitada).
+ */
+export class PointsRedemptionRejectedError extends Error {
   constructor(
     readonly resultCode: string,
     message: string,
@@ -151,6 +193,28 @@ export class PuntosColombiaService {
   }
 
   /**
+   * Pide al proveedor el código de un solo uso con el que el cliente autoriza la redención. Va a la
+   * ruta de validación de identidad, no a la de redención: la de redención exige un `pin` y con uno
+   * real quemaría los puntos en vez de enviar el código.
+   */
+  requestRedemptionChallenge(
+    documentNumber: string,
+    documentType: PointsDocumentType,
+  ): Promise<PointsRedemptionChallenge> {
+    return this.withToken((token, config) =>
+      this.requestOtpChallenge(token, config, documentNumber, documentType),
+    );
+  }
+
+  /**
+   * Quema los puntos de una cuenta. Se diferencia de `processSale` en que aquí los puntos se gastan y
+   * el `pin` es lo que prueba que el cliente lo autorizó.
+   */
+  redeemPoints(request: PointsRedemptionRequest): Promise<PointsRedemptionResult> {
+    return this.withToken((token, config) => this.requestRedemption(token, config, request));
+  }
+
+  /**
    * Anula una acumulación ya acreditada. El proveedor exige los dos identificadores: el de la
    * operación que se anula —el que quedó guardado cuando se acumuló— y uno nuevo para la anulación,
    * que solo se distingue del original por la fecha.
@@ -220,8 +284,9 @@ export class PuntosColombiaService {
       name: typeof payload.name === 'string' ? payload.name : null,
       pointsAmount: Math.trunc(finiteNumber(balance.pointsAmount)),
       pointsValueInMoney: finiteNumber(balance.pointsValueInMoney),
-      // Solo `allowAccrual` decide: `allowRedemption` habla de canje y no de acumular.
+      // Las dos habilitaciones son independientes: el programa puede permitir acumular y no redimir.
       allowAccrual: payload.allowAccrual === true,
+      allowRedemption: payload.allowRedemption === true,
     };
   }
 
@@ -257,6 +322,115 @@ export class PuntosColombiaService {
       // Lo acreditado lo dice el proveedor: no se asume que sea igual a lo solicitado.
       pointsEarned: Math.trunc(finiteNumber(balance.pointsEarned)),
       pointsBalance: Math.trunc(finiteNumber(balance.pointsBalance)),
+      approbationNumber:
+        typeof payload.approbationNumber === 'string' ? payload.approbationNumber : null,
+    };
+  }
+
+  /**
+   * Paso 1 de la redención: pide el código al proveedor. El cuerpo lleva `otpActions` con
+   * `validate: false` y `redeem: true`, que es como el proveedor entiende «estoy pidiendo un código
+   * para quemar puntos», no para consultar nada.
+   */
+  private async requestOtpChallenge(
+    token: string,
+    config: PuntosColombiaConfig,
+    documentNumber: string,
+    documentType: PointsDocumentType,
+  ): Promise<PointsRedemptionChallenge> {
+    const url = integrationUrl(
+      config.baseUrl,
+      'Vinculacion/v1/accounts/me/beginidentityvalidation',
+    );
+    let payload: unknown;
+    try {
+      payload = await integrationPost(
+        url,
+        {
+          ...puntosColombiaHeaders(config, token),
+          'content-type': 'application/json',
+          // La solicitud del código sí pide el partner code también como cabecera, como la anulación.
+          'CA-PARTNERCODE': config.partnerCode,
+        },
+        {
+          documentNo: documentNumber,
+          documentType,
+          otpActions: { validate: false, redeem: true },
+        },
+        'Puntos Colombia',
+      );
+    } catch (error) {
+      if (error instanceof IntegrationRequestRejectedException) {
+        throw new PointsRedemptionRejectedError(
+          error.providerCode ?? String(error.statusCode),
+          error.providerDetail ?? 'Puntos Colombia rechazó la solicitud del código.',
+        );
+      }
+      throw error;
+    }
+    if (!isRecord(payload)) throw invalidIntegrationResponse('Puntos Colombia');
+    if (payload.processed !== true) {
+      throw invalidIntegrationResponse('Puntos Colombia');
+    }
+    const validationMethod =
+      typeof payload.validationMethod === 'string' ? payload.validationMethod.trim() : '';
+    if (!validationMethod) throw invalidIntegrationResponse('Puntos Colombia');
+    return {
+      validationMethod,
+      suggestedMessage:
+        typeof payload.suggestedMessage === 'string' && payload.suggestedMessage.trim()
+          ? payload.suggestedMessage.trim()
+          : null,
+    };
+  }
+
+  /**
+   * Paso 2: quema los puntos. El proveedor devuelve `mainBalance` como texto y con lo que queda en la
+   * cuenta, así que el saldo que se guarda es el suyo y no una resta nuestra.
+   */
+  private async requestRedemption(
+    token: string,
+    config: PuntosColombiaConfig,
+    request: PointsRedemptionRequest,
+  ): Promise<PointsRedemptionResult> {
+    const url = integrationUrl(config.baseUrl, 'pos-management/v1/transactions/processredemption');
+    let payload: unknown;
+    try {
+      payload = await integrationPost(
+        url,
+        {
+          ...puntosColombiaHeaders(config, token),
+          'content-type': 'application/json',
+          'CA-PARTNERCODE': config.partnerCode,
+        },
+        {
+          documentNo: request.documentNumber,
+          documentType: request.documentType,
+          pin: request.pin,
+          partnerCode: config.partnerCode,
+          mainPointsRedeemed: request.points,
+          transactionIdentifier: request.transactionIdentifier,
+        },
+        'Puntos Colombia',
+      );
+    } catch (error) {
+      if (error instanceof IntegrationRequestRejectedException) {
+        throw new PointsRedemptionRejectedError(
+          error.providerCode ?? String(error.statusCode),
+          error.providerDetail ?? 'Puntos Colombia rechazó la redención.',
+        );
+      }
+      throw error;
+    }
+    if (!isRecord(payload)) throw invalidIntegrationResponse('Puntos Colombia');
+    // Los dos nombres conviven en la respuesta del proveedor; se acepta cualquiera de los dos.
+    const burned = payload.mainPointsBurned ?? payload.mainPointsRedeemed;
+    if (burned === undefined || burned === null)
+      throw invalidIntegrationResponse('Puntos Colombia');
+    return {
+      // Lo quemado lo dice el proveedor: no se asume que sea igual a lo pedido.
+      pointsRedeemed: Math.trunc(finiteNumber(burned)),
+      pointsBalance: Math.trunc(finiteNumber(payload.mainBalance)),
       approbationNumber:
         typeof payload.approbationNumber === 'string' ? payload.approbationNumber : null,
     };

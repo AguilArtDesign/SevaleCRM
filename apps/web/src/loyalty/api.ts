@@ -4,6 +4,34 @@ import { apiUrl } from '../config/api-url';
 export type PointsInvoiceStatus =
   'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED' | 'UNVERIFIED' | 'REVOKING' | 'REVOKED';
 
+/** La redención tiene su propio ciclo: nace esperando la factura que documenta la venta. */
+export type PointsRedemptionStatus =
+  'PROCESSING' | 'PENDING_INVOICE' | 'COMPLETED' | 'FAILED' | 'UNVERIFIED';
+
+export type PointsRedemptionRecord = {
+  id: number;
+  kind: 'REDEMPTION';
+  documentNumber: string;
+  documentType: string;
+  customerName: string | null;
+  pointsRequested: number;
+  pointsRedeemed: number | null;
+  pointsBalance: number | null;
+  amountCop: string;
+  approbationNumber: string | null;
+  validationMethod: string | null;
+  status: PointsRedemptionStatus;
+  errorCode: string | null;
+  errorMessage: string | null;
+  invoice: { name: string; date: string | null; total: string | null } | null;
+  completedAt: string | null;
+  createdBy: { id: string; name: string; email: string } | null;
+  createdAt: string;
+};
+
+/** Fila del panel: una acumulación con su factura, o una redención sin factura todavía. */
+export type PointsPanelRow = (PointsInvoiceRecord & { kind: 'ACCRUAL' }) | PointsRedemptionRecord;
+
 export type PointsInvoiceRecord = {
   id: number;
   source: 'SIIGO' | 'UAT_SEED';
@@ -47,7 +75,7 @@ export type PointsInvoiceRecord = {
 };
 
 export type PointsInvoiceListResponse = {
-  data: PointsInvoiceRecord[];
+  data: PointsPanelRow[];
   pagination: { page: number; pageSize: number; total: number; totalPages: number };
 };
 
@@ -71,6 +99,7 @@ export type PointsBalanceRecord = {
   pointsAmount: number;
   pointsValueInMoney: number;
   allowAccrual: boolean;
+  allowRedemption: boolean;
 };
 
 export type PointsLookupResult = { found: true; balance: PointsBalanceRecord } | { found: false };
@@ -164,5 +193,35 @@ export const pointsColombiaApi = {
     apiRequest<PointsInvoiceRecord>('/api/points-colombia/invoices/uat', {
       method: 'POST',
       body: JSON.stringify(input),
+    }),
+
+  // --- Redención ---------------------------------------------------------------------------------
+  /** Primer paso del modal: el cliente existe y cuántos puntos tiene. */
+  redemptionLookup: (documentNumber: string, documentType: PointsDocumentType) =>
+    apiRequest<PointsLookupResult>('/api/points-colombia/redemptions/lookup', {
+      method: 'POST',
+      body: JSON.stringify({ documentNumber, documentType }),
+    }),
+  /** Pide el código al cliente. La respuesta nunca trae el código. */
+  redemptionChallenge: (documentNumber: string, documentType: PointsDocumentType) =>
+    apiRequest<{ validationMethod: string; suggestedMessage: string | null }>(
+      '/api/points-colombia/redemptions/challenge',
+      { method: 'POST', body: JSON.stringify({ documentNumber, documentType }) },
+    ),
+  redeem: (input: {
+    documentNumber: string;
+    documentType: PointsDocumentType;
+    points: number;
+    pin: string;
+  }) =>
+    apiRequest<PointsRedemptionRecord>('/api/points-colombia/redemptions', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+  /** Asocia la factura de Siigo que documenta la venta y cierra la redención. */
+  attachRedemptionInvoice: (id: number, number: string, sellerId?: number) =>
+    apiRequest<PointsRedemptionRecord>(`/api/points-colombia/redemptions/${id}/invoice`, {
+      method: 'POST',
+      body: JSON.stringify(sellerId ? { number, sellerId } : { number }),
     }),
 };

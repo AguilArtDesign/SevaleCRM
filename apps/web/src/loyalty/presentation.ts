@@ -1,4 +1,4 @@
-import type { PointsInvoiceRecord, PointsInvoiceStatus } from './api';
+import type { PointsInvoiceRecord, PointsInvoiceStatus, PointsRedemptionStatus } from './api';
 
 export const statusMeta: Record<
   PointsInvoiceStatus,
@@ -15,6 +15,25 @@ export const statusMeta: Record<
   REVOKED: { label: 'Revocado', color: 'default' },
 };
 
+/**
+ * Estado de una redención. `PENDING_INVOICE` es el normal al terminar: los puntos ya salieron de la
+ * cuenta del cliente y falta la factura que documenta la venta.
+ */
+export const redemptionStatusMeta: Record<
+  PointsRedemptionStatus,
+  { label: string; color: 'default' | 'warning' | 'success' | 'danger' }
+> = {
+  PROCESSING: { label: 'Redimiendo', color: 'warning' },
+  PENDING_INVOICE: { label: 'Por facturar', color: 'warning' },
+  COMPLETED: { label: 'Completado', color: 'success' },
+  FAILED: { label: 'Fallido', color: 'danger' },
+  UNVERIFIED: { label: 'Por verificar', color: 'danger' },
+};
+
+/** Una redención solo se puede facturar mientras no tenga factura. */
+export function canAttachInvoice(redemption: { status: PointsRedemptionStatus }) {
+  return redemption.status === 'PENDING_INVOICE';
+}
 /** Solo los estados sin acumulación confirmada permiten operar la factura. */
 export function canAccrue(invoice: PointsInvoiceRecord) {
   return invoice.status === 'PENDING' || invoice.status === 'FAILED';

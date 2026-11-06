@@ -2,6 +2,14 @@ export const applicationName = 'SevaleCRM';
 
 export { bogotaTimeZone, parseBogotaDateTime } from './bogota-datetime.js';
 
+export {
+  amountForRedemptionPoints,
+  pointsForRedemptionAmount,
+  pointsRedemptionMinimum,
+  pointsRedemptionValueCop,
+  redemptionProblem,
+} from './points-redemption.js';
+
 export { formatPhoneInternational, mapPhoneToSiigo, normalizePhoneE164 } from './customer-phone.js';
 export type { SiigoPhone } from './customer-phone.js';
 // El navegador no puede usar las anteriores: arrastran `intl-tel-input` al paquete inicial. Estas

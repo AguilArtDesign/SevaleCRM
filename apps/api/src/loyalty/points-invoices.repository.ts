@@ -1,5 +1,4 @@
 import { Injectable } from '@nestjs/common';
-import type { PointsInvoiceListQuery } from '@sevale/validation';
 import type { Prisma } from '../generated/prisma/client.js';
 import { PrismaService } from '../database/prisma.service.js';
 
@@ -74,41 +73,25 @@ export type PointsInvoiceWithAccrual = Prisma.PointsInvoiceGetPayload<{
 export class PointsInvoicesRepository {
   constructor(private readonly prisma: PrismaService) {}
 
-  list(query: PointsInvoiceListQuery) {
-    const where: Prisma.PointsInvoiceWhereInput = {
-      ...(query.status === 'all' ? {} : { status: query.status }),
-      ...(query.sellerId ? { sellerId: query.sellerId } : {}),
-      ...(query.search
-        ? {
-            OR: [
-              { name: { contains: query.search } },
-              { customerIdentification: { contains: query.search } },
-            ],
-          }
-        : {}),
-      ...(query.dateFrom || query.dateTo
-        ? {
-            invoiceDate: {
-              ...(query.dateFrom ? { gte: query.dateFrom } : {}),
-              ...(query.dateTo ? { lte: query.dateTo } : {}),
-            },
-          }
-        : {}),
-    };
-    return this.prisma.$transaction([
-      this.prisma.pointsInvoice.findMany({
-        where,
-        include: invoiceInclude,
-        orderBy: [{ invoiceDate: 'desc' }, { id: 'desc' }],
-        skip: (query.page - 1) * query.pageSize,
-        take: query.pageSize,
-      }),
-      this.prisma.pointsInvoice.count({ where }),
-    ]);
-  }
-
   detail(id: number) {
     return this.prisma.pointsInvoice.findUnique({ where: { id }, include: invoiceInclude });
+  }
+
+  /**
+   * Primeras `take` filas que cumplen el filtro, para el listado unido del panel. Se ordena igual que
+   * en el listado de siempre: la fecha de la factura manda.
+   */
+  listSlice(where: Prisma.PointsInvoiceWhereInput, take: number) {
+    return this.prisma.pointsInvoice.findMany({
+      where,
+      include: invoiceInclude,
+      orderBy: [{ invoiceDate: 'desc' }, { id: 'desc' }],
+      take,
+    });
+  }
+
+  count(where: Prisma.PointsInvoiceWhereInput) {
+    return this.prisma.pointsInvoice.count({ where });
   }
 
   bySiigoId(siigoInvoiceId: string) {

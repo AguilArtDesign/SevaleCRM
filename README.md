@@ -400,6 +400,18 @@ Solo aplica a los estados sin operación —`PENDING` y `FAILED`— y el bloqueo
 
 Va con su propio permiso (`loyalty.delete`, hoy solo `ADMIN`), igual que la anulación: habilitar la acumulación a los comerciales no debe habilitar el borrado.
 
+### Redención de puntos
+
+Redimir es el camino inverso: el cliente paga una parte de su compra con puntos en el punto de venta de Siigo y el CRM descuenta ese saldo en el programa. El comercial pulsa **Redimir**, consulta al cliente por su documento, acuerda cuántos puntos quema —la pantalla convierte a pesos y al revés mientras se escribe—, pide el código y lo confirma con el cliente.
+
+La conversión es la que el comercial hacía a mano en la calculadora: **un punto vale `$6`**. Para saber cuántos puntos hacen falta se divide el importe entre 6 y se redondea **hacia arriba** ($10.000 → 1667 puntos); los puntos se convierten a pesos multiplicando por 6, así que 1667 puntos son `$10.002`, que es lo que se aplica en la factura. La acumulación redondea al contrario —hacia abajo y un punto por cada mil pesos—, porque son dos operaciones distintas y no deben compartir fórmula. El proveedor no acepta redimir menos de **200 puntos**, y el saldo del cliente es el otro límite; ambos se validan en el modal antes de pedir el código y otra vez en el servidor antes de enviar la transacción.
+
+La solicitud del código va a `POST Vinculacion/v1/accounts/me/beginidentityvalidation` con `otpActions` (`validate: false`, `redeem: true`) y la redención a `POST pos-management/v1/transactions/processredemption` con el PIN, `mainPointsRedeemed` y el `transactionIdentifier` que identifica la operación. **El proveedor devuelve el código en la respuesta**: el CRM lo descarta y lo enmascara en la bitácora (`otp`, `pin`, `otpCode`) igual que hace con las credenciales, porque guardarlo sería dejar el segundo factor en texto plano.
+
+Una redención nace sin factura, porque el comercial factura después en Siigo: la fila muestra `—` en Factura y Fecha y el estado **Por facturar** (`PENDING_INVOICE`) hasta que alguien asocia la factura desde la propia fila. Los estados son `PROCESSING` mientras el proveedor responde, `PENDING_INVOICE` con los puntos ya quemados, `COMPLETED` cuando tiene factura, y `FAILED` o `UNVERIFIED` cuando el intento falló de forma definitiva o ambigua. Se guarda en su propia tabla, `points_redemptions`, para no mezclar facturas acumuladas con operaciones que aún no tienen factura.
+
+Va con el permiso `loyalty.redeem`, separado de `loyalty.accrue`: un error al redimir le quita puntos al cliente, no se los suma. `npm run test:points-redemption` cubre la consulta, que el código no quede en la bitácora, el saldo insuficiente, la cuenta inhabilitada, la redención correcta con su importe, el fallo ambiguo, el rechazo definitivo y la factura asociada.
+
 ### Intentos ambiguos
 
 El identificador de transacción se persiste **antes** del `POST`, de modo que se reutiliza si el proceso se interrumpe. Un `5xx` o un tiempo de espera agotado dejan la factura en `UNVERIFIED`: el proveedor pudo haber acumulado, así que el panel bloquea el reintento en lugar de arriesgar una doble acumulación. La reconciliación manual de esos casos sigue pendiente de definir con el proveedor para la certificación.

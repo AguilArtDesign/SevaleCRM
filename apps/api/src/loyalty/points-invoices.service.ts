@@ -8,7 +8,11 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { Prisma } from '../generated/prisma/client.js';
+import {
+  Prisma,
+  type PointsInvoiceStatus,
+  type PointsRedemptionStatus,
+} from '../generated/prisma/client.js';
 import type {
   PointsAccountLookupInput,
   PointsAccrualInput,
@@ -37,6 +41,8 @@ import {
   PointsInvoicesRepository,
   type PointsInvoiceWithAccrual,
 } from './points-invoices.repository.js';
+import { PointsRedemptionsRepository } from './points-redemptions.repository.js';
+import { serializeRedemption } from './points-redemption-view.js';
 
 /** Regla fija acordada: cada $1.000 de la factura valen un punto, redondeando hacia abajo. */
 export function pointsForTotal(total: Prisma.Decimal | number): number {
@@ -148,7 +154,77 @@ function serializeBalance(balance: PointsBalance) {
     pointsAmount: balance.pointsAmount,
     pointsValueInMoney: balance.pointsValueInMoney,
     allowAccrual: balance.allowAccrual,
+    allowRedemption: balance.allowRedemption,
   };
+}
+
+/**
+ * Qué estados del filtro miran las facturas. `null` significa que el filtro no puede devolver
+ * facturas: pedir las que están pendientes de factura solo puede dar redenciones.
+ */
+function hasInvoiceStatus(status: PointsInvoiceListQuery['status']): boolean {
+  // `PENDING_INVOICE` es un estado exclusivo de la redención: la factura nunca espera factura.
+  return status !== 'PENDING_INVOICE';
+}
+
+/** Lo mismo para las redenciones: `REVOKING`/`REVOKED` solo existen en la acumulación. */
+function hasRedemptionStatus(status: PointsInvoiceListQuery['status']): boolean {
+  return status !== 'REVOKING' && status !== 'REVOKED' && status !== 'PENDING';
+}
+
+function invoiceWhere(query: PointsInvoiceListQuery): Prisma.PointsInvoiceWhereInput {
+  return {
+    ...(query.status === 'all' ? {} : { status: query.status as PointsInvoiceStatus }),
+    ...(query.sellerId ? { sellerId: query.sellerId } : {}),
+    ...(query.search
+      ? {
+          OR: [
+            { name: { contains: query.search } },
+            { customerIdentification: { contains: query.search } },
+          ],
+        }
+      : {}),
+    ...(query.dateFrom || query.dateTo
+      ? {
+          invoiceDate: {
+            ...(query.dateFrom ? { gte: query.dateFrom } : {}),
+            ...(query.dateTo ? { lte: query.dateTo } : {}),
+          },
+        }
+      : {}),
+  };
+}
+
+function redemptionWhere(query: PointsInvoiceListQuery): Prisma.PointsRedemptionWhereInput {
+  // Búsqueda y fecha usan las dos `OR`, así que se combinan con `AND`: en un mismo objeto la segunda
+  // clave `OR` pisaría a la primera y el filtro de fecha se perdería.
+  const conditions: Prisma.PointsRedemptionWhereInput[] = [];
+  if (query.status !== 'all') {
+    conditions.push({ status: query.status as PointsRedemptionStatus });
+  }
+  if (query.search) {
+    conditions.push({
+      OR: [
+        { invoiceName: { contains: query.search } },
+        { documentNumber: { contains: query.search } },
+        { customerName: { contains: query.search } },
+      ],
+    });
+  }
+  /**
+   * La fecha de una redención es la de su factura o, mientras no la tenga, la del día en que se
+   * redimió: es la única que existe para ordenarla y filtrarla.
+   */
+  if (query.dateFrom || query.dateTo) {
+    const range = {
+      ...(query.dateFrom ? { gte: query.dateFrom } : {}),
+      ...(query.dateTo ? { lte: query.dateTo } : {}),
+    };
+    conditions.push({
+      OR: [{ invoiceDate: range }, { invoiceDate: null, createdAt: range }],
+    });
+  }
+  return conditions.length > 0 ? { AND: conditions } : {};
 }
 
 @Injectable()
@@ -157,18 +233,56 @@ export class PointsInvoicesService {
 
   constructor(
     private readonly invoices: PointsInvoicesRepository,
+    private readonly redemptions: PointsRedemptionsRepository,
     private readonly siigo: SiigoService,
     private readonly puntos: PuntosColombiaService,
     private readonly logs: IntegrationLogsService,
   ) {}
 
   async list(query: PointsInvoiceListQuery) {
-    const [rows, total] = await this.invoices.list(query);
-    const names = await this.sellerNames(rows.map((row) => row.sellerId));
+    /**
+     * El panel muestra dos operaciones distintas. Cada tabla aporta sus filas y se mezclan aquí: la
+     * página no se puede pedir a una sola tabla porque una acumulación y una redención del mismo día
+     * se alternan. Se piden las primeras `page × pageSize` de cada lado, que es suficiente para
+     * armar cualquier página con exactitud, y se corta la que toca.
+     */
+    const take = query.page * query.pageSize;
+    const showsInvoices = hasInvoiceStatus(query.status);
+    /** Sin vendedor no hay redención que filtrar: una redención no pertenece a un seller de Siigo. */
+    const showsRedemptions = hasRedemptionStatus(query.status) && !query.sellerId;
+
+    const [invoiceRows, invoiceTotal, redemptionRows, redemptionTotal] = await Promise.all([
+      showsInvoices ? this.invoices.listSlice(invoiceWhere(query), take) : Promise.resolve([]),
+      showsInvoices ? this.invoices.count(invoiceWhere(query)) : Promise.resolve(0),
+      showsRedemptions
+        ? this.redemptions.listSlice(redemptionWhere(query), take)
+        : Promise.resolve([]),
+      showsRedemptions ? this.redemptions.count(redemptionWhere(query)) : Promise.resolve(0),
+    ]);
+
+    const names = await this.sellerNames(invoiceRows.map((row) => row.sellerId));
+    const rows = [
+      ...invoiceRows.map((row) => ({
+        at: row.invoiceDate.getTime(),
+        kind: 'ACCRUAL' as const,
+        payload: serializeInvoice(
+          row,
+          row.sellerId === null ? null : (names.get(row.sellerId) ?? null),
+        ),
+      })),
+      ...redemptionRows.map((row) => ({
+        at: row.invoiceDate?.getTime() ?? row.createdAt.getTime(),
+        kind: 'REDEMPTION' as const,
+        payload: serializeRedemption(row),
+      })),
+    ].sort((first, second) => second.at - first.at);
+
+    const total = invoiceTotal + redemptionTotal;
+    const start = (query.page - 1) * query.pageSize;
     return {
-      data: rows.map((row) =>
-        serializeInvoice(row, row.sellerId === null ? null : (names.get(row.sellerId) ?? null)),
-      ),
+      data: rows
+        .slice(start, start + query.pageSize)
+        .map(({ kind, payload }) => ({ ...payload, kind })),
       pagination: {
         page: query.page,
         pageSize: query.pageSize,
@@ -233,7 +347,7 @@ export class PointsInvoicesService {
    * backend: el navegador solo manda el número, así que no puede pedir la factura de otro seller.
    */
   async search(input: PointsInvoiceSearchInput, user: SessionUser) {
-    const { prefix, sellerId } = await this.resolvePrefix(user, input.sellerId);
+    const { prefix, sellerId } = await this.resolveInvoicePrefix(user, input.sellerId);
     const name = `${prefix}${input.number}`;
     const invoice = await this.siigo.findInvoiceByName(name);
     if (!invoice) {
@@ -271,7 +385,7 @@ export class PointsInvoicesService {
 
   /** Registra la factura ya validada. Se vuelve a consultar Siigo: el navegador no es la fuente. */
   async register(input: PointsInvoiceSearchInput, user: SessionUser) {
-    const { prefix, sellerId } = await this.resolvePrefix(user, input.sellerId);
+    const { prefix, sellerId } = await this.resolveInvoicePrefix(user, input.sellerId);
     const name = `${prefix}${input.number}`;
     const invoice = await this.siigo.findInvoiceByName(name);
     if (!invoice) {
@@ -655,7 +769,8 @@ export class PointsInvoicesService {
     }
   }
 
-  /** El prefijo sale del usuario; el administrador lo elige entre los configurados. */ private async resolvePrefix(
+  /** El prefijo sale del usuario; el administrador lo elige entre los configurados. */
+  async resolveInvoicePrefix(
     user: SessionUser,
     requestedSellerId?: number,
   ): Promise<{ prefix: string; sellerId: number | null }> {

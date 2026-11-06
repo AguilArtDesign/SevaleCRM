@@ -1521,6 +1521,25 @@ export const pointsAccountLookupSchema = z.object({
 
 export const pointsAccrualSchema = pointsAccountLookupSchema;
 
+/** El cliente autoriza con el código que le llegó al celular o al correo. */
+export const pointsRedemptionSchema = pointsAccountLookupSchema.extend({
+  points: z.coerce
+    .number()
+    .int('Los puntos se redimen en unidades enteras.')
+    .positive('Ingresa cuántos puntos quiere redimir el cliente.')
+    .max(10_000_000, 'La cantidad de puntos es demasiado alta.'),
+  pin: z
+    .string()
+    .trim()
+    .regex(/^\d{4,8}$/, 'El código debe tener entre 4 y 8 dígitos.'),
+});
+
+/**
+ * Asociar la factura de Siigo a una redención ya hecha. El número llega como lo escribe el comercial
+ * y el backend lo completa con el prefijo, igual que al buscar una factura para acumular.
+ */
+export const pointsRedemptionInvoiceSchema = pointsInvoiceSearchSchema;
+
 /**
  * Importe escrito a mano. Se acepta como se teclea en Colombia: `250.000`, `250,50` o `250000`. El
  * punto se interpreta como separador de miles solo cuando agrupa de tres en tres; en cualquier otro
@@ -1576,6 +1595,10 @@ export const pointsInvoiceIdSchema = z.coerce
 
 export const pointsInvoiceListQuerySchema = z.object({
   search: z.string().trim().max(191).default(''),
+  /**
+   * Los estados de las dos operaciones que muestra el panel. Los de factura son la acumulación; los
+   * de redención se distinguen solos y no se mezclan con los otros.
+   */
   status: z
     .enum([
       'all',
@@ -1586,6 +1609,7 @@ export const pointsInvoiceListQuerySchema = z.object({
       'UNVERIFIED',
       'REVOKING',
       'REVOKED',
+      'PENDING_INVOICE',
     ])
     .default('all'),
   sellerId: z.coerce.number().int().positive().optional(),
@@ -1598,6 +1622,8 @@ export const pointsInvoiceListQuerySchema = z.object({
 export type PointsInvoiceSearchInput = z.infer<typeof pointsInvoiceSearchSchema>;
 export type PointsAccountLookupInput = z.infer<typeof pointsAccountLookupSchema>;
 export type PointsAccrualInput = z.infer<typeof pointsAccrualSchema>;
+export type PointsRedemptionInput = z.infer<typeof pointsRedemptionSchema>;
+export type PointsRedemptionInvoiceInput = z.infer<typeof pointsRedemptionInvoiceSchema>;
 export type PointsUatInvoiceInput = z.infer<typeof pointsUatInvoiceSchema>;
 export type PointsInvoiceListQuery = z.infer<typeof pointsInvoiceListQuerySchema>;
 export type PointsDocumentType = (typeof pointsDocumentTypes)[number]['value'];

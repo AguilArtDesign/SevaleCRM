@@ -70,6 +70,9 @@ export const permissions = [
   // Crear facturas de prueba desde el panel. Es una ayuda de certificación, no una función de
   // negocio: en producción el ambiente real del proveedor debe tenerla apagada con `PCO_UAT_ENABLED`.
   'loyalty.uat',
+  // Redimir puntos: quema el saldo del cliente en el programa, así que es aparte de acumular. Un
+  // error aquí le quita puntos al cliente, no se los suma.
+  'loyalty.redeem',
   // Bitácora de las llamadas a las APIs externas. Contiene cuerpos con datos de clientes y pedidos,
   // así que es exclusiva de la administración; vaciarla es un acto aparte.
   'logs.read',

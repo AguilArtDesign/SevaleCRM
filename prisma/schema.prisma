@@ -168,6 +168,7 @@ model User {
   prospectsCreated        Prospect[]         @relation("ProspectCreator")
   integrationLogs         IntegrationLog[]
   pointsInvoicesCreated   PointsInvoice[]    @relation("PointsInvoiceCreatedBy")
+  pointsRedemptions       PointsRedemption[] @relation("PointsRedemptionCreatedBy")
   pointsAccruals          PointsAccrual[]    @relation("PointsAccrualActor")
   pointsAccrualsRevoked   PointsAccrual[]    @relation("PointsAccrualRevokedBy")
 
@@ -1027,6 +1028,16 @@ enum PointsRevocationStatus {
   UNVERIFIED
 }
 
+/// Ciclo de una redención. `PENDING_INVOICE` es el estado normal al terminar de redimir: los puntos
+/// ya salieron de la cuenta del cliente pero la factura que los documenta todavía no existe.
+enum PointsRedemptionStatus {
+  PROCESSING
+  PENDING_INVOICE
+  COMPLETED
+  FAILED
+  UNVERIFIED
+}
+
 /// Factura que se sigue desde el panel. La real de Siigo se identifica por su UUID externo; la de
 /// UAT lo deja nulo y se marca con `source`, para no atribuirle un identificador inventado.
 model PointsInvoice {
@@ -1059,6 +1070,48 @@ model PointsInvoice {
   @@index([invoiceDate])
   @@index([sellerId])
   @@map("points_invoices")
+}
+
+/// Una redención de puntos: el cliente paga parte de una compra con sus puntos. Es una operación
+/// distinta de la acumulación y vive en su propia tabla porque nace al revés: primero se redimen los
+/// puntos y la factura de Siigo se asocia después, cuando el comercial la emite en el punto de venta.
+model PointsRedemption {
+  id                    Int                    @id @default(autoincrement())
+  /// Documento del cliente y su tipo, tal como se enviaron al proveedor.
+  documentNumber        String                 @map("document_number") @db.VarChar(32)
+  documentType          String                 @map("document_type") @db.VarChar(4)
+  /// Nombre que devolvió el proveedor al consultar la cuenta, para reconocer al cliente en el panel.
+  customerName          String?                @map("customer_name") @db.VarChar(191)
+  /// Puntos que el comercial pidió quemar, y los que el proveedor dice haber quemado.
+  pointsRequested       Int                    @map("points_requested")
+  pointsRedeemed        Int?                   @map("points_redeemed")
+  /// Saldo que queda en la cuenta según el proveedor, no una resta nuestra.
+  pointsBalance         Int?                   @map("points_balance")
+  /// Valor en pesos que se aplica en la factura: los puntos redimidos por seis.
+  amountCop             Decimal                @map("amount_cop") @db.Decimal(18, 2)
+  approbationNumber     String?                @map("approbation_number") @db.VarChar(128)
+  /// El identificador exacto que viajó al proveedor: permite conciliar un resultado incierto.
+  transactionIdentifier Json                   @map("transaction_identifier")
+  /// Método con el que el cliente autorizó: `OTP` (código al celular o correo) o `TOTP` (app).
+  validationMethod      String?                @map("validation_method") @db.VarChar(20)
+  status                PointsRedemptionStatus @default(PROCESSING)
+  errorCode             String?                @map("error_code") @db.VarChar(100)
+  errorMessage          String?                @map("error_message") @db.Text
+  /// Factura de Siigo que documenta la venta. Se asocia después de redimir, desde el panel.
+  siigoInvoiceId        String?                @map("siigo_invoice_id") @db.VarChar(64)
+  invoiceName           String?                @map("invoice_name") @db.VarChar(64)
+  invoiceDate           DateTime?              @map("invoice_date") @db.Date
+  invoiceTotal          Decimal?               @map("invoice_total") @db.Decimal(18, 2)
+  createdByUserId       String?                @map("created_by_user_id") @db.VarChar(36)
+  completedAt           DateTime?              @map("completed_at")
+  createdAt             DateTime               @default(now()) @map("created_at")
+  updatedAt             DateTime               @updatedAt @map("updated_at")
+  createdBy             User?                  @relation("PointsRedemptionCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+
+  @@index([status])
+  @@index([documentNumber])
+  @@index([createdAt])
+  @@map("points_redemptions")
 }
 
 /// Un intento de acumulación. Se guarda aparte de la factura para conservar la trazabilidad de cada

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Alert,
@@ -11,6 +11,7 @@ import {
   Description,
   Dropdown,
   EmptyState,
+  InputOTP,
   Label,
   ListBox,
   Modal,
@@ -19,9 +20,11 @@ import {
   Separator,
   Spinner,
   Table,
+  TextField,
 } from '@heroui/react';
 import { parseDate, type CalendarDate } from '@internationalized/date';
 import {
+  ArrowRightArrowLeft,
   ArrowRotateLeft,
   EllipsisVertical,
   Eye,
@@ -32,6 +35,12 @@ import {
   Xmark,
 } from '@gravity-ui/icons';
 import { pointsDocumentTypes, type PointsDocumentType } from '@sevale/validation';
+import {
+  amountForRedemptionPoints,
+  pointsForRedemptionAmount,
+  pointsRedemptionMinimum,
+  redemptionProblem,
+} from '@sevale/shared';
 import { hasPermission } from '@sevale/permissions';
 import { Chip } from '../components/Chip';
 import { Input } from '../components/Input';
@@ -45,13 +54,16 @@ import {
   type PointsInvoiceRecord,
   type PointsInvoiceStatus,
   type PointsPrefixOption,
+  type PointsRedemptionRecord,
 } from './api';
 import {
   accrualTimestamp,
   canAccrue,
+  canAttachInvoice,
   canDelete,
   canRevoke,
   invoiceDate,
+  redemptionStatusMeta,
   statusMeta,
 } from './presentation';
 
@@ -74,6 +86,8 @@ export function PointsColombiaPage() {
   const canDeletePoints = Boolean(user && hasPermission(user.role, 'loyalty.delete'));
   // Crear facturas de prueba es una ayuda de certificación, separada de operar el panel.
   const canCreateUat = Boolean(user && hasPermission(user.role, 'loyalty.uat'));
+  // Redimir le quita puntos al cliente: permiso propio, no el de acumular.
+  const canRedeem = Boolean(user && hasPermission(user.role, 'loyalty.redeem'));
   // El vendedor solo lo usa la administración: un comercial opera sus propias facturas y la columna
   // le repetiría su propio nombre en todas las filas.
   const isAdmin = user?.role === 'ADMIN';
@@ -89,6 +103,8 @@ export function PointsColombiaPage() {
   const [revokeTarget, setRevokeTarget] = useState<PointsInvoiceRecord | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<PointsInvoiceRecord | null>(null);
   const [detailTarget, setDetailTarget] = useState<PointsInvoiceRecord | null>(null);
+  const [redeemOpen, setRedeemOpen] = useState(false);
+  const [invoiceTarget, setInvoiceTarget] = useState<PointsRedemptionRecord | null>(null);
 
   const listQuery = useQuery({
     // Las fechas entran a la clave como `YYYY-MM-DD`: el objeto del calendario cambia de identidad
@@ -153,6 +169,19 @@ export function PointsColombiaPage() {
             <FileText width={16} height={16} />
             Agregar factura
           </Button>
+          {/* Redimir va después de agregar factura porque es la operación inversa y menos frecuente:
+              el cliente paga con sus puntos en vez de sumarlos. */}
+          {canRedeem && (
+            <Button variant="secondary" onPress={() => setRedeemOpen(true)}>
+              <img
+                src="/img/puntos-colombia.svg"
+                alt=""
+                aria-hidden="true"
+                className="points-redeem-icon"
+              />
+              Redimir
+            </Button>
+          )}
         </div>
       </header>
 
@@ -304,6 +333,8 @@ export function PointsColombiaPage() {
         <Table.ScrollContainer>
           <Table.Content aria-label="Facturas del panel de Puntos Colombia">
             <Table.Header>
+              {/* Tipo: acumulación o redención. Son dos operaciones distintas en la misma tabla. */}
+              <Table.Column>Tipo</Table.Column>
               <Table.Column isRowHeader>Factura</Table.Column>
               <Table.Column>Fecha</Table.Column>
               <Table.Column>Documento</Table.Column>
@@ -338,7 +369,84 @@ export function PointsColombiaPage() {
                 )
               }
             >
-              {(result?.data ?? []).map((invoice) => {
+              {(result?.data ?? []).map((row) => {
+                /**
+                 * Una redención nace sin factura: se redimen los puntos y el comercial factura después
+                 * en Siigo. Factura y Fecha quedan en «—» hasta que alguien asocie la factura.
+                 */
+                if (row.kind === 'REDEMPTION') {
+                  const redemptionMeta = redemptionStatusMeta[row.status];
+                  return (
+                    <Table.Row key={`redemption-${row.id}`}>
+                      <Table.Cell>
+                        <Chip color="accent">Redención</Chip>
+                      </Table.Cell>
+                      <Table.Cell>
+                        {row.invoice ? <strong>{row.invoice.name}</strong> : '—'}
+                      </Table.Cell>
+                      <Table.Cell>
+                        {row.invoice?.date ? invoiceDate(row.invoice.date) : '—'}
+                      </Table.Cell>
+                      <Table.Cell>
+                        <div className="customer-copy">
+                          <strong>{row.documentNumber}</strong>
+                          <span>{pointsDocumentLabel(row.documentType)}</span>
+                        </div>
+                      </Table.Cell>
+                      <Table.Cell>{row.createdBy?.name ?? '—'}</Table.Cell>
+                      <Table.Cell>
+                        {formattedMoneyWithCode(row.invoice?.total ?? row.amountCop, 'COP')}
+                      </Table.Cell>
+                      <Table.Cell>
+                        <span className="points-cell">
+                          <img src="/img/puntos-colombia.svg" alt="" aria-hidden="true" />
+                          <strong>{row.pointsRedeemed ?? row.pointsRequested}</strong>
+                        </span>
+                      </Table.Cell>
+                      <Table.Cell>
+                        <Chip color={redemptionMeta.color}>{redemptionMeta.label}</Chip>
+                        {row.errorMessage && (
+                          <p className="points-invoice-error">{row.errorMessage}</p>
+                        )}
+                      </Table.Cell>
+                      <Table.Cell>
+                        {row.completedAt ? accrualTimestamp(row.completedAt) : '—'}
+                      </Table.Cell>
+                      <Table.Cell>
+                        <div className="inventory-row-actions">
+                          {canAttachInvoice(row) ? (
+                            <Dropdown>
+                              <Button
+                                className="inventory-actions-trigger"
+                                isIconOnly
+                                size="sm"
+                                variant="ghost"
+                                aria-label={`Acciones para la redención de ${row.documentNumber}`}
+                              >
+                                <EllipsisVertical className="text-muted" width={17} height={17} />
+                              </Button>
+                              <Dropdown.Popover
+                                className="inventory-actions-popover"
+                                placement="bottom end"
+                              >
+                                <Dropdown.Menu
+                                  aria-label={`Acciones para la redención de ${row.documentNumber}`}
+                                  onAction={() => setInvoiceTarget(row)}
+                                >
+                                  <Dropdown.Item id="invoice" textValue="Asociar factura">
+                                    <FileText className="size-4 shrink-0 text-muted" />
+                                    <Label>Asociar factura</Label>
+                                  </Dropdown.Item>
+                                </Dropdown.Menu>
+                              </Dropdown.Popover>
+                            </Dropdown>
+                          ) : null}
+                        </div>
+                      </Table.Cell>
+                    </Table.Row>
+                  );
+                }
+                const invoice = row;
                 const meta = statusMeta[invoice.status];
                 // El tipo lo elige quien acumula; si todavía no hay intento, se usa el que vino de
                 // Siigo al registrar la factura.
@@ -347,15 +455,20 @@ export function PointsColombiaPage() {
                 return (
                   <Table.Row key={invoice.id}>
                     <Table.Cell>
+                      <Chip color="default" className="points-type-accrual">
+                        Acumulación
+                      </Chip>
+                    </Table.Cell>
+                    <Table.Cell>
                       <div className="points-invoice-copy">
-                        <Button
-                          size="sm"
-                          variant="ghost"
+                        <button
+                          type="button"
+                          className="points-invoice-link"
                           aria-label={`Ver detalle de ${invoice.name}`}
-                          onPress={() => setDetailTarget(invoice)}
+                          onClick={() => setDetailTarget(invoice)}
                         >
-                          <strong>{invoice.name}</strong>
-                        </Button>
+                          {invoice.name}
+                        </button>
                         {/* Una factura de prueba nunca debe confundirse con una real de Siigo. */}
                         {invoice.source === 'UAT_SEED' && <Chip color="default">UAT</Chip>}
                       </div>
@@ -603,6 +716,26 @@ export function PointsColombiaPage() {
         onClose={() => setDeleteTarget(null)}
         onDone={() => {
           setDeleteTarget(null);
+          void refresh();
+        }}
+      />
+
+      {canRedeem && (
+        <RedeemModal
+          isOpen={redeemOpen}
+          onClose={() => setRedeemOpen(false)}
+          onDone={() => {
+            setRedeemOpen(false);
+            void refresh();
+          }}
+        />
+      )}
+
+      <AttachInvoiceModal
+        redemption={invoiceTarget}
+        onClose={() => setInvoiceTarget(null)}
+        onDone={() => {
+          setInvoiceTarget(null);
           void refresh();
         }}
       />
@@ -1639,5 +1772,524 @@ function DeleteInvoiceModal({
         </AlertDialog.Container>
       </AlertDialog.Backdrop>
     </AlertDialog>
+  );
+}
+
+/**
+ * Redención en dos fases. La primera consulta al cliente en Puntos Colombia y acuerda cuántos puntos
+ * se queman; la segunda pide el código y lo envía. El código lo recibe el cliente en su celular o su
+ * correo y se lo dicta al comercial: el CRM nunca lo ve, así que la autorización es del cliente.
+ */
+function RedeemModal({
+  isOpen,
+  onClose,
+  onDone,
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const [document, setDocument] = useState('');
+  // Sin tipo elegido: el comercial tiene que decidir cuál aplica en vez de heredar la cédula.
+  const [documentType, setDocumentType] = useState<PointsDocumentType | null>(null);
+  const [lookup, setLookup] = useState<{
+    name: string | null;
+    pointsAmount: number;
+    allowRedemption: boolean;
+  } | null>(null);
+  const [notFound, setNotFound] = useState(false);
+  /** Los dos campos se editan entre sí: escribir pesos calcula los puntos y al revés. */
+  const [pesos, setPesos] = useState('');
+  const [puntos, setPuntos] = useState('');
+  /** Si el código ya se pidió: el modal pasa de ofrecerlo a pedirlo. */
+  const [challengeSent, setChallengeSent] = useState(false);
+  const [pin, setPin] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  /**
+   * Identifica la búsqueda en curso. Cerrar o cambiar el documento la deja atrás, y la respuesta que
+   * llegue tarde se descarta en vez de pintar el saldo de una consulta que ya no interesa.
+   */
+  const sessionRef = useRef(0);
+
+  const reset = () => {
+    sessionRef.current += 1;
+    setDocument('');
+    setDocumentType(null);
+    setLookup(null);
+    setNotFound(false);
+    setPesos('');
+    setPuntos('');
+    setChallengeSent(false);
+    setPin('');
+    setError(null);
+  };
+
+  /**
+   * Cambiar el documento o su tipo invalida lo consultado: seguir mostrando el saldo de otra cuenta
+   * —o dejar el código pedido para el anterior— haría redimir a quien no es.
+   */
+  const invalidateLookup = () => {
+    sessionRef.current += 1;
+    setLookup(null);
+    setNotFound(false);
+    setChallengeSent(false);
+    setPin('');
+    setPesos('');
+    setPuntos('');
+    setError(null);
+  };
+
+  const lookupMutation = useMutation({
+    mutationFn: async (type: PointsDocumentType) => ({
+      session: sessionRef.current,
+      result: await pointsColombiaApi.redemptionLookup(document.trim(), type),
+    }),
+    onSuccess: ({ session, result }) => {
+      if (session !== sessionRef.current) return;
+      setError(null);
+      if (!result.found) {
+        setLookup(null);
+        setNotFound(true);
+        return;
+      }
+      setNotFound(false);
+      setLookup(result.balance);
+    },
+    onError: (failure: Error) => setError(failure.message),
+  });
+
+  const challengeMutation = useMutation({
+    mutationFn: async (type: PointsDocumentType) => ({
+      session: sessionRef.current,
+      result: await pointsColombiaApi.redemptionChallenge(document.trim(), type),
+    }),
+    onSuccess: ({ session }) => {
+      if (session !== sessionRef.current) return;
+      setError(null);
+      setChallengeSent(true);
+    },
+    onError: (failure: Error) => setError(failure.message),
+  });
+
+  const redeemMutation = useMutation({
+    mutationFn: (type: PointsDocumentType) =>
+      pointsColombiaApi.redeem({
+        documentNumber: document.trim(),
+        documentType: type,
+        points: Number(puntos),
+        pin: pin.trim(),
+      }),
+    onSuccess: () => {
+      reset();
+      onDone();
+    },
+    onError: (failure: Error) => setError(failure.message),
+  });
+
+  /**
+   * Cerrar descarta la consulta, pero también el estado de las peticiones. Sin reiniciarlas, una
+   * búsqueda que seguía en vuelo dejaba el campo marcado como ocupado y bloqueado al reabrir.
+   */
+  const close = () => {
+    reset();
+    lookupMutation.reset();
+    challengeMutation.reset();
+    redeemMutation.reset();
+    onClose();
+  };
+
+  const pointsValue = Number(puntos) || 0;
+  /**
+   * Un solo motivo por el que no se puede redimir: el mínimo del proveedor o el saldo del cliente. El
+   * aviso se muestra debajo de los dos campos, así que el campo solo se marca.
+   */
+  const problem = lookup ? redemptionProblem(pointsValue, lookup.pointsAmount) : null;
+  const canRedeemPoints = Boolean(
+    lookup?.allowRedemption &&
+    documentType &&
+    pointsValue > 0 &&
+    problem === null &&
+    pin.trim().length >= 4,
+  );
+
+  /** Escribir pesos llena los puntos; escribir puntos llena los pesos. */
+  const onPesos = (value: string) => {
+    setPesos(value);
+    const amount = Number(value.replace(/[^\d]/g, ''));
+    setPuntos(amount > 0 ? String(pointsForRedemptionAmount(amount)) : '');
+  };
+  const onPuntos = (value: string) => {
+    const digits = value.replace(/[^\d]/g, '');
+    setPuntos(digits);
+    const points = Number(digits) || 0;
+    setPesos(points > 0 ? String(amountForRedemptionPoints(points)) : '');
+  };
+  /**
+   * Lo que se aplica en la factura sale siempre de los puntos, así que $2.000 no existe: son 334
+   * puntos y $2.004. Al salir del campo se ajusta al múltiplo real, para que las dos cifras digan lo
+   * mismo sin tener que explicarlo debajo.
+   */
+  const snapPesos = () => {
+    if (pointsValue > 0) setPesos(String(amountForRedemptionPoints(pointsValue)));
+  };
+
+  return (
+    <Modal isOpen={isOpen} onOpenChange={(open) => !open && close()}>
+      <Modal.Backdrop>
+        <Modal.Container placement="center" size="sm">
+          <Modal.Dialog className="siigo-quotation-modal points-redeem-modal">
+            <Modal.CloseTrigger aria-label="Cerrar redención" />
+            {/* Misma cabecera que la acumulación: la marca del programa manda, el título concreta la
+                operación y la línea de debajo dice qué se está haciendo en este paso. */}
+            <Modal.Header>
+              <div className="points-accrual-header">
+                <PointsColombiaLogo className="points-accrual-logo" />
+                <Modal.Heading>Redimir Puntos</Modal.Heading>
+                <p className="siigo-quotation-subtitle">Validar datos del cliente</p>
+              </div>
+            </Modal.Header>
+            <Modal.Body>
+              {error && (
+                <Alert status="danger">
+                  <Alert.Content>
+                    <Alert.Description>{error}</Alert.Description>
+                  </Alert.Content>
+                </Alert>
+              )}
+
+              {/* Fase 1: el cliente y el acuerdo de cuántos puntos se queman. Se busca al enviar el
+                  documento, igual que en el alta de clientes, sin un botón aparte. Van apilados
+                  porque a 24rem dos columnas dejan los campos demasiado estrechos. */}
+              <div className="points-redeem-client">
+                <div className="customer-field">
+                  <Label>Tipo de documento</Label>
+                  <Select
+                    aria-label="Tipo de documento"
+                    value={documentType}
+                    placeholder="Seleccionar tipo"
+                    variant="secondary"
+                    onChange={(value) => {
+                      setDocumentType(
+                        value === null ? null : (String(value) as PointsDocumentType),
+                      );
+                      // El tipo es parte de la llave de búsqueda: el resultado anterior deja de valer.
+                      invalidateLookup();
+                    }}
+                  >
+                    <Select.Trigger>
+                      <Select.Value />
+                      <Select.Indicator />
+                    </Select.Trigger>
+                    <Select.Popover>
+                      <ListBox>
+                        {pointsDocumentTypes.map((option) => (
+                          <ListBox.Item
+                            key={option.value}
+                            id={option.value}
+                            textValue={option.label}
+                          >
+                            {option.label}
+                            <ListBox.ItemIndicator />
+                          </ListBox.Item>
+                        ))}
+                      </ListBox>
+                    </Select.Popover>
+                  </Select>
+                </div>
+                <div className="customer-field">
+                  <SearchField
+                    aria-label="Número de documento"
+                    value={document}
+                    variant="secondary"
+                    isDisabled={lookupMutation.isPending}
+                    onChange={(value) => {
+                      setDocument(value);
+                      invalidateLookup();
+                    }}
+                    onSubmit={() => {
+                      if (document.trim() && documentType) lookupMutation.mutate(documentType);
+                    }}
+                    onClear={() => {
+                      setDocument('');
+                      invalidateLookup();
+                    }}
+                  >
+                    <Label>Número de documento</Label>
+                    <SearchField.Group>
+                      <SearchField.SearchIcon />
+                      <SearchField.Input placeholder="Buscar número de documento…" />
+                      {/* El icono de limpiar no dice nada mientras se consulta, así que en ese
+                          momento lo sustituye el indicador de espera. */}
+                      {lookupMutation.isPending ? (
+                        <span className="points-redeem-loader">
+                          <Spinner color="current" size="sm" aria-label="Consultando el cliente" />
+                        </span>
+                      ) : (
+                        <SearchField.ClearButton />
+                      )}
+                    </SearchField.Group>
+                  </SearchField>
+                </div>
+              </div>
+
+              {/* El resultado manda: un mensaje solo cuando el cliente no está, y debajo el saldo
+                  cuando lo está. Sin aviso intermedio mientras se consulta. */}
+              {notFound && (
+                <p className="points-accrual-notice">Cliente no registrado en Puntos Colombia.</p>
+              )}
+
+              {lookup && (
+                <>
+                  {!lookup.allowRedemption && (
+                    <p className="points-accrual-notice">
+                      Cuenta encontrada, pero no habilitada para redimir puntos.
+                    </p>
+                  )}
+
+                  <div className="points-accrual-amount">
+                    <strong>{lookup.pointsAmount}</strong>
+                    <span className="points-redeem-caption">Puntos disponibles</span>
+                  </div>
+
+                  {/* Los dos campos se llenan entre sí, así que van juntos con las flechas en medio:
+                      se escribe lo que el cliente pide y se ve el equivalente al instante. */}
+                  <div className="points-redeem-exchange">
+                    {/* `isInvalid` es lo que tiñe la etiqueta y el borde: HeroUI marca el campo
+                        entero, no solo el input. El motivo se explica debajo de los dos campos,
+                        no aquí, para no desalinear la fila. */}
+                    <TextField isInvalid={problem !== null} className="customer-field">
+                      <Label>Puntos</Label>
+                      <Input
+                        variant="secondary"
+                        aria-label="Puntos a redimir"
+                        inputMode="numeric"
+                        value={puntos}
+                        onChange={(event) => onPuntos(event.target.value)}
+                      />
+                    </TextField>
+                    <span className="points-redeem-swap" aria-hidden="true">
+                      <ArrowRightArrowLeft width={16} height={16} />
+                    </span>
+                    <div className="customer-field">
+                      <TextField>
+                        <Label>Pesos</Label>
+                        <Input
+                          variant="secondary"
+                          aria-label="Pesos a redimir"
+                          inputMode="numeric"
+                          value={pesos}
+                          onChange={(event) => onPesos(event.target.value)}
+                          onBlur={snapPesos}
+                        />
+                      </TextField>
+                    </div>
+                  </div>
+
+                  {/* Los dos motivos por los que no se puede redimir, con el mismo aviso ámbar que
+                      el resto de la consulta. */}
+                  {problem === 'BELOW_MINIMUM' && (
+                    <p className="points-accrual-notice">
+                      Mínimo permitido {pointsRedemptionMinimum} Puntos Colombia.
+                    </p>
+                  )}
+                  {problem === 'OVER_BALANCE' && (
+                    <p className="points-accrual-notice">
+                      Excede los puntos disponibles del cliente.
+                    </p>
+                  )}
+                </>
+              )}
+
+              {/* Fase 2: el código. Solo aparece cuando el cliente existe y la cantidad es válida. */}
+              {lookup && problem === null && pointsValue > 0 && (
+                <>
+                  {challengeSent ? (
+                    <>
+                      <div className="otp-field">
+                        <Label>Código de verificación</Label>
+                        <InputOTP
+                          value={pin}
+                          onChange={setPin}
+                          maxLength={6}
+                          inputMode="numeric"
+                          variant="secondary"
+                          isDisabled={redeemMutation.isPending}
+                        >
+                          <InputOTP.Group>
+                            {Array.from({ length: 6 }, (_, index) => (
+                              <InputOTP.Slot key={index} index={index} />
+                            ))}
+                          </InputOTP.Group>
+                        </InputOTP>
+                      </div>
+                    </>
+                  ) : (
+                    // El paso del código, como un aviso más del modal pero en azul: dice qué toca
+                    // hacer y lleva la acción al lado, sin ocupar una línea extra.
+                    <Alert status="accent" className="points-redeem-otp">
+                      <Alert.Content>
+                        <Alert.Title>Solicitar código OTP</Alert.Title>
+                      </Alert.Content>
+                      <Button
+                        size="sm"
+                        variant="primary"
+                        isDisabled={challengeMutation.isPending}
+                        onPress={() => documentType && challengeMutation.mutate(documentType)}
+                      >
+                        {challengeMutation.isPending && <Spinner color="current" size="sm" />}
+                        Solicitar
+                      </Button>
+                    </Alert>
+                  )}
+                </>
+              )}
+            </Modal.Body>
+            <Modal.Footer>
+              <Button variant="tertiary" onPress={close} isDisabled={redeemMutation.isPending}>
+                Cancelar
+              </Button>
+              <Button
+                variant="primary"
+                isDisabled={!canRedeemPoints || redeemMutation.isPending}
+                onPress={() => documentType && redeemMutation.mutate(documentType)}
+              >
+                {redeemMutation.isPending && <Spinner color="current" size="sm" />}
+                Redimir puntos
+              </Button>
+            </Modal.Footer>
+          </Modal.Dialog>
+        </Modal.Container>
+      </Modal.Backdrop>
+    </Modal>
+  );
+}
+
+/**
+ * Asocia a una redención la factura de Siigo que documenta la venta. Sin ella los puntos del cliente
+ * están gastados sin un documento que los respalde, así que el panel insiste con «Pendiente por
+ * factura» hasta que alguien la cierra.
+ */
+function AttachInvoiceModal({
+  redemption,
+  onClose,
+  onDone,
+}: {
+  redemption: PointsRedemptionRecord | null;
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const { user } = useCurrentUser();
+  const [number, setNumber] = useState('');
+  const [sellerId, setSellerId] = useState('all');
+  const [error, setError] = useState<string | null>(null);
+  const isAdmin = user?.role === 'ADMIN';
+
+  const prefixesQuery = useQuery({
+    queryKey: ['points-colombia', 'prefixes'],
+    queryFn: () => pointsColombiaApi.prefixes(),
+    enabled: isAdmin && redemption !== null,
+  });
+
+  const attach = useMutation({
+    mutationFn: () =>
+      pointsColombiaApi.attachRedemptionInvoice(
+        redemption?.id ?? 0,
+        number.trim(),
+        sellerId === 'all' ? undefined : Number(sellerId),
+      ),
+    onSuccess: () => {
+      setNumber('');
+      setSellerId('all');
+      setError(null);
+      onDone();
+    },
+    onError: (failure: Error) => setError(failure.message),
+  });
+
+  if (!redemption) return null;
+
+  return (
+    <Modal isOpen onOpenChange={(open) => !open && onClose()}>
+      <Modal.Backdrop>
+        <Modal.Container placement="center">
+          <Modal.Dialog className="siigo-quotation-modal">
+            <Modal.CloseTrigger aria-label="Cerrar asociación de factura" />
+            <Modal.Header>
+              <div>
+                <Modal.Heading>Asociar factura</Modal.Heading>
+                <p className="siigo-quotation-subtitle">
+                  Redención de {redemption.pointsRequested} puntos ·{' '}
+                  {formattedMoneyWithCode(redemption.amountCop, 'COP')}
+                </p>
+              </div>
+            </Modal.Header>
+            <Modal.Body>
+              {error && (
+                <Alert status="danger">
+                  <Alert.Content>
+                    <Alert.Description>{error}</Alert.Description>
+                  </Alert.Content>
+                </Alert>
+              )}
+              <div className="customer-field">
+                <Label>Número de la factura</Label>
+                <Input
+                  variant="secondary"
+                  aria-label="Número de la factura"
+                  value={number}
+                  onChange={(event) => setNumber(event.target.value)}
+                />
+              </div>
+              {isAdmin && (
+                <div className="customer-field">
+                  <Label>Vendedor</Label>
+                  <Select
+                    aria-label="Vendedor de la factura"
+                    value={sellerId}
+                    variant="secondary"
+                    onChange={(value) => setSellerId(String(value))}
+                  >
+                    <Select.Trigger>
+                      <Select.Value />
+                      <Select.Indicator />
+                    </Select.Trigger>
+                    <Select.Popover>
+                      <ListBox>
+                        <ListBox.Item id="all" textValue="Seleccionar vendedor">
+                          Seleccionar vendedor
+                        </ListBox.Item>
+                        {(prefixesQuery.data ?? []).map((option) => (
+                          <ListBox.Item
+                            key={option.sellerId ?? option.userName}
+                            id={String(option.sellerId)}
+                            textValue={`${option.userName} · ${option.prefix}`}
+                          >
+                            {option.userName} · {option.prefix}
+                            <ListBox.ItemIndicator />
+                          </ListBox.Item>
+                        ))}
+                      </ListBox>
+                    </Select.Popover>
+                  </Select>
+                </div>
+              )}
+            </Modal.Body>
+            <Modal.Footer>
+              <Button variant="tertiary" onPress={onClose} isDisabled={attach.isPending}>
+                Cancelar
+              </Button>
+              <Button
+                variant="primary"
+                isDisabled={!number.trim() || attach.isPending}
+                onPress={() => attach.mutate()}
+              >
+                {attach.isPending && <Spinner color="current" size="sm" />}
+                Asociar
+              </Button>
+            </Modal.Footer>
+          </Modal.Dialog>
+        </Modal.Container>
+      </Modal.Backdrop>
+    </Modal>
   );
 }
