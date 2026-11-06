@@ -5268,8 +5268,9 @@ select {
 }
 
 /* El cargador ocupa la misma caja que el botón de limpiar al que sustituye —20px y su margen
-   derecho—, así el campo no cambia de ancho ni el icono se pega al borde. */
-.points-redeem-modal .search-field__group .points-redeem-loader {
+   derecho—, así el campo no cambia de ancho ni el icono se pega al borde. Lo usan los dos modales
+   que consultan el documento, Redimir y Acumular. */
+.siigo-quotation-modal .search-field__group .points-search-loader {
   display: flex;
   flex: 0 0 auto;
   align-items: center;

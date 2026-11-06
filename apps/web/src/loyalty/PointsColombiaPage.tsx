@@ -1510,7 +1510,15 @@ function AccrualModal({
                     <SearchField.Group>
                       <SearchField.SearchIcon />
                       <SearchField.Input placeholder="Documento del cliente" />
-                      <SearchField.ClearButton />
+                      {/* Mientras se consulta, el icono de limpiar no dice nada: lo sustituye el
+                          indicador de espera, igual que en el alta de redención. */}
+                      {lookupMutation.isPending ? (
+                        <span className="points-search-loader">
+                          <Spinner color="current" size="sm" aria-label="Consultando el cliente" />
+                        </span>
+                      ) : (
+                        <SearchField.ClearButton />
+                      )}
                     </SearchField.Group>
                   </SearchField>
                 </div>
@@ -1986,7 +1994,7 @@ function RedeemModal({
                       {/* El icono de limpiar no dice nada mientras se consulta, así que en ese
                           momento lo sustituye el indicador de espera. */}
                       {lookupMutation.isPending ? (
-                        <span className="points-redeem-loader">
+                        <span className="points-search-loader">
                           <Spinner color="current" size="sm" aria-label="Consultando el cliente" />
                         </span>
                       ) : (
