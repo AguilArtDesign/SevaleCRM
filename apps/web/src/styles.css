@@ -7213,8 +7213,8 @@ select {
 .points-redeem-client .search-field__input {
   width: 100%;
 }
-/* Qué es el número del bloque morado: el saldo que el cliente tiene disponible. */
-.points-redeem-caption {
+/* Qué es el número del bloque morado: el saldo disponible o lo que se acaba de acreditar. */
+.points-amount-caption {
   display: block;
   margin-top: 0.15rem;
   font-size: 0.75rem;

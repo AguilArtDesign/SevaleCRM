@@ -1378,11 +1378,8 @@ function AccrualModal({
   // Sin tipo elegido: el operador tiene que decidir cuál aplica en vez de heredar la cédula.
   const [documentType, setDocumentType] = useState<PointsDocumentType | null>(null);
   const [error, setError] = useState('');
-  const [result, setResult] = useState<{
-    pointsEarned: number;
-    pointsBalance: number;
-    balanceValueInMoney: number | null;
-  } | null>(null);
+  // Solo el número acreditado: es lo único que se muestra al confirmar.
+  const [result, setResult] = useState<number | null>(null);
 
   const lookupMutation = useMutation({
     mutationFn: ({ document, type }: LookupRequest) =>
@@ -1396,11 +1393,7 @@ function AccrualModal({
     onError: (failure: Error) => setError(failure.message),
     onSuccess: (data) => {
       setError('');
-      setResult({
-        pointsEarned: data.pointsEarned,
-        pointsBalance: data.pointsBalance,
-        balanceValueInMoney: data.balanceValueInMoney,
-      });
+      setResult(data.pointsEarned);
     },
   });
 
@@ -1442,118 +1435,103 @@ function AccrualModal({
               <div className="points-accrual-header">
                 <PointsColombiaLogo className="points-accrual-logo" />
                 <Modal.Heading>
-                  Acumular Puntos
+                  {result === null ? 'Acumular Puntos' : 'Resumen'}
                   <Chip color="default">{invoice.name}</Chip>
                 </Modal.Heading>
                 <p className="siigo-quotation-subtitle">
                   Valor de {formattedMoneyWithCode(invoice.total, 'COP')}
                 </p>
-                {!result && (
-                  <div className="points-accrual-amount">
-                    <strong>{invoice.points}</strong> Puntos
-                  </div>
-                )}
+                {/* Antes de acumular muestra lo que vale la factura; después, lo que quedó
+                    acreditado. Es el mismo bloque morado del alta de redención. */}
+                <div className="points-accrual-amount">
+                  {result === null ? (
+                    <>
+                      <strong>{invoice.points}</strong> Puntos
+                    </>
+                  ) : (
+                    <>
+                      <strong>{result}</strong>
+                      <span className="points-amount-caption">Puntos Acreditados</span>
+                    </>
+                  )}
+                </div>
               </div>
             </Modal.Header>
-            <Modal.Body>
-              {error && <PointsFeedback>{error}</PointsFeedback>}
-              {result ? (
-                <dl className="order-ticket-data">
-                  <div>
-                    <dt>Puntos acreditados</dt>
-                    <dd>
-                      <strong>{result.pointsEarned}</strong>
-                    </dd>
-                  </div>
-                  <div>
-                    <dt>Saldo total</dt>
-                    <dd>{result.pointsBalance} puntos</dd>
-                  </div>
-                  <div>
-                    <dt>Equivalente</dt>
-                    <dd>
-                      {/* Si la consulta posterior falló, la acumulación sigue siendo un éxito. */}
-                      {result.balanceValueInMoney === null
-                        ? 'No disponible por ahora'
-                        : formattedMoneyWithCode(String(result.balanceValueInMoney), 'COP')}
-                    </dd>
-                  </div>
-                </dl>
-              ) : (
-                <>
-                  <div className="customer-field">
-                    <Label>Tipo de documento</Label>
-                    <Select
-                      aria-label="Tipo de documento"
-                      value={documentType}
-                      placeholder="Seleccionar tipo"
-                      variant="secondary"
-                      onChange={(value) => {
-                        setDocumentType(
-                          value === null ? null : (String(value) as PointsDocumentType),
-                        );
-                        invalidate();
-                      }}
-                    >
-                      <Select.Trigger>
-                        <Select.Value />
-                        <Select.Indicator />
-                      </Select.Trigger>
-                      <Select.Popover>
-                        <ListBox>
-                          {pointsDocumentTypes.map((option) => (
-                            <ListBox.Item key={option.value} id={option.value}>
-                              {option.label}
-                              <ListBox.ItemIndicator />
-                            </ListBox.Item>
-                          ))}
-                        </ListBox>
-                      </Select.Popover>
-                    </Select>
-                  </div>
-                  <div className="customer-field">
-                    <Label>Número de documento</Label>
-                    <SearchField
-                      aria-label="Número de documento"
-                      value={shownDocument}
-                      variant="secondary"
-                      onChange={(value) => {
-                        setDocumentNumber(value);
-                        invalidate();
-                      }}
-                      onSubmit={() => {
-                        const request = lookupRequest();
-                        if (request) lookupMutation.mutate(request);
-                      }}
-                    >
-                      <SearchField.Group>
-                        <SearchField.SearchIcon />
-                        <SearchField.Input placeholder="Documento del cliente" />
-                        <SearchField.ClearButton />
-                      </SearchField.Group>
-                    </SearchField>
-                  </div>
+            {/* En el resumen el cuerpo sobra: el dato ya está en la cabecera y un `Modal.Body` vacío
+                dejaba un hueco que parecía un margen de más. */}
+            {result === null && (
+              <Modal.Body>
+                {error && <PointsFeedback>{error}</PointsFeedback>}
+                <div className="customer-field">
+                  <Label>Tipo de documento</Label>
+                  <Select
+                    aria-label="Tipo de documento"
+                    value={documentType}
+                    placeholder="Seleccionar tipo"
+                    variant="secondary"
+                    onChange={(value) => {
+                      setDocumentType(
+                        value === null ? null : (String(value) as PointsDocumentType),
+                      );
+                      invalidate();
+                    }}
+                  >
+                    <Select.Trigger>
+                      <Select.Value />
+                      <Select.Indicator />
+                    </Select.Trigger>
+                    <Select.Popover>
+                      <ListBox>
+                        {pointsDocumentTypes.map((option) => (
+                          <ListBox.Item key={option.value} id={option.value}>
+                            {option.label}
+                            <ListBox.ItemIndicator />
+                          </ListBox.Item>
+                        ))}
+                      </ListBox>
+                    </Select.Popover>
+                  </Select>
+                </div>
+                <div className="customer-field">
+                  <Label>Número de documento</Label>
+                  <SearchField
+                    aria-label="Número de documento"
+                    value={shownDocument}
+                    variant="secondary"
+                    onChange={(value) => {
+                      setDocumentNumber(value);
+                      invalidate();
+                    }}
+                    onSubmit={() => {
+                      const request = lookupRequest();
+                      if (request) lookupMutation.mutate(request);
+                    }}
+                  >
+                    <SearchField.Group>
+                      <SearchField.SearchIcon />
+                      <SearchField.Input placeholder="Documento del cliente" />
+                      <SearchField.ClearButton />
+                    </SearchField.Group>
+                  </SearchField>
+                </div>
 
-                  {lookup?.found === false && (
-                    <p className="points-accrual-notice">
-                      Cliente no registrado en Puntos Colombia.
-                    </p>
-                  )}
-                  {lookup?.found === true && (
-                    <p
-                      className="points-accrual-notice"
-                      data-tone={canSubmit ? 'success' : 'warning'}
-                    >
-                      {canSubmit
-                        ? 'Cliente registrado en Puntos Colombia.'
-                        : 'Cuenta encontrada, pero no habilitada para acumular puntos.'}
-                    </p>
-                  )}
-                </>
-              )}
-            </Modal.Body>
+                {lookup?.found === false && (
+                  <p className="points-accrual-notice">Cliente no registrado en Puntos Colombia.</p>
+                )}
+                {lookup?.found === true && (
+                  <p
+                    className="points-accrual-notice"
+                    data-tone={canSubmit ? 'success' : 'warning'}
+                  >
+                    {canSubmit
+                      ? 'Cliente registrado en Puntos Colombia.'
+                      : 'Cuenta encontrada, pero no habilitada para acumular puntos.'}
+                  </p>
+                )}
+              </Modal.Body>
+            )}
             <Modal.Footer>
-              {result ? (
+              {result !== null ? (
                 <Button variant="primary" onPress={onDone}>
                   Listo
                 </Button>
@@ -2035,7 +2013,7 @@ function RedeemModal({
 
                   <div className="points-accrual-amount">
                     <strong>{lookup.pointsAmount}</strong>
-                    <span className="points-redeem-caption">Puntos disponibles</span>
+                    <span className="points-amount-caption">Puntos disponibles</span>
                   </div>
 
                   {/* Los dos campos se llenan entre sí, así que van juntos con las flechas en medio:
