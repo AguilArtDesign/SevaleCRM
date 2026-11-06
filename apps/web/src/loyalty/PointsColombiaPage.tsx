@@ -166,23 +166,23 @@ export function PointsColombiaPage() {
               Factura UAT
             </Button>
           )}
-          <Button variant="primary" onPress={() => setSearchOpen(true)}>
-            <FileText width={16} height={16} />
-            Agregar factura
-          </Button>
-          {/* Redimir va después de agregar factura porque es la operación inversa y menos frecuente:
-              el cliente paga con sus puntos en vez de sumarlos. */}
+          {/* Redimir va antes de agregar factura por el orden en que se lee la fila de acciones, y
+              en variante `outline` para que no compita con «Agregar factura», que es la principal. */}
           {canRedeem && (
-            <Button variant="secondary" onPress={() => setRedeemOpen(true)}>
+            <Button variant="outline" onPress={() => setRedeemOpen(true)}>
               <img
                 src="/img/puntos-colombia.svg"
                 alt=""
                 aria-hidden="true"
                 className="points-redeem-icon"
               />
-              Redimir
+              Redimir puntos
             </Button>
           )}
+          <Button variant="primary" onPress={() => setSearchOpen(true)}>
+            <FileText width={16} height={16} />
+            Agregar factura
+          </Button>
         </div>
       </header>
 
