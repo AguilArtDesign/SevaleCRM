@@ -7156,6 +7156,34 @@ select {
   color: color-mix(in srgb, var(--success) 70%, var(--foreground));
 }
 
+/* Error de una operación del panel. El `Alert` de HeroUI es de superficie y texto gris, así que
+   dentro del modal no se leía; con el tinte del estado y el icono se percibe de inmediato. */
+.points-feedback {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  padding: 0.7rem 1rem;
+  background: color-mix(in oklch, var(--danger) 18%, transparent);
+  border-radius: var(--field-radius);
+  color: color-mix(in srgb, var(--danger) 80%, var(--foreground));
+}
+
+.points-feedback[data-tone='warning'] {
+  background: color-mix(in oklch, var(--warning) 18%, transparent);
+  color: color-mix(in srgb, var(--warning) 70%, var(--foreground));
+}
+
+.points-feedback svg {
+  flex: 0 0 auto;
+  margin-top: 0.1rem;
+}
+
+.points-feedback p {
+  margin: 0;
+  font-size: 0.8125rem;
+  line-height: 1.45;
+}
+
 /* El selector de rango ocupa el ancho de los dos campos de fecha que reemplazó. */
 .points-date-range {
   width: 19.5rem;

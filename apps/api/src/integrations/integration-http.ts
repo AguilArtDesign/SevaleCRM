@@ -143,6 +143,20 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+/**
+ * Motivo de un `fetch` que no llegó a responder. Node deja el diagnóstico en `cause`: `code` trae
+ * `ENOTFOUND` para un DNS que no resuelve, `ECONNREFUSED` para un puerto cerrado y `CERT_*` para un
+ * certificado inválido. Sin ese código, todos los fallos de red se ven iguales.
+ */
+function networkFailureReason(error: unknown): string {
+  if (!(error instanceof Error)) return 'error desconocido';
+  const cause = error.cause;
+  const code = isRecord(cause) && typeof cause.code === 'string' ? cause.code : null;
+  const detail =
+    isRecord(cause) && typeof cause.message === 'string' ? cause.message : error.message;
+  return code ? `${code}: ${detail}` : detail;
+}
+
 function integrationErrorMessage(payload: unknown): string | null {
   if (!isRecord(payload)) return null;
   const errors = payload.Errors;
@@ -179,11 +193,15 @@ function integrationErrorMessage(payload: unknown): string | null {
 export function requireIntegrationValue(name: string, integration: string): string {
   const value = process.env[name]?.trim();
   if (!value) {
+    // El mensaje nombra la variable: es lo único que permite corregir el despliegue sin adivinar
+    // cuál de las credenciales del proveedor no se cargó. Los nombres no son secretos; los valores
+    // nunca salen de aquí.
+    integrationLogger.error(`${integration} no está configurada: falta ${name}.`);
     throw new ServiceUnavailableException({
       success: false,
       error: {
         code: 'INTEGRATION_NOT_CONFIGURED',
-        message: `La integración con ${integration} no está configurada.`,
+        message: `La integración con ${integration} no está configurada. Falta ${name}.`,
       },
     });
   }
@@ -334,6 +352,11 @@ async function performRequest(
           },
         });
       }
+      // Sin respuesta no hay log del proveedor: el motivo real —DNS, TLS, conexión rechazada— solo
+      // se ve aquí, y sin él un «no fue posible consultar» obliga a reproducir el fallo a ciegas.
+      integrationLogger.error(
+        `No se pudo conectar con ${integration} en ${url.host}${url.pathname}: ${networkFailureReason(error)}`,
+      );
       throw new BadGatewayException({
         success: false,
         error: {

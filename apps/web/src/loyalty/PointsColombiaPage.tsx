@@ -49,6 +49,7 @@ import { Select } from '../components/Select';
 import { formattedMoneyWithCode } from '../orders/presentation';
 import { useCurrentUser } from '../users/useCurrentUser';
 import { PointsColombiaLogo } from './PointsColombiaLogo';
+import { PointsFeedback } from './PointsFeedback';
 import {
   pointsColombiaApi,
   type PointsInvoiceRecord,
@@ -691,34 +692,52 @@ export function PointsColombiaPage() {
         />
       )}
 
-      <InvoiceDetailModal invoice={detailTarget} onClose={() => setDetailTarget(null)} />
+      {/* Cada modal se monta con su factura y se desmonta al cerrar. Si se dejaban montados, React
+          conservaba su estado y la siguiente factura abría con el tipo de documento y el resultado
+          de la operación anterior. */}
+      {detailTarget && (
+        <InvoiceDetailModal
+          key={detailTarget.id}
+          invoice={detailTarget}
+          onClose={() => setDetailTarget(null)}
+        />
+      )}
 
-      <AccrualModal
-        invoice={accrualTarget}
-        onClose={() => setAccrualTarget(null)}
-        onDone={() => {
-          setAccrualTarget(null);
-          void refresh();
-        }}
-      />
+      {accrualTarget && (
+        <AccrualModal
+          key={accrualTarget.id}
+          invoice={accrualTarget}
+          onClose={() => setAccrualTarget(null)}
+          onDone={() => {
+            setAccrualTarget(null);
+            void refresh();
+          }}
+        />
+      )}
 
-      <RevokeModal
-        invoice={revokeTarget}
-        onClose={() => setRevokeTarget(null)}
-        onDone={() => {
-          setRevokeTarget(null);
-          void refresh();
-        }}
-      />
+      {revokeTarget && (
+        <RevokeModal
+          key={revokeTarget.id}
+          invoice={revokeTarget}
+          onClose={() => setRevokeTarget(null)}
+          onDone={() => {
+            setRevokeTarget(null);
+            void refresh();
+          }}
+        />
+      )}
 
-      <DeleteInvoiceModal
-        invoice={deleteTarget}
-        onClose={() => setDeleteTarget(null)}
-        onDone={() => {
-          setDeleteTarget(null);
-          void refresh();
-        }}
-      />
+      {deleteTarget && (
+        <DeleteInvoiceModal
+          key={deleteTarget.id}
+          invoice={deleteTarget}
+          onClose={() => setDeleteTarget(null)}
+          onDone={() => {
+            setDeleteTarget(null);
+            void refresh();
+          }}
+        />
+      )}
 
       {canRedeem && (
         <RedeemModal
@@ -731,14 +750,17 @@ export function PointsColombiaPage() {
         />
       )}
 
-      <AttachInvoiceModal
-        redemption={invoiceTarget}
-        onClose={() => setInvoiceTarget(null)}
-        onDone={() => {
-          setInvoiceTarget(null);
-          void refresh();
-        }}
-      />
+      {invoiceTarget && (
+        <AttachInvoiceModal
+          key={invoiceTarget.id}
+          redemption={invoiceTarget}
+          onClose={() => setInvoiceTarget(null)}
+          onDone={() => {
+            setInvoiceTarget(null);
+            void refresh();
+          }}
+        />
+      )}
     </section>
   );
 }
@@ -751,10 +773,9 @@ function InvoiceDetailModal({
   invoice,
   onClose,
 }: {
-  invoice: PointsInvoiceRecord | null;
+  invoice: PointsInvoiceRecord;
   onClose: () => void;
 }) {
-  if (!invoice) return null;
   const accrual = invoice.accrual;
   const meta = statusMeta[invoice.status];
 
@@ -1156,13 +1177,7 @@ function InvoiceSearchModal({
               </div>
             </Modal.Header>
             <Modal.Body>
-              {error && (
-                <Alert status="danger">
-                  <Alert.Content>
-                    <Alert.Description>{error}</Alert.Description>
-                  </Alert.Content>
-                </Alert>
-              )}
+              {error && <PointsFeedback>{error}</PointsFeedback>}
               {needsSeller && (
                 <div className="customer-field">
                   <Label>Punto de venta o comercial</Label>
@@ -1323,13 +1338,7 @@ function UatInvoiceModal({
               </div>
             </Modal.Header>
             <Modal.Body>
-              {error && (
-                <Alert status="danger">
-                  <Alert.Content>
-                    <Alert.Description>{error}</Alert.Description>
-                  </Alert.Content>
-                </Alert>
-              )}
+              {error && <PointsFeedback>{error}</PointsFeedback>}
               <UatInvoiceFields value={draft} onChange={setDraft} />
             </Modal.Body>
             <Modal.Footer>
@@ -1361,7 +1370,7 @@ function AccrualModal({
   onClose,
   onDone,
 }: {
-  invoice: PointsInvoiceRecord | null;
+  invoice: PointsInvoiceRecord;
   onClose: () => void;
   onDone: () => void;
 }) {
@@ -1383,7 +1392,7 @@ function AccrualModal({
   });
   const accrueMutation = useMutation({
     mutationFn: ({ document, type }: LookupRequest) =>
-      pointsColombiaApi.accrue(invoice!.id, document, type),
+      pointsColombiaApi.accrue(invoice.id, document, type),
     onError: (failure: Error) => setError(failure.message),
     onSuccess: (data) => {
       setError('');
@@ -1400,11 +1409,10 @@ function AccrualModal({
    * Siigo: el campo se ve precargado, así que consultar con el estado vacío sería una contradicción.
    */
   function currentDocument() {
-    const value = documentNumber ?? invoice?.customerIdentification ?? '';
+    const value = documentNumber ?? invoice.customerIdentification ?? '';
     return { value: value.trim() };
   }
 
-  if (!invoice) return null;
   const shownDocument = currentDocument().value;
   const lookup = lookupMutation.data;
   const canSubmit = Boolean(documentType) && lookup?.found === true && lookup.balance.allowAccrual;
@@ -1448,13 +1456,7 @@ function AccrualModal({
               </div>
             </Modal.Header>
             <Modal.Body>
-              {error && (
-                <Alert status="danger">
-                  <Alert.Content>
-                    <Alert.Description>{error}</Alert.Description>
-                  </Alert.Content>
-                </Alert>
-              )}
+              {error && <PointsFeedback>{error}</PointsFeedback>}
               {result ? (
                 <dl className="order-ticket-data">
                   <div>
@@ -1594,13 +1596,13 @@ function RevokeModal({
   onClose,
   onDone,
 }: {
-  invoice: PointsInvoiceRecord | null;
+  invoice: PointsInvoiceRecord;
   onClose: () => void;
   onDone: () => void;
 }) {
   const [error, setError] = useState('');
   const revokeMutation = useMutation({
-    mutationFn: () => pointsColombiaApi.revoke(invoice!.id),
+    mutationFn: () => pointsColombiaApi.revoke(invoice.id),
     onError: (failure: Error) => setError(failure.message),
     onSuccess: () => {
       setError('');
@@ -1608,7 +1610,6 @@ function RevokeModal({
     },
   });
 
-  if (!invoice) return null;
   const accrual = invoice.accrual;
   const revoked = accrual?.pointsEarned ?? accrual?.pointsRequested ?? invoice.points;
 
@@ -1709,18 +1710,16 @@ function DeleteInvoiceModal({
   onClose,
   onDone,
 }: {
-  invoice: PointsInvoiceRecord | null;
+  invoice: PointsInvoiceRecord;
   onClose: () => void;
   onDone: () => void;
 }) {
   const [error, setError] = useState('');
   const deleteMutation = useMutation({
-    mutationFn: () => pointsColombiaApi.remove(invoice!.id),
+    mutationFn: () => pointsColombiaApi.remove(invoice.id),
     onError: (failure: Error) => setError(failure.message),
     onSuccess: onDone,
   });
-
-  if (!invoice) return null;
 
   return (
     <AlertDialog isOpen onOpenChange={(open) => !open && onClose()}>
@@ -1734,13 +1733,7 @@ function DeleteInvoiceModal({
               <AlertDialog.Heading>Eliminar factura</AlertDialog.Heading>
             </AlertDialog.Header>
             <AlertDialog.Body>
-              {error && (
-                <Alert status="danger">
-                  <Alert.Content>
-                    <Alert.Description>{error}</Alert.Description>
-                  </Alert.Content>
-                </Alert>
-              )}
+              {error && <PointsFeedback>{error}</PointsFeedback>}
               <p>
                 Se quitará del panel la factura <strong>{invoice.name}</strong> (
                 {invoice.customerIdentification} · {formattedMoneyWithCode(invoice.total, 'COP')})
@@ -1949,13 +1942,7 @@ function RedeemModal({
               </div>
             </Modal.Header>
             <Modal.Body>
-              {error && (
-                <Alert status="danger">
-                  <Alert.Content>
-                    <Alert.Description>{error}</Alert.Description>
-                  </Alert.Content>
-                </Alert>
-              )}
+              {error && <PointsFeedback>{error}</PointsFeedback>}
 
               {/* Fase 1: el cliente y el acuerdo de cuántos puntos se queman. Se busca al enviar el
                   documento, igual que en el alta de clientes, sin un botón aparte. Van apilados
@@ -2174,7 +2161,7 @@ function AttachInvoiceModal({
   onClose,
   onDone,
 }: {
-  redemption: PointsRedemptionRecord | null;
+  redemption: PointsRedemptionRecord;
   onClose: () => void;
   onDone: () => void;
 }) {
@@ -2187,13 +2174,13 @@ function AttachInvoiceModal({
   const prefixesQuery = useQuery({
     queryKey: ['points-colombia', 'prefixes'],
     queryFn: () => pointsColombiaApi.prefixes(),
-    enabled: isAdmin && redemption !== null,
+    enabled: isAdmin,
   });
 
   const attach = useMutation({
     mutationFn: () =>
       pointsColombiaApi.attachRedemptionInvoice(
-        redemption?.id ?? 0,
+        redemption.id,
         number.trim(),
         sellerId === 'all' ? undefined : Number(sellerId),
       ),
@@ -2205,8 +2192,6 @@ function AttachInvoiceModal({
     },
     onError: (failure: Error) => setError(failure.message),
   });
-
-  if (!redemption) return null;
 
   return (
     <Modal isOpen onOpenChange={(open) => !open && onClose()}>
@@ -2224,13 +2209,7 @@ function AttachInvoiceModal({
               </div>
             </Modal.Header>
             <Modal.Body>
-              {error && (
-                <Alert status="danger">
-                  <Alert.Content>
-                    <Alert.Description>{error}</Alert.Description>
-                  </Alert.Content>
-                </Alert>
-              )}
+              {error && <PointsFeedback>{error}</PointsFeedback>}
               <div className="customer-field">
                 <Label>Número de la factura</Label>
                 <Input

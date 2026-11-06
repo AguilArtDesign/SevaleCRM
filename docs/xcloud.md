@@ -115,7 +115,7 @@ Los pedidos cancelados, reembolsados y fallidos no se cotizan nunca, sea cual se
 
 ### Variables de Puntos Colombia
 
-El panel de Puntos Colombia no forma parte de la validación de arranque: si faltan sus variables la API inicia igual y el resto del CRM funciona, pero cada llamada al panel responde `503` con `INTEGRATION_NOT_CONFIGURED`. Como el menú aparece para el administrador, conviene cargarlas antes de publicar o dejar `PCO_ADMIN_ONLY=true` mientras no se use.
+El panel de Puntos Colombia no forma parte de la validación de arranque: si faltan sus variables la API inicia igual y el resto del CRM funciona, pero cada llamada al panel responde `503` con `INTEGRATION_NOT_CONFIGURED`. Como el menú aparece para el administrador, conviene cargarlas antes de publicar o dejar `PCO_ADMIN_ONLY=true` mientras no se use. El mensaje nombra la variable que falta (`Falta PCO_CLIENT_ID.`) y el log de la API lo repite, de modo que un despliegue sin credenciales se corrige sin revisar una por una.
 
 ```env
 PCO_BASE_URL=https://apinp.puntoscolombia.com
