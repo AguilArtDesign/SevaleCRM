@@ -3694,6 +3694,75 @@ select {
   margin-inline-start: auto;
 }
 
+/* Envíos */
+/* Dos filtros y la búsqueda caben en una línea, pero el rango de fechas se parte a anchos medios. El
+   panel reserva el alto disponible y la tabla cede lo que sobre, como Prospectos: sin eso la
+   paginación quedaba fuera de la pantalla al estrecharse la ventana. */
+.shipments-layout {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: calc(100vh - 6rem);
+  min-height: 0;
+  gap: 1rem;
+}
+
+.shipments-heading,
+.shipments-heading > div,
+.shipments-toolbar,
+.shipments-filters {
+  display: flex;
+  align-items: center;
+}
+
+.shipments-heading,
+.shipments-toolbar {
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.shipments-heading > div {
+  gap: 0.55rem;
+}
+
+.shipments-heading h2 {
+  font-size: 1rem;
+}
+
+.shipments-toolbar {
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.shipments-filters {
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.shipments-filters .select {
+  width: 10.5rem;
+}
+
+.shipments-search {
+  width: min(100%, 22rem);
+  margin-inline-start: auto;
+}
+
+.shipments-date-range {
+  width: 19.5rem;
+}
+
+.shipments-date-range .date-field-group {
+  width: 100%;
+}
+
+.shipments-layout > .orders-table {
+  flex: 1 1 auto;
+  min-height: 0;
+  height: auto;
+}
+
 .orders-table {
   grid-template-rows: minmax(0, 1fr) auto;
 }
@@ -3737,8 +3806,28 @@ select {
 
 .orders-row-actions {
   display: flex;
+  align-items: center;
+  gap: 0.25rem;
   padding-right: 0;
   justify-content: flex-end;
+}
+
+/* Una operación puede tener pedido en las dos tiendas: los chips van en línea, sin partir la celda. */
+.shipment-stores-cell {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+/* La novedad más reciente en una línea: la celda no es el sitio para un párrafo, y el texto completo
+   queda en el `title`. */
+.shipment-note {
+  display: block;
+  max-width: 22ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* El número de la orden es un disparador, no un enlace: mantiene el peso visual del dato y solo
@@ -5561,6 +5650,42 @@ select {
 
 .shipment-history p {
   margin: 0;
+}
+
+/* La novedad es texto libre: un comentario largo ocupa varias líneas y no cabe en una sola. Gana en
+   especificidad a `.shipment-history p`, que apaga el texto secundario. */
+.shipment-history .shipment-history-note {
+  color: var(--foreground);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.shipment-history-empty {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.8125rem;
+}
+
+/* Escribir la novedad va en el pie para que el campo quede fijo mientras el historial se desplaza. */
+.shipment-history-modal .modal__footer {
+  width: 100%;
+}
+
+.shipment-note-form {
+  display: flex;
+  flex: 1;
+  align-items: flex-end;
+  gap: 0.5rem;
+}
+
+.shipment-note-field {
+  flex: 1;
+  min-width: 0;
+}
+
+.shipment-note-field textarea {
+  resize: none;
+  line-height: 1.45;
 }
 
 .order-edit-loading {

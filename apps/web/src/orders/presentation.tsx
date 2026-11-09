@@ -111,11 +111,11 @@ export function OrderAddress({
 }
 
 /**
- * El envío solo se gestiona cuando la operación está completada, que además es el estado con el que
- * el CRM crea sus pedidos en WooCommerce. El backend aplica la misma regla.
+ * El envío se asigna y se edita en el panel de Envíos. Aquí solo se consulta, y solo cuando ya hay
+ * guía: antes de eso no hay nada que mostrar al comercial.
  */
-export function allowsShipment(order: { status: OrderStatus }): boolean {
-  return order.status === 'COMPLETED';
+export function allowsShipment(order: { shipmentReady: boolean }): boolean {
+  return order.shipmentReady;
 }
 
 /**

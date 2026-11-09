@@ -56,7 +56,6 @@ import {
   syncStatusMeta,
 } from './presentation';
 import { useFormattedPhone } from '../components/useFormattedPhone';
-import { ShipmentModal } from './ShipmentModal';
 import { ShipmentViewModal } from './ShipmentViewModal';
 import { SiigoQuotationModal } from './SiigoQuotationModal';
 import { OrderActivityModal } from './OrderActivityModal';
@@ -84,7 +83,7 @@ function messageFrom(error: unknown): string {
 
 /** Acción de fila que necesita los datos del pedido antes de abrir su modal. */
 type OrderActionTarget = {
-  kind: 'shipment-form' | 'shipment-view' | 'siigo-quotation';
+  kind: 'shipment-view' | 'siigo-quotation';
   operationId: number;
   /** Solo para la cotización: distingue consultar una existente de crear o actualizar. */
   quotationAction?: 'CREATE' | 'UPDATE' | 'VIEW';
@@ -318,8 +317,6 @@ export function OrdersPage() {
   const queryClient = useQueryClient();
   const { user } = useCurrentUser();
   const canManage = user?.role === 'ADMIN' || user?.role === 'COMMERCIAL';
-  // Logística es quien asigna el envío y el administrador puede todo; los demás solo lo consultan.
-  const canAssignShipping = user?.role === 'ADMIN' || user?.role === 'LOGISTICS';
   const isAdmin = user?.role === 'ADMIN';
   const [searchDraft, setSearchDraft] = useState('');
   const [filters, setFilters] = useState<OrderListInput>(initialFilters);
@@ -401,20 +398,6 @@ export function OrdersPage() {
     mutationFn: (order: OrderListRecord) => ordersApi.retryOrderSync(order.id),
     onSuccess: async (order) => {
       queryClient.setQueryData(['orders', 'detail', order.id], order);
-      await queryClient.invalidateQueries({ queryKey: ['orders'] });
-    },
-  });
-  const updateShipment = useMutation({
-    mutationFn: ({
-      id,
-      input,
-    }: {
-      id: number;
-      input: Parameters<typeof ordersApi.updateShipment>[1];
-    }) => ordersApi.updateShipment(id, input),
-    onSuccess: async (order) => {
-      queryClient.setQueryData(['orders', 'detail', order.id], order);
-      setActionTarget(null);
       await queryClient.invalidateQueries({ queryKey: ['orders'] });
     },
   });
@@ -516,17 +499,6 @@ export function OrdersPage() {
       toast.danger(messageFrom(error));
     }
   };
-  const saveShipment = async (input: Parameters<typeof ordersApi.updateShipment>[1]) => {
-    if (!actionOperationId) return;
-    try {
-      await updateShipment.mutateAsync({ id: actionOperationId, input });
-      toast.success('Información de envío guardada.');
-    } catch (error) {
-      toast.danger(messageFrom(error));
-      throw error;
-    }
-  };
-
   return (
     <section className="orders-layout">
       <header className="orders-heading">
@@ -835,11 +807,9 @@ export function OrdersPage() {
                                   });
                                 }
                                 if (key === 'shipment') {
-                                  // Logística asigna el envío; quien no tenga el permiso lo
-                                  // consulta en solo lectura.
-                                  updateShipment.reset();
+                                  // Solo lectura: el envío se asigna en el panel de Envíos.
                                   setActionTarget({
-                                    kind: canAssignShipping ? 'shipment-form' : 'shipment-view',
+                                    kind: 'shipment-view',
                                     operationId: order.operationId,
                                   });
                                 }
@@ -848,9 +818,9 @@ export function OrdersPage() {
                               {allowsShipment(order) && (
                                 <>
                                   <Dropdown.Section>
-                                    <Dropdown.Item id="shipment" textValue="Envío">
+                                    <Dropdown.Item id="shipment" textValue="Detalles de envío">
                                       <Box className="size-4 shrink-0 text-muted" />
-                                      <Label>Envío</Label>
+                                      <Label>Detalles de envío</Label>
                                     </Dropdown.Item>
                                   </Dropdown.Section>
                                   <Separator />
@@ -1105,17 +1075,6 @@ export function OrdersPage() {
         <div className="order-edit-loading" aria-label="Cargando pedido">
           <Spinner />
         </div>
-      )}
-
-      {actionTarget?.kind === 'shipment-form' && actionQuery.data && (
-        <ShipmentModal
-          isOpen
-          order={actionQuery.data}
-          isSubmitting={updateShipment.isPending}
-          serverError={updateShipment.isError ? messageFrom(updateShipment.error) : ''}
-          onClose={() => setActionTarget(null)}
-          onSubmit={saveShipment}
-        />
       )}
 
       {actionTarget?.kind === 'shipment-view' && (

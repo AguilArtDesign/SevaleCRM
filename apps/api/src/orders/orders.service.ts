@@ -217,6 +217,12 @@ export class OrdersService {
               operation.reopenedAt != null,
             )),
         /**
+         * Si el envío ya tiene guía y transportadora. El panel de Pedidos ofrece «Detalles de
+         * envío» solo entonces: antes de eso no hay nada que consultar, y asignarlo es tarea del
+         * panel de Envíos.
+         */
+        shipmentReady: Boolean(operation.shipment?.carrier && operation.shipment?.trackingNumber),
+        /**
          * Si el pedido puede reabrirse. El panel lo usa en vez de repetir la regla del corte: un
          * pedido anterior a la fecha de reapertura ya es historial y el backend lo rechazaría.
          */

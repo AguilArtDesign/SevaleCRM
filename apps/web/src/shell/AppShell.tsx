@@ -4,6 +4,7 @@ import {
   ArrowRightFromSquare,
   Box,
   Briefcase,
+  Car,
   Gear,
   LayoutSideContentLeft,
   Persons,
@@ -194,7 +195,11 @@ export function AppShell() {
     },
     {
       label: 'Operación',
-      items: [{ to: '/inventory', label: 'Inventario', icon: <Box /> }],
+      items: [
+        { to: '/inventory', label: 'Inventario', icon: <Box /> },
+        // Despacho: las operaciones completadas con cotización en Siigo. Logística trabaja aquí.
+        { to: '/shipments', label: 'Envíos', icon: <Car />, when: can('orders.read') },
+      ],
     },
     {
       label: 'Administración',

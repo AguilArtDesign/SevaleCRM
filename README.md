@@ -348,6 +348,24 @@ Al completar, el pedido que ya existe en la tienda se actualiza con un `PUT`: qu
 
 La decisión vive en `completionAllowed`, que el backend resuelve por fila con `completableStoreOperation`, igual que `reopenAllowed` y `quotationAllowed`. `npm run test:orders:reopen` cubre los dos caminos y el corte.
 
+## Envíos
+
+El panel de Envíos es la cola de despacho: muestra las operaciones que ya tienen cotización en Siigo, que son las que logística puede separar y despachar, y permite asignarles transportadora, número de guía y estado, y dejar una nota con la novedad del envío.
+
+**Qué entra al listado.** La fila es la **operación**, no el pedido de tienda. Un pedido partido en Seratus y Pali son dos operaciones y son dos despachos, así que listar pedidos las mezclaría. El filtro base es estar `COMPLETED` y tener cotización con `externalId`: una operación completada sin cotización no llegó a Siigo y nadie la va a despachar. `Shipment.operationId` es `@unique`, así que una operación tiene como máximo un envío.
+
+**Estados.** `shipmentStatuses` en `@sevale/shared` define el catálogo —preparando, despachado, en tránsito, entregado, novedad, devuelto— y lo consumen el panel y el modal. El campo era texto libre, así que en la base puede haber valores fuera del catálogo: `resolveShipmentStatus` devuelve la etiqueta cuando coincide y el valor crudo cuando no, y el modal ofrece ese valor heredado como opción extra para no borrar lo que escribió logística. El catálogo no migra datos.
+
+**Dónde se asigna.** Solo desde Envíos. En Pedidos la acción es «Detalles de envío» y es de solo lectura: leer la guía y el estado. El `PUT` sigue siendo `PUT /api/orders/:id/shipment` con el permiso `orders.shipping.update` (rol `LOGISTICS`); el módulo de Envíos no duplica la escritura, solo lee con `orders.read`. Las columnas de tienda de la tabla salen de `ShipmentStoreSync`, que es el resultado de sincronizar la guía con WooCommerce por `_wot_tracking_*`.
+
+**Novedades.** El envío tiene una bitácora propia: `ShipmentEvent` guarda el estado que tenía el envío al escribir y el texto de la novedad, con autor y fecha. Se escribe con `POST /api/shipments/:operationId/events` y también pide `orders.shipping.update`, porque es una escritura sobre el envío. El envío no admite una novedad antes de tener guía —el comentario cuelga del `Shipment`, no de la operación— y en ese caso el endpoint responde 404 con el motivo. Cambiar el estado sigue siendo cosa de asignar el envío: ese cambio dispara la sincronización con la tienda y abrir una segunda puerta dejaría la guía sin sincronizar.
+
+**Filtros.** Solo tres, los que logística usa de verdad: estado del catálogo, rango de fechas de creación y el buscador —orden, cliente, documento, guía, transportadora y cotización—. Las guías no tienen filtro propio: el contador «N sin guía» del encabezado es el atajo a esa cola y, al pulsarlo, se convierte en «Ver todos» para salir. Se descartaron los filtros por tienda y por transportadora: la fila es la operación, así que la tienda no es una dimensión de esta pantalla, y Sevale despacha con dos transportadoras, no con un catálogo que justifique un desplegable.
+
+**Layout.** El panel reserva el alto disponible (`calc(100vh - 6rem)`) y la tabla cede lo que sobra, como Prospectos: sin eso la paginación quedaba fuera de la pantalla en ventanas estrechas.
+
+**Alcance actual.** Listado, asignación de guía, bitácora de novedades y reintento de sincronización.
+
 ## Puntos Colombia
 
 El panel de Puntos Colombia permite buscar una factura de Siigo por su número, registrarla en el CRM y acumular los puntos del cliente en el programa. Mientras el proveedor certifica, el módulo es exclusivo de `ADMIN`: lo cierran el permiso `loyalty.accrue`, la bandera `PCO_ADMIN_ONLY` y la propia pantalla.

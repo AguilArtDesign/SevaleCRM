@@ -1,4 +1,5 @@
 import { Modal, Spinner } from '@heroui/react';
+import { resolveShipmentStatus } from '@sevale/shared';
 import type { OrderDetailRecord } from './api';
 
 /**
@@ -45,15 +46,12 @@ export function ShipmentViewModal({
                     </div>
                     <div>
                       <dt>Estado</dt>
-                      <dd>{order.shipment.status}</dd>
+                      <dd>{resolveShipmentStatus(order.shipment.status).label}</dd>
                     </div>
                   </dl>
                 </div>
               ) : (
-                <p>
-                  Logistica aun no ha asignado los datos de envio (Temporal hasta que decida el
-                  diseño)
-                </p>
+                <p>Logística todavía no ha asignado la guía de este pedido.</p>
               )}
             </Modal.Body>
           </Modal.Dialog>

@@ -32,6 +32,14 @@ export type {
 } from './order-commercial-catalogs.js';
 
 export { splitShippingCents, toShippingCents } from './order-shipping.js';
+
+export {
+  isShipmentStatusCode,
+  resolveShipmentStatus,
+  shipmentStatusCatalog,
+  shipmentStatuses,
+} from './shipment-status.js';
+export type { ShipmentStatusCode } from './shipment-status.js';
 export { wooCustomerUsername } from './customer-username.js';
 export type { WooUsernameSource } from './customer-username.js';
 

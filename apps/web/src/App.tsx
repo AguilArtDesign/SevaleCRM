@@ -9,6 +9,7 @@ import { CustomersPage } from './customers/CustomersPage';
 import { CustomersRoute } from './customers/CustomersRoute';
 import { OrdersPage } from './orders/OrdersPage';
 import { OrdersRoute } from './orders/OrdersRoute';
+import { ShipmentsPage } from './shipments/ShipmentsPage';
 import { CouponsPage } from './coupons/CouponsPage';
 import { AgreementsPage } from './agreements/AgreementsPage';
 import { AgreementDetailPage } from './agreements/AgreementDetailPage';
@@ -29,6 +30,14 @@ export function App() {
         }
       >
         <Route path="/inventory" element={<InventoryPage />} />
+        <Route
+          path="/shipments"
+          element={
+            <PermissionRoute permission="orders.read">
+              <ShipmentsPage />
+            </PermissionRoute>
+          }
+        />
         <Route
           path="/orders"
           element={

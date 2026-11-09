@@ -10,6 +10,7 @@ import { RealtimeModule } from './realtime/realtime.module.js';
 import { NotificationsModule } from './notifications/notifications.module.js';
 import { CustomersModule } from './customers/customers.module.js';
 import { OrdersModule } from './orders/orders.module.js';
+import { ShipmentsModule } from './shipments/shipments.module.js';
 import { CouponsModule } from './coupons/coupons.module.js';
 import { AgreementsModule } from './agreements/agreements.module.js';
 import { ProspectsModule } from './prospects/prospects.module.js';
@@ -27,6 +28,7 @@ import { LoyaltyModule } from './loyalty/loyalty.module.js';
     IntegrationsModule,
     CustomersModule,
     OrdersModule,
+    ShipmentsModule,
     CouponsModule,
     AgreementsModule,
     ProspectsModule,

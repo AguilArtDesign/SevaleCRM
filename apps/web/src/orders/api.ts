@@ -45,6 +45,8 @@ export type OrderListRecord = {
    * siempre, una de la tienda solo si la reabrieron o si la tienda la dejó esperando gestión.
    */
   completionAllowed: boolean;
+  /** Si el envío ya tiene guía y transportadora; entonces Pedidos ofrece verlo en solo lectura. */
+  shipmentReady: boolean;
   /** Qué ofrece la acción de la fila: crear la cotización, actualizarla o abrir la que ya existe. */
   quotationAction: 'CREATE' | 'UPDATE' | 'VIEW';
   /**

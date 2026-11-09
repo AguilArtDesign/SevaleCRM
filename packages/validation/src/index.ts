@@ -688,6 +688,48 @@ export const customerOrdersQuerySchema = z.object({
   pageSize: z.coerce.number().int().min(1).max(100).default(10),
 });
 
+/**
+ * Consulta del panel de Envíos. Solo entran operaciones completadas y con cotización creada en Siigo:
+ * es la definición de «listo para despachar», y el panel no debe ofrecer guías a algo que la tienda
+ * todavía no tiene.
+ */
+export const shipmentListQuerySchema = z
+  .object({
+    search: z.string().trim().max(191, 'La búsqueda es demasiado larga.').default(''),
+    // Código del catálogo o el texto libre que quedó guardado antes de que existiera.
+    status: z.string().trim().max(100).optional(),
+    // `pending` son los que todavía no tienen guía: es la cola de trabajo de logística.
+    guide: z.enum(['all', 'pending', 'assigned']).default('all'),
+    dateFrom: z.coerce.date().optional(),
+    dateTo: z.coerce.date().optional(),
+    page: z.coerce.number().int().min(1).default(1),
+    pageSize: z.coerce.number().int().min(1).max(100).default(20),
+  })
+  .superRefine((input, context) => {
+    if (input.dateFrom && input.dateTo && input.dateFrom > input.dateTo) {
+      context.addIssue({
+        code: 'custom',
+        path: ['dateTo'],
+        message: 'La fecha final no puede ser anterior a la fecha inicial.',
+      });
+    }
+  });
+
+/**
+ * Comentario sobre un envío. Lleva solo el texto: el estado lo mueve asignar el envío, que es lo que
+ * dispara la sincronización con la tienda, y dejar ese cambio aquí sería una segunda puerta a la
+ * misma escritura.
+ */
+export const shipmentNoteSchema = z
+  .object({
+    note: z
+      .string()
+      .trim()
+      .min(1, 'Escribe el comentario.')
+      .max(2_000, 'El comentario no puede superar 2000 caracteres.'),
+  })
+  .strict();
+
 const couponCodeSchema = z
   .string()
   .trim()
@@ -903,6 +945,8 @@ export type CreateOrderOperationInput = z.infer<typeof createOrderOperationSchem
 export type UpdateOrderOperationInput = z.infer<typeof updateOrderOperationSchema>;
 export type OrderListQuery = z.infer<typeof orderListQuerySchema>;
 export type CustomerOrdersQuery = z.infer<typeof customerOrdersQuerySchema>;
+export type ShipmentListQuery = z.infer<typeof shipmentListQuerySchema>;
+export type ShipmentNoteInput = z.infer<typeof shipmentNoteSchema>;
 export type UpdateShipmentInput = z.infer<typeof updateShipmentSchema>;
 export type WooOrderInboundInput = z.infer<typeof wooOrderInboundSchema>;
 

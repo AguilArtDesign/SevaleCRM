@@ -329,6 +329,9 @@ export class OrdersRepository {
               // Cerrar la operación depende de todos sus pedidos, no solo de la fila abierta: una
               // operación de dos tiendas se completa una vez y cierra las dos.
               orders: { select: { wooStatus: true, wooCreatedAt: true } },
+              // El panel de Pedidos solo muestra «Detalles de envío» cuando ya hay guía: sin estos
+              // dos campos habría que pedir el detalle de cada fila para saberlo.
+              shipment: { select: { carrier: true, trackingNumber: true } },
               // El resumen de la cotización decide qué dice la acción de la fila: crear, actualizar
               // o ver. `externalId` distingue una cotización que ya vive en Siigo.
               siigoQuotation: {
