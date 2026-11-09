@@ -481,7 +481,9 @@ export function OrdersPage() {
   };
   const confirmOrder = async () => {
     if (!completeTarget || completeOrder.isPending) return;
-    const loadingId = toast('Creando pedidos en WooCommerce…', {
+    // El texto es corto a propósito: es un aviso que pasa, no un informe. «Creando» mentiría cuando
+    // el pedido ya existe en la tienda y lo que se hace es actualizarlo.
+    const loadingId = toast('Sincronizando con la tienda…', {
       isLoading: true,
       timeout: 0,
     });
@@ -490,7 +492,7 @@ export function OrdersPage() {
       toast.close(loadingId);
       const failures = order.orders.filter(({ syncStatus }) => syncStatus === 'ERROR').length;
       if (failures) {
-        toast.warning('La operación se completó, pero una integración requiere atención.');
+        toast.warning('Pedido actualizado, pero la tienda rechazó la sincronización.');
       } else {
         toast.success('Operación completada y sincronizada.');
       }
@@ -878,14 +880,12 @@ export function OrdersPage() {
                                       <Label>Reabrir</Label>
                                     </Dropdown.Item>
                                   )}
-                                {canManage &&
-                                  (order.source === 'CRM' || Boolean(order.reopenedAt)) &&
-                                  order.status === 'PENDING' && (
-                                    <Dropdown.Item id="complete" textValue="Completar operación">
-                                      <Check className="size-4 shrink-0 text-success" />
-                                      <Label>Completar</Label>
-                                    </Dropdown.Item>
-                                  )}
+                                {canManage && order.completionAllowed && (
+                                  <Dropdown.Item id="complete" textValue="Completar operación">
+                                    <Check className="size-4 shrink-0 text-success" />
+                                    <Label>Completar</Label>
+                                  </Dropdown.Item>
+                                )}
                                 {canManage &&
                                   order.source === 'CRM' &&
                                   order.status === 'COMPLETED' &&
@@ -1136,43 +1136,57 @@ export function OrdersPage() {
 
       <OrderActivityModal order={activityTarget} onClose={() => setActivityTarget(null)} />
 
-      <AlertDialog
-        isOpen={completeTarget !== null}
-        onOpenChange={(open) => !open && setCompleteTarget(null)}
-      >
-        <AlertDialog.Backdrop>
-          <AlertDialog.Container size="sm">
-            <AlertDialog.Dialog>
-              <AlertDialog.Header>
-                <AlertDialog.Icon status="success">
-                  <Check />
-                </AlertDialog.Icon>
-                <AlertDialog.Heading>Completar operación</AlertDialog.Heading>
-              </AlertDialog.Header>
-              <AlertDialog.Body>
-                Se marcará <strong>{completeTarget?.operationCode}</strong> como completada y se
-                crearán sus pedidos en Seratus y Pali según corresponda. Después no podrá editarse.
-              </AlertDialog.Body>
-              <AlertDialog.Footer>
-                <Button
-                  variant="tertiary"
-                  onPress={() => setCompleteTarget(null)}
-                  isDisabled={completeOrder.isPending}
-                >
-                  Cancelar
-                </Button>
-                <Button
-                  variant="primary"
-                  onPress={() => void confirmOrder()}
-                  isPending={completeOrder.isPending}
-                >
-                  Completar
-                </Button>
-              </AlertDialog.Footer>
-            </AlertDialog.Dialog>
-          </AlertDialog.Container>
-        </AlertDialog.Backdrop>
-      </AlertDialog>
+      {/*
+        Se abre con el objetivo en la mano y se desmonta al cerrar. Con la variante que mantiene el
+        diálogo montado, al limpiar el objetivo la animación de salida repintaba el texto de «crear»
+        para un pedido que en realidad se actualiza.
+      */}
+      {completeTarget !== null && (
+        <AlertDialog isOpen onOpenChange={(open) => !open && setCompleteTarget(null)}>
+          <AlertDialog.Backdrop>
+            <AlertDialog.Container size="sm">
+              <AlertDialog.Dialog>
+                <AlertDialog.Header>
+                  <AlertDialog.Icon status="success">
+                    <Check />
+                  </AlertDialog.Icon>
+                  <AlertDialog.Heading>Completar operación</AlertDialog.Heading>
+                </AlertDialog.Header>
+                <AlertDialog.Body>
+                  {completeTarget.wooOrderId ? (
+                    <>
+                      Se actualizará el pedido <strong>#{completeTarget.wooOrderId}</strong> en{' '}
+                      {completeTarget.store === 'SERATUS' ? 'Seratus' : 'Pali'} y quedará
+                      completado. Después no podrá editarse.
+                    </>
+                  ) : (
+                    <>
+                      Se creará el pedido en Seratus y Pali y quedará completado. Después no podrá
+                      editarse.
+                    </>
+                  )}
+                </AlertDialog.Body>
+                <AlertDialog.Footer>
+                  <Button
+                    variant="tertiary"
+                    onPress={() => setCompleteTarget(null)}
+                    isDisabled={completeOrder.isPending}
+                  >
+                    Cancelar
+                  </Button>
+                  <Button
+                    variant="primary"
+                    onPress={() => void confirmOrder()}
+                    isPending={completeOrder.isPending}
+                  >
+                    Completar
+                  </Button>
+                </AlertDialog.Footer>
+              </AlertDialog.Dialog>
+            </AlertDialog.Container>
+          </AlertDialog.Backdrop>
+        </AlertDialog>
+      )}
 
       <AlertDialog
         isOpen={deleteTarget !== null}

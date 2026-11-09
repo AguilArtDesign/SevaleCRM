@@ -4,6 +4,7 @@ import { PrismaService } from '../database/prisma.service.js';
 import type { Prisma } from '../generated/prisma/client.js';
 import type { PreparedOperation, PreparedStoreOrder } from './orders.types.js';
 import { reopenableOrder } from './order-reopen-window.js';
+import { completableStoreOperation } from './order-completion-window.js';
 
 export const orderDetailInclude = {
   customer: true,
@@ -325,6 +326,9 @@ export class OrdersRepository {
               updatedAt: true,
               // La fila muestra «Reabierto» en vez del estado de la tienda mientras dure la marca.
               reopenedAt: true,
+              // Cerrar la operación depende de todos sus pedidos, no solo de la fila abierta: una
+              // operación de dos tiendas se completa una vez y cierra las dos.
+              orders: { select: { wooStatus: true, wooCreatedAt: true } },
               // El resumen de la cotización decide qué dice la acción de la fila: crear, actualizar
               // o ver. `externalId` distingue una cotización que ya vive en Siigo.
               siigoQuotation: {
@@ -423,16 +427,29 @@ export class OrdersRepository {
     return this.prisma.$transaction(async (transaction) => {
       const operation = await transaction.orderOperation.findFirst({
         where: { id, deletedAt: null },
-        select: { source: true, status: true, reopenedAt: true },
+        select: {
+          source: true,
+          status: true,
+          createdAt: true,
+          reopenedAt: true,
+          orders: { select: { wooStatus: true, wooCreatedAt: true } },
+        },
       });
       if (!operation) return { outcome: 'NOT_FOUND' };
       /**
-       * Un pedido de la tienda se puede cerrar desde el CRM solo si el comercial lo reabrió: así lo
-       * decide una persona y no el paso del tiempo. Sin reabrir, el ciclo lo lleva la tienda.
+       * Un pedido de la tienda se puede cerrar desde el CRM en dos casos: el comercial lo reabrió
+       * porque la tienda lo había cerrado, o la tienda lo dejó abierto esperando una gestión humana
+       * —pago pendiente o en verificación— y el comercial ya cobró por fuera de la pasarela. Sin la
+       * segunda salida la operación quedaba congelada: se editaba aquí y nunca llegaba a la tienda,
+       * porque completar es lo que dispara la sincronización.
        */
       const closable =
         operation.source === 'CRM' ||
-        (operation.source === 'WOOCOMMERCE' && !!operation.reopenedAt);
+        completableStoreOperation(
+          operation.orders,
+          operation.createdAt,
+          operation.reopenedAt != null,
+        );
       if (!closable || operation.status === 'CANCELLED') {
         return { outcome: 'NOT_COMPLETABLE' };
       }

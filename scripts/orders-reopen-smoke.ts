@@ -563,6 +563,83 @@ try {
   );
 
   /**
+   * Un pedido que la tienda dejó esperando. El pago falló en la pasarela, el cliente terminó pagando
+   * con el asesor y hay que reemplazar una referencia por otra del mismo valor. Antes la operación
+   * quedaba congelada: se editaba en el CRM pero nunca llegaba a la tienda, porque completar solo se
+   * ofrecía a los pedidos del CRM o a los reabiertos, y completar es lo que dispara la sincronización.
+   */
+  const holdPayload = { ...payload, items: [{ productId: third.id, quantity: 1 }] };
+  const holdResponse = await api('/api/orders', cookie, {
+    method: 'POST',
+    body: JSON.stringify(holdPayload),
+  });
+  expectStatus(holdResponse, 201, 'Crear el pedido que quedará en espera');
+  const hold = (await holdResponse.json()) as { id: number };
+  expectStatus(
+    await api(`/api/orders/${hold.id}/complete`, cookie, { method: 'POST' }),
+    201,
+    'Cerrar el pedido antes de simular la tienda',
+  );
+
+  // La tienda lo deja en espera: la operación sigue pendiente y el pedido dice `on-hold`. Se
+  // reproduce el estado que deja el webhook para no depender de su firma en esta prueba.
+  await prisma.orderOperation.update({
+    where: { id: hold.id },
+    data: { source: 'WOOCOMMERCE', status: 'PENDING', reopenedAt: null, reopenedByUserId: null },
+  });
+  await prisma.order.updateMany({
+    where: { operationId: hold.id },
+    data: { wooStatus: 'on-hold' },
+  });
+
+  const listed = await api('/api/orders?page=1&pageSize=50', cookie);
+  expectStatus(listed, 200, 'Listar pedidos');
+  const listedBody = (await listed.json()) as {
+    data: Array<{ operationId: number; completionAllowed?: boolean }>;
+  };
+  const holdRow = listedBody.data.find((row) => row.operationId === hold.id);
+  assert(holdRow, 'El pedido en espera debía aparecer en el listado.');
+  assert(
+    holdRow?.completionAllowed === true,
+    'El listado debía ofrecer completar el pedido que la tienda dejó en espera.',
+  );
+
+  expectStatus(
+    await api(`/api/orders/${hold.id}/complete`, cookie, { method: 'POST' }),
+    201,
+    'Completar el pedido que la tienda dejó en espera',
+  );
+  const holdUpdate = updates.at(-1)!;
+  assert(
+    holdUpdate.status === 'completed',
+    `El PUT debía cerrar el pedido en espera, envió ${String(holdUpdate.status)}.`,
+  );
+  assert(holdUpdate.set_paid === true, 'El PUT debía marcar pagado el pedido en espera.');
+
+  // El corte también protege aquí: un pedido anterior a la fecha ya es historial.
+  await prisma.orderOperation.update({
+    where: { id: hold.id },
+    data: { status: 'PENDING' },
+  });
+  process.env.ORDERS_REOPEN_FROM = '2099-01-01';
+  const beforeCutoff = updates.length;
+  try {
+    const tooOld = await api(`/api/orders/${hold.id}/complete`, cookie, { method: 'POST' });
+    expectStatus(tooOld, 409, 'Completar un pedido en espera anterior al corte');
+    const tooOldBody = (await tooOld.json()) as { error?: { code?: string } };
+    assert(
+      tooOldBody.error?.code === 'ORDER_NOT_COMPLETABLE',
+      `Se esperaba ORDER_NOT_COMPLETABLE, llegó ${tooOldBody.error?.code}.`,
+    );
+    assert(
+      updates.length === beforeCutoff,
+      'Un pedido fuera del corte no debía llegar a WooCommerce.',
+    );
+  } finally {
+    delete process.env.ORDERS_REOPEN_FROM;
+  }
+
+  /**
    * El corte de reapertura protege el historial: con la fecha adelantada, un pedido que ya era
    * cancelado no se puede reabrir aunque esté en la tienda.
    */

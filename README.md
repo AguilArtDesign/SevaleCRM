@@ -337,6 +337,17 @@ Los pedidos cancelados, reembolsados y fallidos no se cotizan nunca. Un pedido d
 
 La regla vive en un solo sitio, `quotableOrder`, que usan la vista previa, la sincronización y el listado del panel: la fila recibe `quotationAllowed` ya resuelto en lugar de repetir el cálculo en React. `npm run test:orders:siigo-quotation` cubre el corte por fecha, los estados que nunca se cotizan y que el corte se pueda mover desde el entorno.
 
+### Cuándo se cierra una operación desde el CRM
+
+Una operación creada en el CRM se completa desde el panel y eso es lo que la crea en WooCommerce. Una que vino de la tienda la cierra normalmente la tienda, así que el CRM solo la cierra en dos casos:
+
+- **La tienda la había cerrado** y el comercial la reabrió porque el cliente decidió continuar.
+- **La tienda la dejó abierta esperando una gestión humana**: pendiente de pago, en espera o procesando. Es el caso del pago que falla en la pasarela y el cliente termina pagando por fuera —transferencia, datáfono, con el asesor—. Sin esta salida la operación quedaba congelada: se editaba en el CRM y nunca llegaba a la tienda, porque completar es lo que dispara la sincronización.
+
+Al completar, el pedido que ya existe en la tienda se actualiza con un `PUT`: queda `completado` y pagado, y sus líneas se ajustan a lo que tiene el CRM —el producto que se reemplazó se agrega y el que salió se borra con `quantity: 0`—. La fecha de corte es la misma de la reapertura (`ORDERS_REOPEN_FROM`): los pedidos anteriores ya son historial y nadie los va a retomar.
+
+La decisión vive en `completionAllowed`, que el backend resuelve por fila con `completableStoreOperation`, igual que `reopenAllowed` y `quotationAllowed`. `npm run test:orders:reopen` cubre los dos caminos y el corte.
+
 ## Puntos Colombia
 
 El panel de Puntos Colombia permite buscar una factura de Siigo por su número, registrarla en el CRM y acumular los puntos del cliente en el programa. Mientras el proveedor certifica, el módulo es exclusivo de `ADMIN`: lo cierran el permiso `loyalty.accrue`, la bandera `PCO_ADMIN_ONLY` y la propia pantalla.

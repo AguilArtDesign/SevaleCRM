@@ -33,6 +33,7 @@ import { WooOrderOutboundService } from './woo-order-outbound.service.js';
 import { ShipmentSyncService } from './shipment-sync.service.js';
 import { SiigoQuotationService } from './siigo-quotation.service.js';
 import { quotableOrder } from './siigo-quotation-input.js';
+import { completableStoreOperation } from './order-completion-window.js';
 import { formattedReopenFrom, reopenableOrder } from './order-reopen-window.js';
 import { OrderEventPublisher } from './order-event-publisher.service.js';
 import { OrderEventsService } from './order-events.service.js';
@@ -202,6 +203,19 @@ export class OrdersService {
          * tienda, que seguirá diciendo que está cancelado hasta que allá lo muevan.
          */
         reopenedAt: operation.reopenedAt,
+        /**
+         * Si el comercial puede cerrar la operación desde el CRM. La regla vive en el backend para
+         * que el panel no la repita: una operación del CRM siempre, una de la tienda solo si la
+         * reabrieron o si la tienda la dejó abierta esperando una gestión humana.
+         */
+        completionAllowed:
+          operation.status === 'PENDING' &&
+          (operation.source === 'CRM' ||
+            completableStoreOperation(
+              operation.orders,
+              operation.createdAt,
+              operation.reopenedAt != null,
+            )),
         /**
          * Si el pedido puede reabrirse. El panel lo usa en vez de repetir la regla del corte: un
          * pedido anterior a la fecha de reapertura ya es historial y el backend lo rechazaría.

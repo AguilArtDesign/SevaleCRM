@@ -40,6 +40,11 @@ export type OrderListRecord = {
   reopenedAt: string | null;
   /** Si el pedido entra en la ventana de reapertura; el backend aplica la misma regla. */
   reopenAllowed: boolean;
+  /**
+   * Si la operación puede cerrarse desde el CRM. Lo decide el backend: una operación del CRM
+   * siempre, una de la tienda solo si la reabrieron o si la tienda la dejó esperando gestión.
+   */
+  completionAllowed: boolean;
   /** Qué ofrece la acción de la fila: crear la cotización, actualizarla o abrir la que ya existe. */
   quotationAction: 'CREATE' | 'UPDATE' | 'VIEW';
   /**
