@@ -47,6 +47,7 @@ async function body(request: IncomingMessage): Promise<Record<string, unknown>> 
 
 const redemptions: Record<string, unknown>[] = [];
 const challenges: Record<string, unknown>[] = [];
+const cancellations: Record<string, unknown>[] = [];
 
 /** El saldo que el simulador devuelve para cada documento. */
 const balances = new Map<string, { pointsAmount: number; allowRedemption: boolean }>([
@@ -123,6 +124,24 @@ const server = createServer((request, response) => {
       });
     }
 
+    if (url.pathname.endsWith('/transactions/cancel') && request.method === 'POST') {
+      const payload = await body(request);
+      cancellations.push(payload);
+      const original = payload.originalTransactionIdentifier as Record<string, unknown> | undefined;
+      // El NUT del original identifica el caso: el simulador no puede distinguir de otra forma una
+      // redención que se anula bien de una que el proveedor rechaza.
+      if (original?.nut === 'cancel-rejected') {
+        return json(response, 400, {
+          resultCode: 'POS_TRANSACTION_NOT_CANCELLABLE',
+          resultMsg: 'La transacción no se puede anular.',
+        });
+      }
+      if (original?.nut === 'cancel-ambiguous') {
+        return json(response, 500, { resultCode: 'POS_ERROR' });
+      }
+      return json(response, 200, { resultCode: '0' });
+    }
+
     return json(response, 404, { resultCode: 'POS_NOT_FOUND' });
   })();
 });
@@ -162,6 +181,12 @@ type Row = {
   completedAt: Date | null;
   createdAt: Date;
   createdBy: { id: string; name: string; email: string } | null;
+  revocationStatus: string | null;
+  revocationIdentifier: Prisma.JsonValue | null;
+  revocationErrorCode: string | null;
+  revocationErrorMessage: string | null;
+  revokedAt: Date | null;
+  revokedByUserId: string | null;
 };
 
 const rows = new Map<number, Row>();
@@ -199,6 +224,12 @@ const repository = {
       completedAt: null,
       createdAt: new Date(),
       createdBy: null,
+      revocationStatus: null,
+      revocationIdentifier: null,
+      revocationErrorCode: null,
+      revocationErrorMessage: null,
+      revokedAt: null,
+      revokedByUserId: null,
     };
     rows.set(row.id, row);
     return withAuthor(row);
@@ -230,6 +261,57 @@ const repository = {
   find(id: number) {
     const row = rows.get(id);
     return row ? withAuthor(row) : null;
+  },
+  claimRevocation(id: number, userId: string, identifier: Prisma.InputJsonValue) {
+    const row = rows.get(id);
+    if (!row) return Promise.resolve({ outcome: 'NOT_FOUND' as const });
+    if (row.status === 'REVOKED') return Promise.resolve({ outcome: 'ALREADY_REVOKED' as const });
+    if (row.status === 'REVOKING') return Promise.resolve({ outcome: 'IN_PROGRESS' as const });
+    if (row.status !== 'PENDING_INVOICE' && row.status !== 'COMPLETED') {
+      return Promise.resolve({ outcome: 'NOT_REDEEMED' as const });
+    }
+    if (row.revocationStatus === 'COMPLETED') {
+      return Promise.resolve({ outcome: 'ALREADY_REVOKED' as const });
+    }
+    if (row.revocationStatus === 'UNVERIFIED') {
+      return Promise.resolve({ outcome: 'UNVERIFIED' as const });
+    }
+    // Tras los descartes anteriores el estado ya es uno de los dos que se pueden anular.
+    const previousStatus = row.status;
+    Object.assign(row, {
+      status: 'REVOKING',
+      revocationStatus: 'PROCESSING',
+      revocationIdentifier: identifier as Prisma.JsonValue,
+      revokedByUserId: userId,
+      revocationErrorCode: null,
+      revocationErrorMessage: null,
+    });
+    return Promise.resolve({ outcome: 'CLAIMED' as const, previousStatus });
+  },
+  markRevoked(id: number) {
+    const row = rows.get(id)!;
+    Object.assign(row, {
+      status: 'REVOKED',
+      revocationStatus: 'COMPLETED',
+      revokedAt: new Date(),
+    });
+    return Promise.resolve(withAuthor(row));
+  },
+  markRevocationFailed(
+    id: number,
+    previousStatus: 'PENDING_INVOICE' | 'COMPLETED',
+    code: string,
+    message: string,
+    unverified: boolean,
+  ) {
+    const row = rows.get(id)!;
+    Object.assign(row, {
+      status: previousStatus,
+      revocationStatus: unverified ? 'UNVERIFIED' : 'FAILED',
+      revocationErrorCode: code,
+      revocationErrorMessage: message,
+    });
+    return Promise.resolve(withAuthor(row));
   },
   attachInvoice(
     id: number,
@@ -266,11 +348,23 @@ const siigo = {
   },
 };
 
+/**
+ * El estado pedido dentro de un `where` de Prisma. El servicio lo mete en un `AND` porque la búsqueda
+ * y la fecha también usan `OR` y se pisarían entre sí.
+ */
+function statusOf(where: unknown) {
+  const conditions = (where as { AND?: { status?: string | { in?: string[] } }[] }).AND;
+  const status = conditions?.find((condition) => condition.status)?.status;
+  if (typeof status === 'string') return [status];
+  return status?.in ?? null;
+}
+
 const service = new PointsRedemptionsService(
   repository as unknown as PointsRedemptionsRepository,
   new PuntosColombiaService({ getAccessToken: () => Promise.resolve('token') } as never),
   siigo as unknown as SiigoService,
   invoices as unknown as PointsInvoicesService,
+  { record: () => Promise.resolve(null) } as unknown as IntegrationLogsService,
 );
 
 const admin = { id: 'user-admin', role: 'ADMIN' };
@@ -343,13 +437,48 @@ function redemptionRowFor(id: number, createdAt: Date): Row {
     completedAt: createdAt,
     createdAt,
     createdBy: null,
+    revocationStatus: null,
+    revocationIdentifier: null,
+    revocationErrorCode: null,
+    revocationErrorMessage: null,
+    revokedAt: null,
+    revokedByUserId: null,
   };
 }
 
-const redemptionRows = [
+const redemptionRows: Row[] = [
   withAuthor(redemptionRowFor(2, new Date('2026-11-06T14:00:00.000Z'))),
   withAuthor(redemptionRowFor(3, new Date('2026-11-03T14:00:00.000Z'))),
 ];
+
+/**
+ * Siembra una redención lista para anular. El NUT del identificador elige qué hace el simulador al
+ * anular: es la única forma de probar el rechazo y el fallo incierto, que dependen del proveedor.
+ */
+let seedId = 900;
+function seedRevocable(status: 'PENDING_INVOICE' | 'COMPLETED', nut: string): Row {
+  const row = redemptionRowFor(seedId++, new Date('2026-11-10T13:00:00.000Z'));
+  row.status = status;
+  row.transactionIdentifier = {
+    terminalId: 'PCAliados-01',
+    transactionId: nut,
+    cashierId: 'Yohander-01',
+    locationCode: 'PDVBRA0001',
+    transactionDate: '2026-11-10T13:00:00',
+    nut,
+  };
+  if (status === 'COMPLETED') {
+    row.siigoInvoiceId = `siigo-${nut}`;
+    row.invoiceName = 'FV-1-900';
+    row.invoiceDate = new Date('2026-11-10T00:00:00.000Z');
+    row.invoiceTotal = new Prisma.Decimal('10002.00');
+  }
+  rows.set(row.id, row);
+  // También entra en el listado del panel: `redemptionRows` es lo que lee el doble para paginar. Se
+  // guarda la fila viva, no una copia, porque los casos siguientes le cambian el estado.
+  redemptionRows.push(row);
+  return row;
+}
 
 try {
   // 1. La consulta distingue una cuenta inexistente de una que existe.
@@ -500,8 +629,24 @@ try {
       sellerNames: () => Promise.resolve([]),
     } as unknown as PointsInvoicesRepository,
     {
-      listSlice: (_where: unknown, take: number) => Promise.resolve(redemptionRows.slice(0, take)),
-      count: () => Promise.resolve(redemptionRows.length),
+      // El doble respeta el filtro de estado: sin eso, el panel «encontraría» redenciones que la
+      // consulta real descartaría y la comprobación del filtro no probaría nada. El estado llega
+      // dentro de un `AND`, no en la raíz del `where`.
+      listSlice: (where: unknown, take: number) => {
+        const statuses = statusOf(where);
+        const filtered = statuses
+          ? redemptionRows.filter((row) => statuses.includes(row.status))
+          : redemptionRows;
+        return Promise.resolve(filtered.slice(0, take).map(withAuthor));
+      },
+      count: (where: unknown) => {
+        const statuses = statusOf(where);
+        return Promise.resolve(
+          statuses
+            ? redemptionRows.filter((row) => statuses.includes(row.status)).length
+            : redemptionRows.length,
+        );
+      },
     } as unknown as PointsRedemptionsRepository,
     { sellerName: () => Promise.resolve(null) } as unknown as SiigoService,
     new PuntosColombiaService({ getAccessToken: () => Promise.resolve('token') } as never),
@@ -560,11 +705,128 @@ try {
   } as never);
   assert(
     onlyRevoked.data.every((row) => row.kind === 'ACCRUAL'),
-    'Filtrar por revocado no debe devolver redenciones.',
+    'Filtrar por revocado no debe devolver redenciones sin anular: una redención también se anula y entra en ese filtro.',
+  );
+
+  /**
+   * 12. Revocar una redención pendiente de factura. Los puntos vuelven al cliente y la fila queda
+   * revocada, con el identificador de la redención como original y uno nuevo para la anulación.
+   */
+  const cancelBefore = cancellations.length;
+  const pending = seedRevocable('PENDING_INVOICE', 'nut-pending');
+  const revoked = await service.revoke(pending.id, admin);
+  assert(
+    revoked.status === 'REVOKED',
+    `Tras revocar debía quedar REVOKED, quedó ${revoked.status}.`,
+  );
+  assert(revoked.revocationStatus === 'COMPLETED', 'La anulación debía quedar completada.');
+  assert(revoked.revokedAt !== null, 'La anulación debía dejar fecha de revocación.');
+  const cancelBody = cancellations[cancelBefore]!;
+  const cancellationId = cancelBody.transactionIdentifier as Record<string, unknown>;
+  const originalId = cancelBody.originalTransactionIdentifier as Record<string, unknown>;
+  assert(
+    originalId.nut === 'nut-pending',
+    'El original debía ser el identificador con el que se redimió.',
+  );
+  assert(
+    cancellationId.nut !== originalId.nut,
+    'La anulación debía llevar un identificador nuevo, no el de la redención.',
+  );
+  assert(
+    cancellationId.nut === cancellationId.transactionId,
+    'El NUT de la anulación debía ser el mismo identificador de la transacción.',
+  );
+  assert(
+    cancellationId.transactionDate !== originalId.transactionDate,
+    'La fecha es lo que distingue la anulación del original.',
+  );
+
+  // 13. Con factura asociada también se puede anular, y la factura se conserva como histórico.
+  const invoicedSeed = seedRevocable('COMPLETED', 'nut-invoiced');
+  const revokedInvoiced = await service.revoke(invoicedSeed.id, admin);
+  assert(
+    revokedInvoiced.status === 'REVOKED',
+    'Una redención facturada también debía poder anularse.',
+  );
+  assert(
+    revokedInvoiced.invoice?.name === 'FV-1-900',
+    'La factura asociada debía conservarse en la fila.',
+  );
+
+  // 14. Un rechazo del proveedor no deshace nada: la redención vuelve a su estado y se puede repetir.
+  const rejectedSeed = seedRevocable('PENDING_INVOICE', 'cancel-rejected');
+  await rejects(service.revoke(rejectedSeed.id, admin), 'Un rechazo de la anulación debía fallar.');
+  const afterReject = rows.get(rejectedSeed.id)!;
+  assert(
+    afterReject.status === 'PENDING_INVOICE',
+    `Tras un rechazo debía volver a PENDING_INVOICE, quedó ${afterReject.status}.`,
+  );
+  assert(afterReject.revocationStatus === 'FAILED', 'La anulación rechazada debía quedar fallida.');
+  const retryBefore = cancellations.length;
+  await rejects(service.revoke(rejectedSeed.id, admin), 'El reintento volvía a ser rechazado.');
+  assert(
+    cancellations.length === retryBefore + 1,
+    'Una anulación rechazada debía poder reintentarse contra el proveedor.',
+  );
+
+  // 15. Un 5xx es ambiguo: los puntos pudieron volver, así que no se reintenta a ciegas.
+  const ambiguousSeed = seedRevocable('COMPLETED', 'cancel-ambiguous');
+  await rejects(
+    service.revoke(ambiguousSeed.id, admin),
+    'Un 5xx debía dejar la anulación incierta.',
+  );
+  const afterAmbiguous = rows.get(ambiguousSeed.id)!;
+  assert(
+    afterAmbiguous.status === 'COMPLETED',
+    `Un fallo incierto debía devolver la redención a COMPLETED, quedó ${afterAmbiguous.status}.`,
+  );
+  assert(
+    afterAmbiguous.revocationStatus === 'UNVERIFIED',
+    'La anulación incierta debía quedar por verificar.',
+  );
+  const blockedBefore = cancellations.length;
+  await rejects(
+    service.revoke(ambiguousSeed.id, admin),
+    'Una anulación por verificar no debía reintentarse.',
+  );
+  assert(
+    cancellations.length === blockedBefore,
+    'Una anulación por verificar no debía volver a llegar al proveedor.',
+  );
+
+  // 16. Una redención fallida no descontó nada al cliente: no hay puntos que devolver.
+  const failedSeed = seedRevocable('PENDING_INVOICE', 'nut-failed');
+  failedSeed.status = 'FAILED';
+  await rejects(
+    service.revoke(failedSeed.id, admin),
+    'Una redención fallida no debía poder anularse.',
+  );
+
+  /**
+   * 17. El filtro agrupa los dos estados que solo duran lo que tarda el proveedor. Pedir «En proceso»
+   * tiene que traer tanto una redención `PROCESSING` como una `REVOKING`, sin dejar fuera ninguna.
+   */
+  const inProgressSeed = seedRevocable('PENDING_INVOICE', 'nut-inprogress');
+  inProgressSeed.status = 'PROCESSING';
+  const inProgress = await panel.list({
+    search: '',
+    status: 'IN_PROGRESS',
+    page: 1,
+    pageSize: 20,
+  } as never);
+  assert(
+    inProgress.data.some((row) => row.kind === 'REDEMPTION' && row.id === inProgressSeed.id),
+    '«En proceso» debía incluir la redención PROCESSING.',
+  );
+  assert(
+    inProgress.data.every(
+      (row) => row.kind === 'ACCRUAL' || ['PROCESSING', 'REVOKING'].includes(row.status),
+    ),
+    '«En proceso» no debía devolver redenciones ya terminadas.',
   );
 
   console.log(
-    'Points redemption smoke: lookup, OTP challenge sin filtrar el código, saldo insuficiente, cuenta inhabilitada, redención correcta con importe puntos × 6, fallo incierto, rechazo definitivo, factura asociada y bitácora sin PIN OK.',
+    'Points redemption smoke: lookup, OTP challenge sin filtrar el código, saldo insuficiente, cuenta inhabilitada, redención correcta con importe puntos × 6, fallo incierto, rechazo definitivo, factura asociada, bitácora sin PIN, anulación con identificador nuevo, factura conservada, rechazo reintentable, 5xx bloqueado y filtro «En proceso» OK.',
   );
 } finally {
   server.close();

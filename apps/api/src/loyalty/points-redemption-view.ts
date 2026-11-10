@@ -30,5 +30,10 @@ export function serializeRedemption(redemption: PointsRedemptionRecord) {
     completedAt: redemption.completedAt,
     createdBy: redemption.createdBy,
     createdAt: redemption.createdAt,
+    /** Anulación de la redención. Nula mientras nadie la haya intentado. */
+    revocationStatus: redemption.revocationStatus,
+    revocationErrorCode: redemption.revocationErrorCode,
+    revocationErrorMessage: redemption.revocationErrorMessage,
+    revokedAt: redemption.revokedAt,
   };
 }

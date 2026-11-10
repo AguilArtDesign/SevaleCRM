@@ -298,10 +298,15 @@ function validateCustomerIdentity(
     context.addIssue({ code: 'custom', path: ['lastName'], message: 'Ingresa los apellidos.' });
   }
   if (input.personType === 'COMPANY' && !input.company) {
+    // El nombre público de una empresa es su razón social y el formulario lo copia a `company`. Si
+    // falta, el error apunta a ese campo: `company` no se escribe a mano en el panel y un mensaje
+    // sobre un campo invisible dejaba al comercial sin saber qué llenar.
     context.addIssue({
       code: 'custom',
-      path: ['company'],
-      message: 'Ingresa la empresa o razón social.',
+      path: [input.displayName ? 'company' : 'displayName'],
+      message: input.displayName
+        ? 'Ingresa la empresa o razón social.'
+        : 'Ingresa el nombre público: es la razón social de la empresa.',
     });
   }
 
@@ -1640,20 +1645,20 @@ export const pointsInvoiceIdSchema = z.coerce
 export const pointsInvoiceListQuerySchema = z.object({
   search: z.string().trim().max(191).default(''),
   /**
-   * Los estados de las dos operaciones que muestra el panel. Los de factura son la acumulación; los
-   * de redención se distinguen solos y no se mezclan con los otros.
+   * Los estados de las dos operaciones que muestra el panel, más `IN_PROGRESS` para agrupar los dos
+   * que solo duran lo que tarda el proveedor. Los de factura son la acumulación; los de redención se
+   * distinguen solos y no se mezclan con los otros.
    */
   status: z
     .enum([
       'all',
       'PENDING',
-      'PROCESSING',
       'COMPLETED',
       'FAILED',
       'UNVERIFIED',
-      'REVOKING',
       'REVOKED',
       'PENDING_INVOICE',
+      'IN_PROGRESS',
     ])
     .default('all'),
   sellerId: z.coerce.number().int().positive().optional(),

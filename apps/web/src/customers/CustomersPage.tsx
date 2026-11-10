@@ -56,7 +56,13 @@ import { CustomerForm } from './CustomerForm';
 import { CustomerActivityModal } from './CustomerActivityModal';
 import { CustomerOrderPanel } from './CustomerOrderPanel';
 import { CustomerOrders } from './CustomerOrders';
-import { customerAvatarClass, customerDisplayName, customerInitials } from './presentation';
+import {
+  customerAvatarClass,
+  customerDisplayName,
+  customerDocumentLabel,
+  customerInitials,
+  upperCaseAddress,
+} from './presentation';
 import { CustomerAutocomplete } from './CustomerAutocomplete';
 import { customersApi, type CustomerRecord } from './api';
 import type { CustomerOrderRecord } from '../orders/api';
@@ -216,12 +222,7 @@ function CustomerDetail({
         <dl>
           <div>
             <dt>{documentLabels.get(customer.documentType) ?? customer.documentType}</dt>
-            <dd>
-              {customer.documentNumber}
-              {customer.personType === 'COMPANY' && customer.checkDigit
-                ? `-${customer.checkDigit}`
-                : ''}
-            </dd>
+            <dd>{customerDocumentLabel(customer)}</dd>
           </div>
           <div>
             <dt>Tipo</dt>
@@ -245,8 +246,8 @@ function CustomerDetail({
             <dt>Dirección</dt>
             <dd>
               {[
-                customer.addressLine1,
-                customer.addressLine2,
+                upperCaseAddress(customer.addressLine1),
+                upperCaseAddress(customer.addressLine2),
                 customer.location.cityName,
                 customer.location.regionName,
                 customer.postalCode,
@@ -914,7 +915,7 @@ export function CustomersPage() {
                       onPointerDown={(event) => event.stopPropagation()}
                     >
                       <div className="customer-copy">
-                        <strong>{customer.documentNumber}</strong>
+                        <strong>{customerDocumentLabel(customer)}</strong>
                         <span>
                           {documentLabels.get(customer.documentType) || customer.documentType}
                         </span>

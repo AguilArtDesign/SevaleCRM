@@ -53,7 +53,6 @@ import { PointsFeedback } from './PointsFeedback';
 import {
   pointsColombiaApi,
   type PointsInvoiceRecord,
-  type PointsInvoiceStatus,
   type PointsPrefixOption,
   type PointsRedemptionRecord,
 } from './api';
@@ -63,9 +62,12 @@ import {
   canAttachInvoice,
   canDelete,
   canRevoke,
+  canRevokeRedemption,
   invoiceDate,
+  pointsStatusFilters,
   redemptionStatusMeta,
   statusMeta,
+  type PointsStatusFilter,
 } from './presentation';
 
 type DateRangeValue = { start: CalendarDate; end: CalendarDate };
@@ -92,7 +94,7 @@ export function PointsColombiaPage() {
   // El vendedor solo lo usa la administración: un comercial opera sus propias facturas y la columna
   // le repetiría su propio nombre en todas las filas.
   const isAdmin = user?.role === 'ADMIN';
-  const [status, setStatus] = useState<PointsInvoiceStatus | 'all'>('all');
+  const [status, setStatus] = useState<PointsStatusFilter>('all');
   const [search, setSearch] = useState('');
   const [dateRange, setDateRange] = useState<DateRangeValue | null>(null);
   const [sellerId, setSellerId] = useState('all');
@@ -106,6 +108,10 @@ export function PointsColombiaPage() {
   const [detailTarget, setDetailTarget] = useState<PointsInvoiceRecord | null>(null);
   const [redeemOpen, setRedeemOpen] = useState(false);
   const [invoiceTarget, setInvoiceTarget] = useState<PointsRedemptionRecord | null>(null);
+  const [revokeRedemptionTarget, setRevokeRedemptionTarget] =
+    useState<PointsRedemptionRecord | null>(null);
+  const [redemptionDetailTarget, setRedemptionDetailTarget] =
+    useState<PointsRedemptionRecord | null>(null);
 
   const listQuery = useQuery({
     // Las fechas entran a la clave como `YYYY-MM-DD`: el objeto del calendario cambia de identidad
@@ -193,7 +199,7 @@ export function PointsColombiaPage() {
             value={status}
             variant="secondary"
             onChange={(value) => {
-              setStatus(String(value) as PointsInvoiceStatus | 'all');
+              setStatus(String(value) as PointsStatusFilter);
               setPage(1);
             }}
           >
@@ -204,9 +210,9 @@ export function PointsColombiaPage() {
             <Select.Popover>
               <ListBox>
                 <ListBox.Item id="all">Todos los estados</ListBox.Item>
-                {(Object.keys(statusMeta) as PointsInvoiceStatus[]).map((key) => (
-                  <ListBox.Item key={key} id={key}>
-                    {statusMeta[key].label}
+                {pointsStatusFilters.map((option) => (
+                  <ListBox.Item key={option.value} id={option.value}>
+                    {option.label}
                   </ListBox.Item>
                 ))}
               </ListBox>
@@ -406,8 +412,13 @@ export function PointsColombiaPage() {
                       </Table.Cell>
                       <Table.Cell>
                         <Chip color={redemptionMeta.color}>{redemptionMeta.label}</Chip>
+                        {/* Los dos errores son distintos: fallar al redimir no es fallar al anular,
+                            y una anulación fallida deja los puntos gastados. */}
                         {row.errorMessage && (
                           <p className="points-invoice-error">{row.errorMessage}</p>
+                        )}
+                        {row.revocationErrorMessage && (
+                          <p className="points-invoice-error">{row.revocationErrorMessage}</p>
                         )}
                       </Table.Cell>
                       <Table.Cell>
@@ -415,33 +426,59 @@ export function PointsColombiaPage() {
                       </Table.Cell>
                       <Table.Cell>
                         <div className="inventory-row-actions">
-                          {canAttachInvoice(row) ? (
-                            <Dropdown>
-                              <Button
-                                className="inventory-actions-trigger"
-                                isIconOnly
-                                size="sm"
-                                variant="ghost"
+                          <Dropdown>
+                            <Button
+                              className="inventory-actions-trigger"
+                              isIconOnly
+                              size="sm"
+                              variant="ghost"
+                              aria-label={`Acciones para la redención de ${row.documentNumber}`}
+                            >
+                              <EllipsisVertical className="text-muted" width={17} height={17} />
+                            </Button>
+                            <Dropdown.Popover
+                              className="inventory-actions-popover"
+                              placement="bottom end"
+                            >
+                              <Dropdown.Menu
                                 aria-label={`Acciones para la redención de ${row.documentNumber}`}
+                                onAction={(key) => {
+                                  if (String(key) === 'detail') setRedemptionDetailTarget(row);
+                                  if (String(key) === 'invoice') setInvoiceTarget(row);
+                                  if (String(key) === 'revoke') setRevokeRedemptionTarget(row);
+                                }}
                               >
-                                <EllipsisVertical className="text-muted" width={17} height={17} />
-                              </Button>
-                              <Dropdown.Popover
-                                className="inventory-actions-popover"
-                                placement="bottom end"
-                              >
-                                <Dropdown.Menu
-                                  aria-label={`Acciones para la redención de ${row.documentNumber}`}
-                                  onAction={() => setInvoiceTarget(row)}
-                                >
-                                  <Dropdown.Item id="invoice" textValue="Asociar factura">
-                                    <FileText className="size-4 shrink-0 text-muted" />
-                                    <Label>Asociar factura</Label>
+                                <Dropdown.Section>
+                                  {/* Detalles siempre existe: es el histórico de lo que pasó, y una
+                                      redención anulada también necesita poder consultarse. */}
+                                  <Dropdown.Item id="detail" textValue="Detalles">
+                                    <Eye
+                                      className="size-4 shrink-0 text-muted"
+                                      aria-hidden="true"
+                                    />
+                                    <Label>Detalles</Label>
                                   </Dropdown.Item>
-                                </Dropdown.Menu>
-                              </Dropdown.Popover>
-                            </Dropdown>
-                          ) : null}
+                                  {canAttachInvoice(row) && (
+                                    <Dropdown.Item id="invoice" textValue="Asociar factura">
+                                      <FileText className="size-4 shrink-0 text-muted" />
+                                      <Label>Asociar factura</Label>
+                                    </Dropdown.Item>
+                                  )}
+                                  {/* Revocar devuelve los puntos al cliente y no se puede deshacer
+                                      desde el CRM, así que va con su propio permiso. */}
+                                  {canRevokeRedemption(row) && canRevokePoints && (
+                                    <Dropdown.Item id="revoke" textValue="Revocar" variant="danger">
+                                      <ArrowRotateLeft
+                                        className="size-4 shrink-0 text-danger"
+                                        aria-hidden="true"
+                                      />
+                                      <Label>Revocar</Label>
+                                    </Dropdown.Item>
+                                  )}
+                                </Dropdown.Section>
+                              </Dropdown.Menu>
+                            </Dropdown.Popover>
+                          </Dropdown>
                         </div>
                       </Table.Cell>
                     </Table.Row>
@@ -761,6 +798,25 @@ export function PointsColombiaPage() {
           }}
         />
       )}
+
+      {revokeRedemptionTarget && (
+        <RevokeRedemptionModal
+          key={revokeRedemptionTarget.id}
+          redemption={revokeRedemptionTarget}
+          onClose={() => setRevokeRedemptionTarget(null)}
+          onDone={() => {
+            setRevokeRedemptionTarget(null);
+            void refresh();
+          }}
+        />
+      )}
+
+      {redemptionDetailTarget && (
+        <RedemptionDetailModal
+          redemption={redemptionDetailTarget}
+          onClose={() => setRedemptionDetailTarget(null)}
+        />
+      )}
     </section>
   );
 }
@@ -940,6 +996,146 @@ function InvoiceDetailModal({
 }
 
 /** Etiqueta del tipo de documento tal como la ve el operador al elegirlo. */
+/**
+ * Histórico de una redención. Igual que en la acumulación, lo que ya se operó no se puede repetir,
+ * así que el resultado tiene que quedar consultable: la aprobación, el saldo que dejó, el documento
+ * con el que se envió y, si se anuló, quién y cuándo.
+ */
+function RedemptionDetailModal({
+  redemption,
+  onClose,
+}: {
+  redemption: PointsRedemptionRecord;
+  onClose: () => void;
+}) {
+  const meta = redemptionStatusMeta[redemption.status];
+
+  return (
+    <Modal isOpen onOpenChange={(open) => !open && onClose()}>
+      <Modal.Backdrop>
+        <Modal.Container placement="center">
+          <Modal.Dialog className="siigo-quotation-modal">
+            <Modal.CloseTrigger aria-label="Cerrar detalle" />
+            <Modal.Header>
+              <div>
+                <Modal.Heading>Detalle de la redención</Modal.Heading>
+                <p className="siigo-quotation-subtitle">Resultado de la redención</p>
+              </div>
+            </Modal.Header>
+            <Modal.Body>
+              <dl className="order-ticket-data siigo-quotation-meta">
+                <div>
+                  <dt>Documento del cliente</dt>
+                  <dd>
+                    {pointsDocumentLabel(redemption.documentType)} {redemption.documentNumber}
+                  </dd>
+                </div>
+                {redemption.customerName && (
+                  <div>
+                    <dt>Nombre en el programa</dt>
+                    <dd>{redemption.customerName}</dd>
+                  </div>
+                )}
+                <div>
+                  <dt>Estado</dt>
+                  <dd>
+                    <Chip color={meta.color}>{meta.label}</Chip>
+                  </dd>
+                </div>
+                <div>
+                  <dt>Puntos redimidos</dt>
+                  <dd>
+                    <strong>{redemption.pointsRedeemed ?? redemption.pointsRequested}</strong>
+                  </dd>
+                </div>
+                <div>
+                  <dt>Valor aplicado</dt>
+                  <dd>{formattedMoneyWithCode(redemption.amountCop, 'COP')}</dd>
+                </div>
+                <div>
+                  <dt>Saldo después</dt>
+                  <dd>
+                    {redemption.pointsBalance === null ? '—' : `${redemption.pointsBalance} pts`}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Aprobación</dt>
+                  <dd>{redemption.approbationNumber ?? '—'}</dd>
+                </div>
+                <div>
+                  <dt>Autorización</dt>
+                  <dd>{redemption.validationMethod ?? '—'}</dd>
+                </div>
+                <div>
+                  <dt>Factura asociada</dt>
+                  <dd>{redemption.invoice?.name ?? '—'}</dd>
+                </div>
+                <div>
+                  <dt>Fecha de factura</dt>
+                  <dd>{redemption.invoice?.date ? invoiceDate(redemption.invoice.date) : '—'}</dd>
+                </div>
+                <div>
+                  <dt>Redimido por</dt>
+                  <dd>{redemption.createdBy?.name ?? '—'}</dd>
+                </div>
+                <div>
+                  <dt>Fecha de redención</dt>
+                  <dd>{redemption.completedAt ? accrualTimestamp(redemption.completedAt) : '—'}</dd>
+                </div>
+                {redemption.revocationStatus && (
+                  <>
+                    <div>
+                      <dt>Revocación</dt>
+                      <dd>
+                        <Chip
+                          color={
+                            redemption.revocationStatus === 'COMPLETED'
+                              ? 'default'
+                              : redemption.revocationStatus === 'PROCESSING'
+                                ? 'warning'
+                                : 'danger'
+                          }
+                        >
+                          {revocationLabels[redemption.revocationStatus]}
+                        </Chip>
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>Revocado el</dt>
+                      <dd>{redemption.revokedAt ? accrualTimestamp(redemption.revokedAt) : '—'}</dd>
+                    </div>
+                  </>
+                )}
+              </dl>
+
+              {redemption.errorMessage && (
+                <Alert status="danger">
+                  <Alert.Content>
+                    <Alert.Description>{redemption.errorMessage}</Alert.Description>
+                  </Alert.Content>
+                </Alert>
+              )}
+              {/* Un fallo al anular no deshace la redención: se muestra aparte del de redimir. */}
+              {redemption.revocationErrorMessage && (
+                <Alert status="danger">
+                  <Alert.Content>
+                    <Alert.Description>{redemption.revocationErrorMessage}</Alert.Description>
+                  </Alert.Content>
+                </Alert>
+              )}
+            </Modal.Body>
+            <Modal.Footer>
+              <Button variant="tertiary" onPress={onClose}>
+                Cerrar
+              </Button>
+            </Modal.Footer>
+          </Modal.Dialog>
+        </Modal.Container>
+      </Modal.Backdrop>
+    </Modal>
+  );
+}
+
 function pointsDocumentLabel(value: string) {
   return pointsDocumentTypes.find((type) => type.value === value)?.label ?? value;
 }
@@ -1657,6 +1853,119 @@ function RevokeModal({
                   <Alert.Description>
                     Los puntos se anulan en Puntos Colombia y la factura queda como Revocada. Desde
                     el CRM no se puede volver a acreditarlos.
+                  </Alert.Description>
+                </Alert.Content>
+              </Alert>
+            </Modal.Body>
+            <Modal.Footer>
+              <Button variant="tertiary" onPress={onClose}>
+                Cancelar
+              </Button>
+              <Button
+                variant="danger"
+                isPending={revokeMutation.isPending}
+                isDisabled={revokeMutation.isPending}
+                onPress={() => revokeMutation.mutate()}
+              >
+                {revokeMutation.isPending ? (
+                  <Spinner color="current" size="sm" />
+                ) : (
+                  <ArrowRotateLeft width={16} height={16} />
+                )}
+                Revocar puntos
+              </Button>
+            </Modal.Footer>
+          </Modal.Dialog>
+        </Modal.Container>
+      </Modal.Backdrop>
+    </Modal>
+  );
+}
+
+/**
+ * Revoca una redención: los puntos vuelven a la cuenta del cliente. Se confirma aparte porque es
+ * irreversible desde el CRM y porque, si la redención ya tenía factura, esa venta se queda sin los
+ * puntos que la pagaban y hay que corregirla en Siigo.
+ */
+function RevokeRedemptionModal({
+  redemption,
+  onClose,
+  onDone,
+}: {
+  redemption: PointsRedemptionRecord;
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const [error, setError] = useState('');
+  const revokeMutation = useMutation({
+    mutationFn: () => pointsColombiaApi.revokeRedemption(redemption.id),
+    onError: (failure: Error) => setError(failure.message),
+    onSuccess: () => {
+      setError('');
+      onDone();
+    },
+  });
+
+  const points = redemption.pointsRedeemed ?? redemption.pointsRequested;
+
+  return (
+    <Modal isOpen onOpenChange={(open) => !open && onClose()}>
+      <Modal.Backdrop>
+        <Modal.Container placement="center">
+          <Modal.Dialog className="siigo-quotation-modal">
+            <Modal.CloseTrigger aria-label="Cerrar revocación" />
+            <Modal.Header>
+              <div>
+                <Modal.Heading>Revocar redención</Modal.Heading>
+                <p className="siigo-quotation-subtitle">
+                  {points} puntos · {redemption.documentNumber}
+                </p>
+              </div>
+            </Modal.Header>
+            <Modal.Body>
+              {error && (
+                <Alert status="danger">
+                  <Alert.Content>
+                    <Alert.Description>{error}</Alert.Description>
+                  </Alert.Content>
+                </Alert>
+              )}
+              {/* Un intento anterior fallido se puede repetir; el mensaje dice por qué falló. */}
+              {redemption.revocationErrorMessage && (
+                <Alert status="warning">
+                  <Alert.Content>
+                    <Alert.Description>{redemption.revocationErrorMessage}</Alert.Description>
+                  </Alert.Content>
+                </Alert>
+              )}
+              <dl className="order-ticket-data">
+                <div>
+                  <dt>Documento</dt>
+                  <dd>{redemption.documentNumber}</dd>
+                </div>
+                <div>
+                  <dt>Puntos a revocar</dt>
+                  <dd>
+                    <strong>{points}</strong>
+                  </dd>
+                </div>
+                <div>
+                  <dt>Redimidos el</dt>
+                  <dd>{redemption.completedAt ? accrualTimestamp(redemption.completedAt) : '—'}</dd>
+                </div>
+                {/* La factura se conserva en la fila: existe en Siigo y hay que corregirla allí. */}
+                {redemption.invoice && (
+                  <div>
+                    <dt>Factura asociada</dt>
+                    <dd>{redemption.invoice.name}</dd>
+                  </div>
+                )}
+              </dl>
+              <Alert status="warning">
+                <Alert.Content>
+                  <Alert.Description>
+                    Los puntos vuelven a la cuenta del cliente en Puntos Colombia y la redención
+                    queda como Revocada. Desde el CRM no se puede volver a redimir.
                   </Alert.Description>
                 </Alert.Content>
               </Alert>

@@ -21,6 +21,7 @@ import {
 } from '../integrations/integration-http.js';
 import {
   PointsAccountNotFoundError,
+  PointsCancellationRejectedError,
   PuntosColombiaService,
   puntoColombiaDate,
   type PointsBalance,
@@ -28,6 +29,7 @@ import {
   type TransactionIdentifier,
 } from '../integrations/puntos-colombia/puntos-colombia.service.js';
 import { puntosColombiaConfig } from '../integrations/puntos-colombia/puntos-colombia-config.js';
+import { IntegrationLogsService } from '../integration-logs/integration-logs.service.js';
 import { SiigoService } from '../integrations/siigo/siigo.service.js';
 import { PointsRedemptionsRepository } from './points-redemptions.repository.js';
 import { PointsInvoicesService, type SessionUser } from './points-invoices.service.js';
@@ -92,6 +94,7 @@ export class PointsRedemptionsService {
     private readonly puntos: PuntosColombiaService,
     private readonly siigo: SiigoService,
     private readonly invoices: PointsInvoicesService,
+    private readonly logs: IntegrationLogsService,
   ) {}
 
   private terminalId(): string {
@@ -303,5 +306,133 @@ export class PointsRedemptionsService {
       invoiceTotal: new Prisma.Decimal(invoice.total.toFixed(2)),
     });
     return serializeRedemption(updated);
+  }
+
+  /**
+   * Anula una redención: los puntos vuelven a la cuenta del cliente. Usa el mismo endpoint de
+   * anulación que la acumulación, con la misma forma de cuerpo pero el identificador de la redención
+   * como original.
+   *
+   * Se permite tanto antes como después de asociar la factura, porque el caso típico es justo ese:
+   * la venta se facturó mal y hay que devolver los puntos. La factura se conserva en la fila como
+   * dato histórico —existe en Siigo— y la redención queda en `REVOKED`.
+   */
+  async revoke(id: number, user: SessionUser) {
+    const redemption = await this.redemptions.find(id);
+    if (!redemption) {
+      throw businessError(
+        NotFoundException,
+        'POINTS_REDEMPTION_NOT_FOUND',
+        'La redención no existe en el panel.',
+      );
+    }
+
+    // El identificador original se reutiliza tal cual: es el que el proveedor reconoce. El de la
+    // anulación es nuevo y solo se distingue del original por la fecha.
+    const original = redemption.transactionIdentifier as unknown as TransactionIdentifier;
+    const now = new Date();
+    const stamp = puntoColombiaDate(now).replace(/[-:T]/g, '');
+    const cancellation: TransactionIdentifier = {
+      terminalId: this.terminalId(),
+      transactionId: stamp,
+      cashierId: this.cashierId(),
+      locationCode: this.locationCode(),
+      transactionDate: puntoColombiaDate(now),
+      nut: stamp,
+    };
+
+    const claim = await this.redemptions.claimRevocation(id, user.id, { ...cancellation });
+    if (claim.outcome === 'NOT_FOUND') {
+      throw businessError(
+        NotFoundException,
+        'POINTS_REDEMPTION_NOT_FOUND',
+        'La redención no existe en el panel.',
+      );
+    }
+    if (claim.outcome === 'NOT_REDEEMED') {
+      throw businessError(
+        ConflictException,
+        'POINTS_REDEMPTION_NOT_REDEEMED',
+        'Solo se pueden revocar los puntos de una redención ya aplicada.',
+      );
+    }
+    if (claim.outcome === 'ALREADY_REVOKED') {
+      throw businessError(
+        ConflictException,
+        'POINTS_REDEMPTION_ALREADY_REVOKED',
+        'Los puntos de esta redención ya se revocaron.',
+      );
+    }
+    if (claim.outcome === 'IN_PROGRESS') {
+      throw businessError(
+        ConflictException,
+        'POINTS_REVOCATION_IN_PROGRESS',
+        'La revocación de esta redención está en curso.',
+      );
+    }
+    if (claim.outcome === 'UNVERIFIED') {
+      throw businessError(
+        ConflictException,
+        'POINTS_REVOCATION_UNVERIFIED',
+        'La revocación anterior quedó por verificar. Concíliala antes de reintentar.',
+      );
+    }
+
+    const points = redemption.pointsRedeemed ?? redemption.pointsRequested;
+    try {
+      await this.puntos.cancelTransaction(original, cancellation);
+      await this.redemptions.markRevoked(id);
+      await this.logs.record({
+        integration: 'PUNTOS_COLOMBIA',
+        operation: 'redemption.cancel',
+        outcome: 'SUCCESS',
+        code: 'POINTS_REDEMPTION_REVOKED',
+        message: `Redención ${id}: se revocaron ${points} puntos del documento ${redemption.documentNumber}.`,
+        responseBody: { original, cancellation },
+        referenceType: 'POINTS_REDEMPTION',
+        referenceId: id,
+        userId: user.id,
+      });
+      return this.detail(id);
+    } catch (error) {
+      // Un rechazo del proveedor es definitivo: reintentar con los mismos datos daría lo mismo. Un
+      // 404 de la anulación también lo es: la operación original no existe en el proveedor.
+      const rejected =
+        error instanceof PointsCancellationRejectedError ||
+        error instanceof IntegrationResourceMissingException;
+      const unverified =
+        !rejected && !(error instanceof IntegrationAuthenticationException) && isAmbiguous(error);
+      const code = rejected
+        ? 'POINTS_REVOCATION_REJECTED'
+        : unverified
+          ? 'POINTS_REVOCATION_UNVERIFIED'
+          : 'POINTS_REVOCATION_FAILED';
+      const message = safeMessage(error, 'Puntos Colombia no pudo anular la redención.');
+      await this.redemptions.markRevocationFailed(
+        id,
+        claim.previousStatus,
+        code,
+        message,
+        unverified,
+      );
+      this.logger.warn(`Revocación de la redención ${id} falló (${code}).`);
+      throw new BadGatewayException({
+        success: false,
+        error: { code, message },
+      });
+    }
+  }
+
+  /** La redención tal como la ve el panel, para responder a sus propias acciones. */
+  private async detail(id: number) {
+    const redemption = await this.redemptions.find(id);
+    if (!redemption) {
+      throw businessError(
+        NotFoundException,
+        'POINTS_REDEMPTION_NOT_FOUND',
+        'La redención no existe en el panel.',
+      );
+    }
+    return serializeRedemption(redemption);
   }
 }

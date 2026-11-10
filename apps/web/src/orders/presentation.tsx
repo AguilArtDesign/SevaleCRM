@@ -4,6 +4,7 @@ import {
   resolveCustomerRegionName,
 } from '@sevale/shared';
 import { Chip } from '../components/Chip';
+import { upperCaseAddress } from '../customers/presentation';
 import type { OrderListRecord, OrderSource, OrderStatus } from './api';
 
 const statusMeta: Record<OrderStatus, { label: string; color: 'warning' | 'success' | 'danger' }> =
@@ -72,16 +73,21 @@ type AddressParts = {
 
 /**
  * Dirección desglosada: un dato por línea, en el orden en que se lee. Las tiendas guardan el país y
- * la región como códigos (`CO`, `CO-ANT`), así que se traducen al nombre real; el resto de la
- * dirección ya viene escrito.
+ * la región como códigos (`CO`, `CO-ANT`), así que se traducen al nombre real; las dos líneas de
+ * dirección se muestran en mayúsculas, como en la ficha del cliente y en la guía de transporte.
  */
 export function addressLines(parts: AddressParts): string[] {
   const region = resolveCustomerRegionName(parts.country, parts.state);
   const country = resolveCustomerCountryName(parts.country);
 
-  return [parts.address1, parts.address2, parts.city, region, country, parts.postcode].filter(
-    (line): line is string => Boolean(line),
-  );
+  return [
+    upperCaseAddress(parts.address1),
+    upperCaseAddress(parts.address2),
+    parts.city,
+    region,
+    country,
+    parts.postcode,
+  ].filter((line): line is string => Boolean(line));
 }
 
 /**

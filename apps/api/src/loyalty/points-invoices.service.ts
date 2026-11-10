@@ -159,22 +159,45 @@ function serializeBalance(balance: PointsBalance) {
 }
 
 /**
- * Qué estados del filtro miran las facturas. `null` significa que el filtro no puede devolver
- * facturas: pedir las que están pendientes de factura solo puede dar redenciones.
+ * Qué estados del filtro miran las facturas. `PENDING_INVOICE` significa que el filtro no puede
+ * devolver facturas: pedir las que están pendientes de factura solo puede dar redenciones.
  */
 function hasInvoiceStatus(status: PointsInvoiceListQuery['status']): boolean {
   // `PENDING_INVOICE` es un estado exclusivo de la redención: la factura nunca espera factura.
   return status !== 'PENDING_INVOICE';
 }
 
-/** Lo mismo para las redenciones: `REVOKING`/`REVOKED` solo existen en la acumulación. */
+/**
+ * Lo mismo para las redenciones. `REVOKING`/`REVOKED` sí las miran: una redención también se puede
+ * anular, así que el filtro tiene que poder devolverlas.
+ */
 function hasRedemptionStatus(status: PointsInvoiceListQuery['status']): boolean {
-  return status !== 'REVOKING' && status !== 'REVOKED' && status !== 'PENDING';
+  return status !== 'PENDING';
+}
+
+/**
+ * El estado del filtro traducido al de cada tabla. `IN_PROGRESS` agrupa los dos estados que solo
+ * existen mientras el proveedor responde, para no ofrecer dos opciones que casi nunca aparecen.
+ */
+function invoiceStatusFilter(
+  status: PointsInvoiceListQuery['status'],
+): PointsInvoiceStatus | { in: PointsInvoiceStatus[] } {
+  if (status === 'IN_PROGRESS') return { in: ['PROCESSING', 'REVOKING'] };
+  // `hasInvoiceStatus` ya descartó `PENDING_INVOICE`, que no existe en la factura.
+  return status as PointsInvoiceStatus;
+}
+
+function redemptionStatusFilter(
+  status: PointsInvoiceListQuery['status'],
+): PointsRedemptionStatus | { in: PointsRedemptionStatus[] } {
+  if (status === 'IN_PROGRESS') return { in: ['PROCESSING', 'REVOKING'] };
+  // `hasRedemptionStatus` ya descartó `PENDING`, que no existe en la redención.
+  return status as PointsRedemptionStatus;
 }
 
 function invoiceWhere(query: PointsInvoiceListQuery): Prisma.PointsInvoiceWhereInput {
   return {
-    ...(query.status === 'all' ? {} : { status: query.status as PointsInvoiceStatus }),
+    ...(query.status === 'all' ? {} : { status: invoiceStatusFilter(query.status) }),
     ...(query.sellerId ? { sellerId: query.sellerId } : {}),
     ...(query.search
       ? {
@@ -200,7 +223,7 @@ function redemptionWhere(query: PointsInvoiceListQuery): Prisma.PointsRedemption
   // clave `OR` pisaría a la primera y el filtro de fecha se perdería.
   const conditions: Prisma.PointsRedemptionWhereInput[] = [];
   if (query.status !== 'all') {
-    conditions.push({ status: query.status as PointsRedemptionStatus });
+    conditions.push({ status: redemptionStatusFilter(query.status) });
   }
   if (query.search) {
     conditions.push({

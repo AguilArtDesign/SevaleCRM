@@ -1,4 +1,5 @@
 import type { AgreementTaskStatus } from './api';
+import { upperCaseAddress } from '../customers/presentation';
 
 /** Estado del convenio en la tabla. Un convenio inactivo sigue existiendo: se puede reactivar. */
 export function AgreementStatusChip({ active }: { active: boolean }) {
@@ -87,7 +88,8 @@ export function scheduledHint(value: string): string {
   return '';
 }
 
-/** La dirección en una sola línea, omitiendo los huecos, como en la ficha del cliente. */
+/** La dirección en una sola línea, omitiendo los huecos, como en la ficha del cliente. Las líneas van
+ * en mayúsculas, igual que en Clientes. */
 export function formatAddress(agreement: {
   addressLine1: string | null;
   addressLine2: string | null;
@@ -97,8 +99,8 @@ export function formatAddress(agreement: {
 }): string {
   return (
     [
-      agreement.addressLine1,
-      agreement.addressLine2,
+      upperCaseAddress(agreement.addressLine1),
+      upperCaseAddress(agreement.addressLine2),
       agreement.cityName,
       agreement.regionName,
       agreement.postalCode,

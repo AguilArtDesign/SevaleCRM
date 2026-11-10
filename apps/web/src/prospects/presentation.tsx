@@ -1,4 +1,5 @@
 import type { ProspectRecord, ProspectSource, ProspectStatus } from './api';
+import { upperCaseAddress } from '../customers/presentation';
 
 export const prospectStatusMeta: Record<
   ProspectStatus,
@@ -54,12 +55,13 @@ export function messageFrom(error: unknown): string {
   return error instanceof Error ? error.message : 'No pudimos completar la solicitud.';
 }
 
-/** Dirección en una línea, omitiendo huecos, como en la ficha del cliente. */
+/** Dirección en una línea, omitiendo huecos, como en la ficha del cliente. Las líneas van en
+ * mayúsculas, igual que en Clientes: es como se escriben en Siigo y en la guía de transporte. */
 export function formatProspectAddress(prospect: ProspectRecord): string {
   return (
     [
-      prospect.addressLine1,
-      prospect.addressLine2,
+      upperCaseAddress(prospect.addressLine1),
+      upperCaseAddress(prospect.addressLine2),
       prospect.location.cityName,
       prospect.location.regionName,
       prospect.location.countryName,

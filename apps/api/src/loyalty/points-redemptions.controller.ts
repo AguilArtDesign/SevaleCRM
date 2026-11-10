@@ -91,4 +91,15 @@ export class PointsRedemptionsController {
       this.user(request),
     );
   }
+
+  /**
+   * Anula la redención y devuelve los puntos al cliente. Va con el mismo permiso que anular una
+   * acumulación: es la operación que mueve el saldo en contra del cliente y no se puede deshacer
+   * desde el CRM.
+   */
+  @Post(':id/revoke')
+  @RequirePermissions('loyalty.revoke')
+  revoke(@Param('id') id: string, @Req() request: AuthenticatedRequest) {
+    return this.redemptions.revoke(parseInput(pointsInvoiceIdSchema, id), this.user(request));
+  }
 }

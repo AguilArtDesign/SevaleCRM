@@ -6,7 +6,7 @@ export type PointsInvoiceStatus =
 
 /** La redención tiene su propio ciclo: nace esperando la factura que documenta la venta. */
 export type PointsRedemptionStatus =
-  'PROCESSING' | 'PENDING_INVOICE' | 'COMPLETED' | 'FAILED' | 'UNVERIFIED';
+  'PROCESSING' | 'PENDING_INVOICE' | 'COMPLETED' | 'FAILED' | 'UNVERIFIED' | 'REVOKING' | 'REVOKED';
 
 export type PointsRedemptionRecord = {
   id: number;
@@ -27,6 +27,11 @@ export type PointsRedemptionRecord = {
   completedAt: string | null;
   createdBy: { id: string; name: string; email: string } | null;
   createdAt: string;
+  /** Anulación de la redención. Nula mientras nadie la haya intentado. */
+  revocationStatus: 'PROCESSING' | 'COMPLETED' | 'FAILED' | 'UNVERIFIED' | null;
+  revocationErrorCode: string | null;
+  revocationErrorMessage: string | null;
+  revokedAt: string | null;
 };
 
 /** Fila del panel: una acumulación con su factura, o una redención sin factura todavía. */
@@ -223,5 +228,10 @@ export const pointsColombiaApi = {
     apiRequest<PointsRedemptionRecord>(`/api/points-colombia/redemptions/${id}/invoice`, {
       method: 'POST',
       body: JSON.stringify(sellerId ? { number, sellerId } : { number }),
+    }),
+  /** Anula la redención: los puntos vuelven a la cuenta del cliente. */
+  revokeRedemption: (id: number) =>
+    apiRequest<PointsRedemptionRecord>(`/api/points-colombia/redemptions/${id}/revoke`, {
+      method: 'POST',
     }),
 };

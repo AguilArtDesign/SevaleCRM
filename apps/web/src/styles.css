@@ -2674,6 +2674,14 @@ select {
   gap: var(--spacing);
 }
 
+/* Mensaje de un campo que se valida a mano: el `FieldError` de HeroUI solo aparece dentro de un
+   `Form` con `validationBehavior`, y este formulario no lo es. */
+.customer-field-error {
+  margin: 0;
+  color: var(--danger);
+  font-size: 0.75rem;
+}
+
 /* El teléfono no usa el contenedor de Hero UI, así que la marca de obligatorio se dibuja aquí con
    el mismo asterisco que el resto del formulario. */
 .customer-field-required label::after {

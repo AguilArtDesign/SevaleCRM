@@ -17,7 +17,8 @@ export const statusMeta: Record<
 
 /**
  * Estado de una redención. `PENDING_INVOICE` es el normal al terminar: los puntos ya salieron de la
- * cuenta del cliente y falta la factura que documenta la venta.
+ * cuenta del cliente y falta la factura que documenta la venta. `REVOKED` es la anulación: los
+ * puntos volvieron al cliente.
  */
 export const redemptionStatusMeta: Record<
   PointsRedemptionStatus,
@@ -28,11 +29,47 @@ export const redemptionStatusMeta: Record<
   COMPLETED: { label: 'Completado', color: 'success' },
   FAILED: { label: 'Fallido', color: 'danger' },
   UNVERIFIED: { label: 'Por verificar', color: 'danger' },
+  // Los puntos siguen gastados: si la anulación falla, la redención vuelve a su estado anterior.
+  REVOKING: { label: 'Revocando', color: 'warning' },
+  REVOKED: { label: 'Revocado', color: 'default' },
 };
 
 /** Una redención solo se puede facturar mientras no tenga factura. */
 export function canAttachInvoice(redemption: { status: PointsRedemptionStatus }) {
   return redemption.status === 'PENDING_INVOICE';
+}
+
+/**
+ * Opciones del filtro de estados. No es la lista de estados del modelo: `PROCESSING` y `REVOKING`
+ * solo duran lo que tarda el proveedor en responder, así que se ofrecen juntas como «En proceso».
+ *
+ * El resto va por separado a propósito, porque cada uno pide una acción distinta y mezclarlos
+ * escondería trabajo: «Por facturar» hay que facturarlo, «Pendiente» acumularlo, «Fallido»
+ * reintentarlo y «Por verificar» conciliarlo contra el proveedor.
+ */
+export const pointsStatusFilters = [
+  { value: 'PENDING', label: 'Pendiente' },
+  { value: 'PENDING_INVOICE', label: 'Por facturar' },
+  { value: 'IN_PROGRESS', label: 'En proceso' },
+  { value: 'COMPLETED', label: 'Completado' },
+  { value: 'FAILED', label: 'Fallido' },
+  { value: 'UNVERIFIED', label: 'Por verificar' },
+  { value: 'REVOKED', label: 'Revocado' },
+] as const;
+
+export type PointsStatusFilter = 'all' | (typeof pointsStatusFilters)[number]['value'];
+
+/**
+ * Anular una redención devuelve los puntos al cliente. Se permite antes de facturar y después: el
+ * caso típico es la venta facturada mal. Un intento fallido se puede repetir; uno ambiguo, no.
+ */
+export function canRevokeRedemption(redemption: {
+  status: PointsRedemptionStatus;
+  revocationStatus: 'PROCESSING' | 'COMPLETED' | 'FAILED' | 'UNVERIFIED' | null;
+}) {
+  if (redemption.status !== 'PENDING_INVOICE' && redemption.status !== 'COMPLETED') return false;
+  const status = redemption.revocationStatus;
+  return status === null || status === undefined || status === 'FAILED';
 }
 /** Solo los estados sin acumulación confirmada permiten operar la factura. */
 export function canAccrue(invoice: PointsInvoiceRecord) {

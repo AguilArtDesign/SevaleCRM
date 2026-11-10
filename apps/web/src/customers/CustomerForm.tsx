@@ -45,6 +45,7 @@ import {
   type CustomerResolveResponse,
 } from './api';
 import { CustomerAutocomplete } from './CustomerAutocomplete';
+import { upperCaseAddress } from './presentation';
 
 type CustomerFormValue = Omit<CreateCustomerInput, 'documentType'> & {
   documentType: CreateCustomerInput['documentType'] | '';
@@ -55,7 +56,9 @@ export type CustomerFormMode = 'create' | 'edit' | 'convert';
 /** Valores con los que se abre el formulario cuando no viene de un cliente guardado. */
 export type CustomerFormPrefill = Partial<CustomerFormValue>;
 
-type DocumentFieldErrors = Partial<Record<'documentType' | 'documentNumber', string>>;
+type DocumentFieldErrors = Partial<
+  Record<'documentType' | 'documentNumber' | 'displayName', string>
+>;
 
 const emptyCustomer: CustomerFormValue = {
   personType: 'PERSON',
@@ -123,7 +126,10 @@ function formatLocation(address: CustomerDraftAddress | null): string | null {
 }
 
 function formatAddress(address: CustomerDraftAddress): string {
-  const lines = [address.addressLine1, address.addressLine2].filter(Boolean).join(', ');
+  // Las dos líneas en mayúsculas, igual que en la ficha del cliente: es como las escribe Siigo.
+  const lines = [upperCaseAddress(address.addressLine1), upperCaseAddress(address.addressLine2)]
+    .filter(Boolean)
+    .join(', ');
   const location = formatLocation(address);
   return [lines, location].filter(Boolean).join(' — ');
 }
@@ -333,7 +339,7 @@ export function CustomerForm({
       for (const issue of parsed.error.issues) {
         const field = issue.path[0];
         if (
-          (field === 'documentType' || field === 'documentNumber') &&
+          (field === 'documentType' || field === 'documentNumber' || field === 'displayName') &&
           !nextDocumentErrors[field]
         ) {
           nextDocumentErrors[field] = issue.message;
@@ -341,7 +347,10 @@ export function CustomerForm({
       }
       setDocumentErrors(nextDocumentErrors);
       const formIssue = parsed.error.issues.find(
-        (issue) => issue.path[0] !== 'documentType' && issue.path[0] !== 'documentNumber',
+        (issue) =>
+          issue.path[0] !== 'documentType' &&
+          issue.path[0] !== 'documentNumber' &&
+          issue.path[0] !== 'displayName',
       );
       setError(formIssue?.message ?? '');
       return;
@@ -502,7 +511,12 @@ export function CustomerForm({
                         onChange={text('lastName', true, 'name')}
                       />
                     </TextField>
-                    <TextField className="customer-field-full">
+                    <TextField
+                      className={`customer-field-full${
+                        value.personType === 'COMPANY' ? ' customer-field-required' : ''
+                      }`}
+                      isInvalid={Boolean(documentErrors.displayName)}
+                    >
                       <Label>Nombre público</Label>
                       <Input
                         variant="secondary"
@@ -510,6 +524,11 @@ export function CustomerForm({
                         value={value.displayName}
                         onChange={changeDisplayName}
                       />
+                      {/* El de una empresa es su razón social: el mensaje va bajo el campo, que es
+                          el que hay que llenar. */}
+                      {documentErrors.displayName && (
+                        <p className="customer-field-error">{documentErrors.displayName}</p>
+                      )}
                     </TextField>
                     {!isEdit &&
                       lookupResult &&

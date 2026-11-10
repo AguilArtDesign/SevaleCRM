@@ -142,6 +142,38 @@ if (!customerWithoutPublicName.success) {
   throw new Error('El esquema local exigió el nombre público opcional.');
 }
 
+/**
+ * Una empresa sin nombre público no tiene razón social, y el formulario copia una a la otra. El
+ * error tiene que señalar el campo que el comercial ve, no `company`, que no se escribe a mano.
+ */
+const companyWithoutPublicName = completeCustomerSchema.safeParse({
+  ...customer,
+  personType: 'COMPANY',
+  displayName: '',
+  company: null,
+});
+if (
+  companyWithoutPublicName.success ||
+  companyWithoutPublicName.error.issues.find((issue) => issue.path[0] === 'displayName')
+    ?.message !== 'Ingresa el nombre público: es la razón social de la empresa.'
+) {
+  throw new Error('El esquema no señaló el nombre público como razón social de la empresa.');
+}
+// Sin `displayName` pero con `company` (el caso de las integraciones) el error sigue siendo de empresa.
+const companyWithoutCompany = completeCustomerSchema.safeParse({
+  ...customer,
+  personType: 'COMPANY',
+  displayName: 'Sevale S.A.S.',
+  company: null,
+});
+if (
+  companyWithoutCompany.success ||
+  companyWithoutCompany.error.issues.find((issue) => issue.path[0] === 'company')?.message !==
+    'Ingresa la empresa o razón social.'
+) {
+  throw new Error('El esquema no exigió la razón social cuando faltaba solo `company`.');
+}
+
 const customerWithoutLastName = createCustomerSchema.safeParse({
   ...customer,
   lastName: null,

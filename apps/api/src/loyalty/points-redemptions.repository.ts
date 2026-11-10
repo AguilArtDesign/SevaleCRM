@@ -32,6 +32,21 @@ export type PointsRedemptionApplied = {
   approbationNumber: string | null;
 };
 
+/** El estado al que vuelve la redención si la anulación falla: el que tenía antes de reclamarla. */
+export type PointsRedemptionRevocableStatus = 'PENDING_INVOICE' | 'COMPLETED';
+
+/**
+ * Resultado de reclamar una anulación. `ALREADY_REVOKED` e `IN_PROGRESS` no son errores de datos:
+ * describen por qué no se puede volver a pedir, y el servicio los convierte en un mensaje.
+ */
+export type PointsRedemptionRevocationClaim =
+  | { outcome: 'NOT_FOUND' }
+  | { outcome: 'NOT_REDEEMED' }
+  | { outcome: 'ALREADY_REVOKED' }
+  | { outcome: 'IN_PROGRESS' }
+  | { outcome: 'UNVERIFIED' }
+  | { outcome: 'CLAIMED'; previousStatus: PointsRedemptionRevocableStatus };
+
 @Injectable()
 export class PointsRedemptionsRepository {
   constructor(private readonly prisma: PrismaService) {}
@@ -132,6 +147,94 @@ export class PointsRedemptionsRepository {
         invoiceName: invoice.invoiceName,
         invoiceDate: invoice.invoiceDate,
         invoiceTotal: invoice.invoiceTotal,
+      },
+      include: redemptionInclude,
+    });
+  }
+
+  /**
+   * Reclama la anulación de una redención. Igual que en la acumulación, el paso a `REVOKING` es
+   * único y ocurre en una transacción: dos peticiones simultáneas no pueden devolver los puntos dos
+   * veces. La redención sale de los estados operables al reclamarse, así que la tabla deja de
+   * ofrecer la acción mientras el proveedor responde.
+   */
+  claimRevocation(
+    id: number,
+    userId: string,
+    identifier: Prisma.InputJsonValue,
+  ): Promise<PointsRedemptionRevocationClaim> {
+    return this.prisma.$transaction(async (transaction) => {
+      const redemption = await transaction.pointsRedemption.findUnique({
+        where: { id },
+        select: { status: true, revocationStatus: true, invoiceName: true },
+      });
+      if (!redemption) return { outcome: 'NOT_FOUND' };
+      if (redemption.status === 'REVOKED') return { outcome: 'ALREADY_REVOKED' };
+      if (redemption.status === 'REVOKING') return { outcome: 'IN_PROGRESS' };
+      // Solo se anula lo que quemó puntos: una redención fallida no descontó nada al cliente.
+      if (redemption.status !== 'PENDING_INVOICE' && redemption.status !== 'COMPLETED') {
+        return { outcome: 'NOT_REDEEMED' };
+      }
+      if (redemption.revocationStatus === 'COMPLETED') return { outcome: 'ALREADY_REVOKED' };
+      // Tras un resultado ambiguo no se reenvía: repetir podría devolver los puntos dos veces.
+      if (redemption.revocationStatus === 'UNVERIFIED') return { outcome: 'UNVERIFIED' };
+
+      const previousStatus = redemption.status;
+      const claimed = await transaction.pointsRedemption.updateMany({
+        where: {
+          id,
+          status: { in: ['PENDING_INVOICE', 'COMPLETED'] },
+          OR: [{ revocationStatus: null }, { revocationStatus: 'FAILED' }],
+        },
+        data: {
+          status: 'REVOKING',
+          revocationStatus: 'PROCESSING',
+          revocationIdentifier: identifier,
+          revokedByUserId: userId,
+          revocationErrorCode: null,
+          revocationErrorMessage: null,
+        },
+      });
+      if (claimed.count !== 1) return { outcome: 'IN_PROGRESS' };
+
+      return { outcome: 'CLAIMED', previousStatus };
+    });
+  }
+
+  /** El proveedor anuló la redención: los puntos volvieron al cliente. */
+  markRevoked(id: number) {
+    return this.prisma.pointsRedemption.update({
+      where: { id },
+      data: {
+        status: 'REVOKED',
+        revocationStatus: 'COMPLETED',
+        revokedAt: new Date(),
+        revocationErrorCode: null,
+        revocationErrorMessage: null,
+      },
+      include: redemptionInclude,
+    });
+  }
+
+  /**
+   * Una anulación fallida no deshace nada: los puntos siguen gastados y la factura asociada sigue
+   * siendo válida, así que la redención vuelve al estado que tenía y el error se guarda solo en el
+   * intento de anulación.
+   */
+  markRevocationFailed(
+    id: number,
+    previousStatus: 'PENDING_INVOICE' | 'COMPLETED',
+    code: string,
+    message: string,
+    unverified: boolean,
+  ) {
+    return this.prisma.pointsRedemption.update({
+      where: { id },
+      data: {
+        status: previousStatus,
+        revocationStatus: unverified ? 'UNVERIFIED' : 'FAILED',
+        revocationErrorCode: code,
+        revocationErrorMessage: message,
       },
       include: redemptionInclude,
     });
