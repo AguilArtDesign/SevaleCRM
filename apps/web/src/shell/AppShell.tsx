@@ -197,8 +197,10 @@ export function AppShell() {
       label: 'Operación',
       items: [
         { to: '/inventory', label: 'Inventario', icon: <Box /> },
-        // Despacho: las operaciones completadas con cotización en Siigo. Logística trabaja aquí.
-        { to: '/shipments', label: 'Envíos', icon: <Car />, when: can('orders.read') },
+        // Despacho: las operaciones completadas con cotización en Siigo. Por ahora solo el
+        // administrador; se sirve de su propio permiso para poder abrirlo a logística sin tocar la
+        // pantalla.
+        { to: '/shipments', label: 'Envíos', icon: <Car />, when: can('shipments.read') },
       ],
     },
     {

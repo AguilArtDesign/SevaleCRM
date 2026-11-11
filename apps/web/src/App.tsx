@@ -33,7 +33,7 @@ export function App() {
         <Route
           path="/shipments"
           element={
-            <PermissionRoute permission="orders.read">
+            <PermissionRoute permission="shipments.read">
               <ShipmentsPage />
             </PermissionRoute>
           }

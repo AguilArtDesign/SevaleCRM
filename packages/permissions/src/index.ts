@@ -73,6 +73,10 @@ export const permissions = [
   // Redimir puntos: quema el saldo del cliente en el programa, así que es aparte de acumular. Un
   // error aquí le quita puntos al cliente, no se los suma.
   'loyalty.redeem',
+  // Panel de Envíos: la cola de despacho con sus guías y novedades. Por ahora es exclusivo de la
+  // administración; abrirlo a logística será agregar esta clave a su rol, sin tocar la pantalla ni
+  // el controlador. No se reutiliza `orders.read` para poder cerrarlo sin cerrar Pedidos.
+  'shipments.read',
   // Bitácora de las llamadas a las APIs externas. Contiene cuerpos con datos de clientes y pedidos,
   // así que es exclusiva de la administración; vaciarla es un acto aparte.
   'logs.read',
@@ -113,6 +117,8 @@ export const rolePermissions = {
     // El panel de Puntos Colombia queda fuera del alcance del comercial mientras se certifica: no lo
     // ve, no lo consulta y no lo opera. Habilitarlo será agregar aquí `loyalty.read`.
   ],
+  // Envíos queda fuera de logística mientras el panel se estabiliza: no lo ve ni lo consulta. Sus
+  // dos permisos de escritura siguen aquí porque la guía se escribe por el endpoint de Pedidos.
   LOGISTICS: ['inventory.read', 'orders.read', 'orders.shipping.update'],
 } as const satisfies Record<Role, readonly Permission[]>;
 

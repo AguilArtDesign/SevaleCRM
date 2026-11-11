@@ -31,13 +31,14 @@ function parseInput<T>(schema: ZodType<T>, input: unknown): T {
 }
 
 /**
- * Panel de Envíos. La lectura es de `orders.read`, que logística ya tiene; escribir la guía sigue
+ * Panel de Envíos. La lectura va con `shipments.read`, que hoy solo tiene el administrador: no se
+ * reutiliza `orders.read` para poder cerrar este panel sin cerrar Pedidos. Escribir la guía sigue
  * siendo `orders.shipping.update` y va por `PUT /api/orders/:id/shipment`, que es donde ya vive esa
  * regla y no conviene duplicarla. Lo único que se escribe aquí es la novedad, que es historial del
  * envío y no toca el pedido de la tienda.
  */
 @Controller('shipments')
-@RequirePermissions('orders.read')
+@RequirePermissions('shipments.read')
 export class ShipmentsController {
   constructor(private readonly shipments: ShipmentsService) {}
 
@@ -51,9 +52,12 @@ export class ShipmentsController {
     return this.shipments.history(parseInput(orderOperationIdSchema, operationId));
   }
 
-  /** Una novedad es una escritura sobre el envío, así que pide el permiso de envíos, no el de lectura. */
+  /**
+   * Una novedad es una escritura sobre el envío, así que pide las dos llaves: la del panel y la de
+   * escritura. El decorador del método reemplaza al de la clase, no se suma, así que van juntas.
+   */
   @Post(':operationId/events')
-  @RequirePermissions('orders.shipping.update')
+  @RequirePermissions('shipments.read', 'orders.shipping.update')
   addNote(
     @Param('operationId') operationId: string,
     @Body() body: unknown,
