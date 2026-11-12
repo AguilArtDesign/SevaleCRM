@@ -48,27 +48,18 @@ import {
 } from './api';
 import { LinkProductModal } from './LinkProductModal';
 import { ProductImportModal } from './ProductImportModal';
+import {
+  formatCurrencyPrice,
+  inventoryCurrencies,
+  type InventoryCurrencyCode,
+  type InventoryPriceKey,
+} from './presentation';
 import { useCurrentUser } from '../users/useCurrentUser';
 
 const tableFeatureSet = tableFeatures({});
 const tableCop = new Intl.NumberFormat('es-CO', { maximumFractionDigits: 0 });
-const tableUsd = new Intl.NumberFormat('es-CO', { maximumFractionDigits: 2 });
 
-/**
- * Las cuatro monedas del producto. COP es la principal y se lee en la tabla; el resto se consulta en
- * el popover del precio. El euro no tiene bandera en el catálogo de países, así que lleva el símbolo.
- */
-const priceCurrencies = [
-  { code: 'COP', key: 'priceCop', label: 'Peso colombiano', flag: '/img/flags/CO.webp' },
-  { code: 'USD', key: 'priceUsd', label: 'Dólar estadounidense', flag: '/img/flags/US.webp' },
-  { code: 'MXN', key: 'priceMxn', label: 'Peso mexicano', flag: '/img/flags/MX.webp' },
-  { code: 'EUR', key: 'priceEur', label: 'Euro', flag: '' },
-] as const;
-
-type PriceCurrencyCode = (typeof priceCurrencies)[number]['code'];
-type SourcePriceKey = (typeof priceCurrencies)[number]['key'];
-
-type CurrencyPrices = Record<PriceCurrencyCode, number | null>;
+type CurrencyPrices = Record<InventoryCurrencyCode, number | null>;
 
 function siigoCurrencyPrices(
   product: Pick<
@@ -116,13 +107,6 @@ function getProductStatus(product: Pick<ProductRecord, 'siigoStock' | 'syncStatu
 }
 
 function CurrencyFlag({ flag }: { flag: string }) {
-  if (!flag) {
-    return (
-      <span className="inventory-currency-euro" aria-hidden="true">
-        €
-      </span>
-    );
-  }
   return <img src={flag} alt="" />;
 }
 
@@ -130,21 +114,20 @@ function CurrencyFlag({ flag }: { flag: string }) {
 function CurrencyPriceList({ prices }: { prices: CurrencyPrices }) {
   return (
     <dl className="inventory-currency-list">
-      {priceCurrencies.map(({ code, label, flag }) => (
-        <div key={code}>
-          <dt title={label}>
-            <CurrencyFlag flag={flag} />
-            {code}
-          </dt>
-          <dd>
-            {prices[code] === null ? (
-              <span className="inventory-currency-empty">Sin dato</span>
-            ) : (
-              `$${tableUsd.format(prices[code])}`
-            )}
-          </dd>
-        </div>
-      ))}
+      {inventoryCurrencies.map(({ code, label, flag }) => {
+        const price = formatCurrencyPrice(prices[code], code);
+        return (
+          <div key={code}>
+            <dt title={label}>
+              <CurrencyFlag flag={flag} />
+              {code}
+            </dt>
+            <dd>
+              {price === null ? <span className="inventory-currency-empty">Sin dato</span> : price}
+            </dd>
+          </div>
+        );
+      })}
     </dl>
   );
 }
@@ -1147,20 +1130,20 @@ function ProductSource({
 }: {
   title: string;
   source: 'siigo' | 'pali' | 'seratus';
-  prices: Record<SourcePriceKey, number | null>;
+  prices: Record<InventoryPriceKey, number | null>;
   stock: number;
-  mismatches?: Partial<Record<'stock' | SourcePriceKey, boolean>>;
+  mismatches?: Partial<Record<'stock' | InventoryPriceKey, boolean>>;
 }) {
   return (
     <section className={`product-source-${source}`}>
       <span>{title}</span>
       <dl>
-        {priceCurrencies.map(({ code, key }) => (
+        {inventoryCurrencies.map(({ code, key }) => (
           <div key={code}>
             <dt>Precio {code}</dt>
             <dd>
               <SourceValue hasMismatch={mismatches?.[key]}>
-                {prices[key] === null ? 'Sin dato' : `$${tableUsd.format(prices[key])}`}
+                {formatCurrencyPrice(prices[key], code) ?? 'Sin dato'}
               </SourceValue>
             </dd>
           </div>

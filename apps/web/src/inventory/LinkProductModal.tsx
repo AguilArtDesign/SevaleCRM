@@ -5,6 +5,7 @@ import { Boxes3, Link, Magnifier, TriangleExclamation, Xmark } from '@gravity-ui
 import { Chip } from '../components/Chip';
 import { Input } from '../components/Input';
 import { inventoryApi, type ProductLinkPreview, type ProductSyncStatus } from './api';
+import { formatCurrencyPrice, inventoryCurrencies, type InventoryPriceKey } from './presentation';
 
 const currencyNumber = new Intl.NumberFormat('es-CO', {
   maximumFractionDigits: 0,
@@ -36,22 +37,9 @@ function LinkPreviewSkeleton() {
   );
 }
 
-function nullableCurrency(value: number | null): string {
-  return value === null ? 'Sin dato' : `$${currencyNumber.format(value)}`;
-}
-
 function nullableStock(value: number | null): string {
   return value === null ? 'Sin dato' : currencyNumber.format(value);
 }
-
-const sourcePrices = [
-  { code: 'COP', key: 'priceCop' },
-  { code: 'USD', key: 'priceUsd' },
-  { code: 'MXN', key: 'priceMxn' },
-  { code: 'EUR', key: 'priceEur' },
-] as const;
-
-type SourcePriceKey = (typeof sourcePrices)[number]['key'];
 
 function SourcePanel({
   title,
@@ -62,20 +50,20 @@ function SourcePanel({
 }: {
   title: string;
   source: 'siigo' | 'pali' | 'seratus';
-  prices: Record<SourcePriceKey, number | null>;
+  prices: Record<InventoryPriceKey, number | null>;
   stock: number | null;
-  mismatches?: Partial<Record<'stock' | SourcePriceKey, boolean>>;
+  mismatches?: Partial<Record<'stock' | InventoryPriceKey, boolean>>;
 }) {
   return (
     <section className={`product-source-${source}`}>
       <span>{title}</span>
       <dl>
-        {sourcePrices.map(({ code, key }) => (
+        {inventoryCurrencies.map(({ code, key }) => (
           <div key={code}>
             <dt>Precio {code}</dt>
             <dd>
               <SourceValue hasMismatch={mismatches?.[key]}>
-                {nullableCurrency(prices[key])}
+                {formatCurrencyPrice(prices[key], code) ?? 'Sin dato'}
               </SourceValue>
             </dd>
           </div>
