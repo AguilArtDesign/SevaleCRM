@@ -61,10 +61,12 @@ function agreementWhere({
       ? {
           OR: [
             { companyName: { contains: search } },
+            { legalName: { contains: search } },
             { nit: { contains: search } },
             { contactName: { contains: search } },
             { contactEmail: { contains: search } },
             { contactPhone: { contains: search } },
+            { contactLandline: { contains: search } },
           ],
         }
       : {}),

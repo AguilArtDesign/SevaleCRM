@@ -1116,8 +1116,9 @@ const agreementFieldsSchema = z.object({
   companyName: z
     .string()
     .trim()
-    .min(1, 'Ingresa el nombre de la empresa.')
-    .max(255, 'El nombre de la empresa no puede superar los 255 caracteres.'),
+    .min(1, 'Ingresa el nombre comercial.')
+    .max(255, 'El nombre comercial no puede superar los 255 caracteres.'),
+  legalName: optionalText(255),
   nit: agreementNitSchema,
   country: agreementCountrySchema.optional(),
   region: optionalText(32),
@@ -1130,6 +1131,9 @@ const agreementFieldsSchema = z.object({
   contactPosition: optionalText(191),
   contactEmail: agreementEmailSchema,
   contactPhone: optionalText(32),
+  // El fijo se guarda como se escribe: una línea con extensión no encaja en E.164.
+  contactLandline: optionalText(32),
+  contactExtension: optionalText(10),
   validUntil: agreementValidUntilSchema,
   // La URL pública del logo en R2. Solo se acepta https: un logo se pinta en un <img> y no debe
   // poder apuntar a http ni a esquemas como javascript:.

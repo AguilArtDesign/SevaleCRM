@@ -14,7 +14,10 @@ export type AgreementAuthor = { id: string; name: string; email: string };
 
 export type AgreementRecord = {
   id: number;
+  /** Nombre con el que se conoce el convenio; se rotula «Nombre comercial» en el panel. */
   companyName: string;
+  /** Razón social de la empresa; puede diferir del nombre comercial. */
+  legalName: string | null;
   nit: string | null;
   /** Código ISO del país (`CO`, `MX`…). */
   country: string;
@@ -37,6 +40,9 @@ export type AgreementRecord = {
   contactPosition: string | null;
   contactEmail: string | null;
   contactPhone: string | null;
+  /** Teléfono fijo y extensión; se guardan como se escriben, sin normalizar a E.164. */
+  contactLandline: string | null;
+  contactExtension: string | null;
   /** Fecha de vigencia del contrato (`YYYY-MM-DD`); null si no se pactó o no se conoce. */
   validUntil: string | null;
   /** URL pública del logo en R2; null si el convenio no tiene logo. */

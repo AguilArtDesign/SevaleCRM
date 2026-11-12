@@ -1,5 +1,16 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
-import { Alert, Button, Label, Modal, Switch, TextField } from '@heroui/react';
+import {
+  Alert,
+  Button,
+  Calendar,
+  DateField,
+  DatePicker,
+  Label,
+  Modal,
+  Switch,
+  TextField,
+} from '@heroui/react';
+import { parseDate, type CalendarDate } from '@internationalized/date';
 import { FloppyDisk, Xmark } from '@gravity-ui/icons';
 import {
   getCustomerColombiaCities,
@@ -10,13 +21,16 @@ import {
 import { createAgreementSchema } from '@sevale/validation';
 import { Input } from '../components/Input';
 import { PhoneInput } from '../components/PhoneInput';
+import { Textarea } from '../components/Textarea';
 import { CustomerAutocomplete } from '../customers/CustomerAutocomplete';
 import { AgreementRequestError, agreementsApi, type AgreementRecord } from './api';
 import { AgreementLogoField } from './AgreementLogoField';
 import { messageFrom } from './presentation';
+import { useCurrentUser } from '../users/useCurrentUser';
 
 type FormValue = {
   companyName: string;
+  legalName: string;
   nit: string;
   country: string;
   region: string;
@@ -29,6 +43,8 @@ type FormValue = {
   contactPosition: string;
   contactEmail: string;
   contactPhone: string;
+  contactLandline: string;
+  contactExtension: string;
   validUntil: string;
   logoUrl: string;
   description: string;
@@ -37,6 +53,7 @@ type FormValue = {
 
 const emptyValue: FormValue = {
   companyName: '',
+  legalName: '',
   nit: '',
   country: 'CO',
   region: '',
@@ -49,6 +66,8 @@ const emptyValue: FormValue = {
   contactPosition: '',
   contactEmail: '',
   contactPhone: '',
+  contactLandline: '',
+  contactExtension: '',
   validUntil: '',
   logoUrl: '',
   description: '',
@@ -59,6 +78,7 @@ function initialValue(agreement: AgreementRecord | null): FormValue {
   if (!agreement) return emptyValue;
   return {
     companyName: agreement.companyName,
+    legalName: agreement.legalName ?? '',
     nit: agreement.nit ?? '',
     country: agreement.country || 'CO',
     region: agreement.region ?? '',
@@ -72,6 +92,8 @@ function initialValue(agreement: AgreementRecord | null): FormValue {
     contactPosition: agreement.contactPosition ?? '',
     contactEmail: agreement.contactEmail ?? '',
     contactPhone: agreement.contactPhone ?? '',
+    contactLandline: agreement.contactLandline ?? '',
+    contactExtension: agreement.contactExtension ?? '',
     validUntil: agreement.validUntil ?? '',
     logoUrl: agreement.logoUrl ?? '',
     description: agreement.description ?? '',
@@ -85,6 +107,15 @@ const colombiaStates = getCustomerColombiaStates().map((state) => ({
   id: state.code,
   name: state.name,
 }));
+
+/**
+ * La fecha de vigencia se escribe en un calendario, no a mano. Los dos formatos conviven: el
+ * formulario guarda `YYYY-MM-DD` y el `DatePicker` trabaja con `CalendarDate`.
+ */
+function dateValue(value: string): CalendarDate | null {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+  return parseDate(value);
+}
 
 /**
  * La API no acepta multipart, así que la imagen viaja en base64 dentro del JSON. La conversión se
@@ -126,6 +157,9 @@ export function AgreementForm({
   const [logoFile, setLogoFile] = useState<File | null>(null);
   const [logoError, setLogoError] = useState('');
   const isEdit = agreement !== null;
+  // El logo es una decisión de marca: solo el administrador lo sube o lo cambia.
+  const { user } = useCurrentUser();
+  const canManageLogo = user?.role === 'ADMIN';
 
   useEffect(() => {
     if (!isOpen) return;
@@ -164,10 +198,13 @@ export function AgreementForm({
     [isColombia, value.region],
   );
 
-  const text = (key: keyof FormValue) => (event: React.ChangeEvent<HTMLInputElement>) => {
-    setValue((current) => ({ ...current, [key]: event.target.value }));
-    setErrors((current) => ({ ...current, [key]: undefined }));
-  };
+  // El mismo manejador sirve para `input` y para `textarea`: en los dos casos el valor es el texto.
+  const text =
+    (key: keyof FormValue) =>
+    (event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+      setValue((current) => ({ ...current, [key]: event.target.value }));
+      setErrors((current) => ({ ...current, [key]: undefined }));
+    };
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -189,6 +226,7 @@ export function AgreementForm({
 
     const parsed = createAgreementSchema.safeParse({
       companyName: value.companyName,
+      legalName: value.legalName,
       nit: value.nit,
       country: value.country,
       region: value.region,
@@ -201,6 +239,8 @@ export function AgreementForm({
       contactPosition: value.contactPosition,
       contactEmail: value.contactEmail,
       contactPhone: value.contactPhone,
+      contactLandline: value.contactLandline,
+      contactExtension: value.contactExtension,
       validUntil: value.validUntil,
       logoUrl,
       description: value.description,
@@ -248,11 +288,11 @@ export function AgreementForm({
               <p>
                 {isEdit
                   ? 'Actualiza los datos de la empresa y su contacto.'
-                  : 'Solo el nombre de la empresa es obligatorio; el resto se puede completar después.'}
+                  : 'Ingresa los datos de la empresa y su contacto.'}
               </p>
             </div>
           </Modal.Header>
-          <form className="agreement-form" onSubmit={(event) => void submit(event)}>
+          <form className="agreement-form" onSubmit={(event) => void submit(event)} noValidate>
             <Modal.Body className="agreement-form-body">
               {error && (
                 <Alert status="danger">
@@ -264,20 +304,23 @@ export function AgreementForm({
 
               <section className="customer-form-section">
                 <h3>Empresa</h3>
-                <AgreementLogoField
-                  url={value.logoUrl}
-                  file={logoFile}
-                  onSelect={setLogoFile}
-                  onClear={() => {
-                    setLogoFile(null);
-                    setValue((current) => ({ ...current, logoUrl: '' }));
-                  }}
-                  error={logoError}
-                  disabled={isSubmitting}
-                />
+                {/* Solo el administrador decide el logo: es la imagen de marca del convenio. */}
+                {canManageLogo && (
+                  <AgreementLogoField
+                    url={value.logoUrl}
+                    file={logoFile}
+                    onSelect={setLogoFile}
+                    onClear={() => {
+                      setLogoFile(null);
+                      setValue((current) => ({ ...current, logoUrl: '' }));
+                    }}
+                    error={logoError}
+                    disabled={isSubmitting}
+                  />
+                )}
                 <div className="customer-form-grid">
-                  <TextField className="customer-field-full">
-                    <Label>Empresa *</Label>
+                  <TextField isRequired>
+                    <Label>Nombre comercial</Label>
                     <Input
                       variant="secondary"
                       placeholder="Universidad XYZ"
@@ -286,6 +329,18 @@ export function AgreementForm({
                     />
                     {errors.companyName && (
                       <span className="agreement-field-error">{errors.companyName}</span>
+                    )}
+                  </TextField>
+                  <TextField>
+                    <Label>Razón social</Label>
+                    <Input
+                      variant="secondary"
+                      placeholder="Universidad XYZ S.A.S."
+                      value={value.legalName}
+                      onChange={text('legalName')}
+                    />
+                    {errors.legalName && (
+                      <span className="agreement-field-error">{errors.legalName}</span>
                     )}
                   </TextField>
                   <TextField>
@@ -298,22 +353,63 @@ export function AgreementForm({
                     />
                     {errors.nit && <span className="agreement-field-error">{errors.nit}</span>}
                   </TextField>
-                  <TextField>
+                  <DatePicker
+                    value={dateValue(value.validUntil)}
+                    onChange={(date) =>
+                      setValue((current) => ({
+                        ...current,
+                        validUntil: date ? date.toString() : '',
+                      }))
+                    }
+                  >
                     <Label>Fecha de vigencia</Label>
-                    <Input
-                      type="date"
-                      variant="secondary"
-                      value={value.validUntil}
-                      onChange={text('validUntil')}
-                    />
-                    {errors.validUntil && (
-                      <span className="agreement-field-error">{errors.validUntil}</span>
-                    )}
-                  </TextField>
-                  <div className="customer-vat-control">
+                    <DateField.Group fullWidth variant="secondary">
+                      <DateField.Input>
+                        {(segment) => <DateField.Segment segment={segment} />}
+                      </DateField.Input>
+                      <DateField.Suffix>
+                        {/* El disparador va dentro del grupo, como en el resto del CRM: el botón
+                            envuelve los campos y el foco se queda en los segmentos. */}
+                        <DatePicker.Trigger>
+                          <DatePicker.TriggerIndicator />
+                        </DatePicker.Trigger>
+                      </DateField.Suffix>
+                    </DateField.Group>
+                    <DatePicker.Popover>
+                      <Calendar aria-label="Fecha de vigencia">
+                        <Calendar.Header>
+                          <Calendar.YearPickerTrigger>
+                            <Calendar.YearPickerTriggerHeading />
+                            <Calendar.YearPickerTriggerIndicator />
+                          </Calendar.YearPickerTrigger>
+                          <Calendar.NavButton slot="previous" />
+                          <Calendar.NavButton slot="next" />
+                        </Calendar.Header>
+                        <Calendar.Grid>
+                          <Calendar.GridHeader>
+                            {(day) => <Calendar.HeaderCell>{day}</Calendar.HeaderCell>}
+                          </Calendar.GridHeader>
+                          <Calendar.GridBody>
+                            {(date) => <Calendar.Cell date={date} />}
+                          </Calendar.GridBody>
+                        </Calendar.Grid>
+                        <Calendar.YearPickerGrid>
+                          <Calendar.YearPickerGridBody>
+                            {({ year }) => <Calendar.YearPickerCell year={year} />}
+                          </Calendar.YearPickerGridBody>
+                        </Calendar.YearPickerGrid>
+                      </Calendar>
+                    </DatePicker.Popover>
+                  </DatePicker>
+                  {errors.validUntil && (
+                    <span className="agreement-field-error">{errors.validUntil}</span>
+                  )}
+                  {/* Activo ocupa las dos columnas: es un interruptor, no un campo que compita en
+                      una mitad con otro dato. */}
+                  <div className="customer-vat-control customer-field-full">
                     <div>
                       <strong>Activo</strong>
-                      <span>Los inactivos se conservan y se pueden reactivar.</span>
+                      <span>Activar o desactivar este convenio</span>
                     </div>
                     <Switch
                       aria-label="Convenio activo"
@@ -329,15 +425,30 @@ export function AgreementForm({
                       </Switch.Content>
                     </Switch>
                   </div>
-                  <TextField className="customer-field-full">
-                    <Label>Descripción</Label>
-                    <Input
-                      variant="secondary"
-                      placeholder="Condiciones del convenio, alcance, beneficios…"
-                      value={value.description}
-                      onChange={text('description')}
-                    />
-                  </TextField>
+                  {/* La descripción es un párrafo, no una línea: en el alta crece con el texto. En
+                      edición se conserva el campo de siempre. */}
+                  {isEdit ? (
+                    <TextField className="customer-field-full">
+                      <Label>Descripción</Label>
+                      <Input
+                        variant="secondary"
+                        placeholder="Condiciones del convenio, alcance, beneficios…"
+                        value={value.description}
+                        onChange={text('description')}
+                      />
+                    </TextField>
+                  ) : (
+                    <TextField className="customer-field-full agreement-description-field">
+                      <Label>Descripción</Label>
+                      <Textarea
+                        aria-label="Descripción"
+                        variant="secondary"
+                        placeholder="Condiciones del convenio, alcance, beneficios…"
+                        value={value.description}
+                        onChange={text('description')}
+                      />
+                    </TextField>
+                  )}
                 </div>
               </section>
 
@@ -415,7 +526,7 @@ export function AgreementForm({
                       onChange={text('postalCode')}
                     />
                   </TextField>
-                  <TextField>
+                  <TextField className="customer-field-full">
                     <Label>Dirección</Label>
                     <Input
                       variant="secondary"
@@ -424,11 +535,16 @@ export function AgreementForm({
                       onChange={text('addressLine1')}
                     />
                   </TextField>
-                  <TextField className="customer-field-full">
-                    <Label>Complemento</Label>
+                  {/* El complemento no lleva etiqueta visible: se lee como la segunda línea de la
+                      misma dirección. El nombre accesible va en el `TextField`, que es quien lo
+                      reclama a react-aria. */}
+                  <TextField
+                    className="customer-field-full"
+                    aria-label="Complemento de la dirección"
+                  >
                     <Input
                       variant="secondary"
-                      placeholder="Barrio, torre, oficina…"
+                      placeholder="Complemento: barrio, torre, oficina…"
                       value={value.addressLine2}
                       onChange={text('addressLine2')}
                     />
@@ -484,6 +600,32 @@ export function AgreementForm({
                       <span className="agreement-field-error">{errors.contactPhone}</span>
                     )}
                   </div>
+                  {/* Una línea fija con extensión no cabe en E.164, así que se guardan como se
+                      escriben, sin pasar por el normalizador del móvil. */}
+                  <TextField>
+                    <Label>Teléfono fijo</Label>
+                    <Input
+                      variant="secondary"
+                      placeholder="601 555 0134"
+                      value={value.contactLandline}
+                      onChange={text('contactLandline')}
+                    />
+                    {errors.contactLandline && (
+                      <span className="agreement-field-error">{errors.contactLandline}</span>
+                    )}
+                  </TextField>
+                  <TextField>
+                    <Label>Extensión</Label>
+                    <Input
+                      variant="secondary"
+                      placeholder="210"
+                      value={value.contactExtension}
+                      onChange={text('contactExtension')}
+                    />
+                    {errors.contactExtension && (
+                      <span className="agreement-field-error">{errors.contactExtension}</span>
+                    )}
+                  </TextField>
                 </div>
               </section>
             </Modal.Body>

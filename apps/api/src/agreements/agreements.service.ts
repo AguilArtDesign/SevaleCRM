@@ -135,6 +135,7 @@ function serializeAgreement(
   return {
     id: agreement.id,
     companyName: agreement.companyName,
+    legalName: agreement.legalName,
     nit: agreement.nit,
     country: agreement.country,
     countryName,
@@ -149,6 +150,8 @@ function serializeAgreement(
     contactPosition: agreement.contactPosition,
     contactEmail: agreement.contactEmail,
     contactPhone: agreement.contactPhone,
+    contactLandline: agreement.contactLandline,
+    contactExtension: agreement.contactExtension,
     validUntil: agreement.validUntil ? agreement.validUntil.toISOString().slice(0, 10) : null,
     logoUrl: agreement.logoUrl,
     description: agreement.description,

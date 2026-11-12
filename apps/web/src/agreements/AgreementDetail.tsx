@@ -127,6 +127,8 @@ export function AgreementDetail({
             </Card.Header>
             <Card.Content>
               <dl className="agreement-info-list">
+                <InfoRow label="Nombre comercial">{agreement.companyName}</InfoRow>
+                <InfoRow label="Razón social">{agreement.legalName ?? '--'}</InfoRow>
                 <InfoRow label="NIT">{agreement.nit ?? '--'}</InfoRow>
                 <InfoRow label="País">
                   <span className="agreement-hero-country">
@@ -177,6 +179,13 @@ export function AgreementDetail({
                 <InfoRow label="Cargo">{agreement.contactPosition ?? '--'}</InfoRow>
                 <InfoRow label="Correo">{agreement.contactEmail ?? '--'}</InfoRow>
                 <InfoRow label="Teléfono">{agreement.contactPhone ?? '--'}</InfoRow>
+                <InfoRow label="Teléfono fijo">
+                  {agreement.contactLandline
+                    ? agreement.contactExtension
+                      ? `${agreement.contactLandline} ext. ${agreement.contactExtension}`
+                      : agreement.contactLandline
+                    : '--'}
+                </InfoRow>
               </dl>
             </Card.Content>
           </Card>

@@ -6143,12 +6143,62 @@ select {
   min-width: 72rem;
 }
 
-/* El nombre de la empresa no navega: la ficha se abre desde el menú de acciones. */
-.agreement-name-cell {
-  color: var(--foreground);
-  font-size: 0.8125rem;
-  font-weight: 500;
-  line-height: 1.25;
+/* Cada dato se lee en una línea. Sin esto la tabla reparte el ancho que sobra y parte el NIT o el
+   nombre del contacto en varias líneas; con `nowrap` el ancho lo pone el contenido y el sobrante se
+   resuelve con el scroll horizontal del contenedor. */
+.agreements-table thead th:nth-child(n + 2):nth-child(-n + 8),
+.agreements-table tbody .table__row > td:nth-child(n + 2):nth-child(-n + 8),
+.agreement-company-names strong,
+.agreement-company-names span,
+.agreement-contact-cell strong,
+.agreement-contact-cell span {
+  white-space: nowrap;
+}
+
+/* Una razón social larga no puede llevarse media tabla: a partir de aquí se recorta con puntos
+   suspensivos y el texto completo queda en el `title`. */
+.agreements-table .agreement-company-names {
+  max-width: 26rem;
+}
+
+.agreements-table .agreement-company-names strong,
+.agreements-table .agreement-company-names span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* La columna de acciones queda fija a la derecha, como en Pedidos y Puntos Colombia: al desplazar
+   la tabla en horizontal el botón sigue a la vista. Las celdas son translúcidas, así que la fija
+   lleva un fondo opaco para que el contenido que pasa por debajo no se transparente. */
+.agreements-table thead th:last-child,
+.agreements-table tbody .table__row > td:last-child {
+  position: sticky;
+  right: 0;
+  z-index: 2;
+}
+
+.agreements-table thead th:last-child {
+  z-index: 3;
+  background: var(--surface-secondary);
+  /* Sin texto en la cabecera, la columna se ajusta al botón en lugar de reservar el ancho de
+     «Acciones». */
+  width: 3.5rem;
+  padding-inline: 0.5rem;
+}
+
+.agreements-table tbody .table__row > td:last-child {
+  background: var(--surface);
+}
+
+/* Las celdas fijas no pueden dejar pasar el tinte que HeroUI pinta en el resto de la fila, porque
+   su fondo es opaco: el hover y la selección se replican aquí con los mismos porcentajes que usa la
+   tabla (40 % al pasar el cursor, 10 % al seleccionar). */
+.agreements-table tbody .table__row:is(:hover, [data-hovered='true']) > td:last-child {
+  background: color-mix(in srgb, var(--surface) 40%, var(--surface-secondary));
+}
+
+.agreements-table tbody .table__row[data-selected='true'] > td:last-child {
+  background: color-mix(in srgb, var(--surface) 10%, var(--surface-secondary));
 }
 
 /* La columna de acciones no lleva encabezado y el botón se pega al borde derecho. */
@@ -6196,18 +6246,23 @@ select {
   font-size: 0.75rem;
 }
 
-.agreement-contact-cell {
+/* El contacto lleva su cargo debajo y la empresa su razón social: dos líneas con el mismo peso
+   tipográfico para que las filas se lean igual de arriba abajo. */
+.agreement-contact-cell,
+.agreement-company-names {
   display: grid;
   min-width: 0;
 }
-.agreement-contact-cell strong {
+.agreement-contact-cell strong,
+.agreement-company-names strong {
   color: var(--foreground);
   font-size: 0.8125rem;
   font-weight: 500;
   line-height: 1.25;
 }
 
-.agreement-contact-cell span {
+.agreement-contact-cell span,
+.agreement-company-names span {
   color: var(--muted);
   font-size: 0.75rem;
   line-height: 1.25;
@@ -6256,6 +6311,12 @@ select {
   line-height: 1.45;
 }
 
+/* Mismo criterio que el comentario de seguimiento: el alto lo marca el contenido. */
+.agreement-description-field textarea {
+  resize: none;
+  line-height: 1.45;
+}
+
 .agreement-task-actions {
   display: flex;
   align-items: center;
@@ -6277,22 +6338,54 @@ select {
   gap: 0.3rem;
 }
 
+/* Mismo encabezado y pie que el alta de pedidos: título, subtítulo atenuado, y las dos líneas
+   separadoras que dan estructura al modal. Sin ellas el formulario se leía como un bloque único. */
+.agreement-form-modal .modal__header {
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--separator);
+}
+
+.agreement-form-modal .modal__header p {
+  margin: 0.2rem 0 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.agreement-form-modal .modal__footer {
+  margin-top: 0;
+  padding-top: 1rem;
+  background: var(--surface);
+  border-top: 1px solid var(--separator);
+}
+
 .agreement-form-body {
   gap: 1.25rem; /* El `overflow: visible` global de `.modal__body` deja el contenido fuera de la ventana cuando la
      ficha no cabe. Aquí el cuerpo scrollea y el pie permanece visible. */
   overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior: contain;
+  /* Aire arriba para que el primer título no quede pegado al borde del encabezado, y abajo para que
+     el último campo no toque el separador del pie. */
+  padding-top: 1.1rem;
+  padding-bottom: 1.4rem;
+}
+
+/* El separador de una sección necesita aire arriba: sin él quedaba pegado al último campo de la
+   sección anterior y parecía cortar el campo en dos. */
+.agreement-form-body .customer-form-section + .customer-form-section {
+  margin-top: 0.35rem;
+  padding-top: 1.35rem;
 }
 
 /* El formulario envuelve cuerpo y pie para que Enter envíe: tiene que continuar el flex del
-   diálogo, que espera esos bloques como hijos directos, o el pie termina fuera de la ventana. */
+   diálogo, que espera esos bloques como hijos directos, o el pie termina fuera de la ventana.
+   Sin recorte: el cuerpo llega al borde del formulario y el `overflow: hidden` cortaba el anillo
+   de foco de los campos de la primera columna. El cuerpo ya scrollea por su cuenta. */
 .agreement-form {
   display: flex;
   flex: 1 1 auto;
   flex-direction: column;
   min-height: 0;
-  overflow: hidden;
 }
 
 .agreement-task-body {

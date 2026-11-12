@@ -48,10 +48,13 @@ type AgreementBody = {
   cityCode: string | null;
   cityName: string | null;
   validUntil: string | null;
+  legalName: string | null;
   contactName: string | null;
   contactPosition: string | null;
   contactPhone: string | null;
   contactEmail: string | null;
+  contactLandline: string | null;
+  contactExtension: string | null;
   active: boolean;
   pendingTasks: number;
   completedTasks: number;
@@ -211,6 +214,7 @@ try {
       method: 'POST',
       body: JSON.stringify({
         companyName,
+        legalName: 'Universidad XYZ S.A.S.',
         nit,
         region: 'CO-ANT',
         cityCode: '05001',
@@ -221,6 +225,9 @@ try {
         contactPosition: 'Coordinadora de Bienestar',
         contactEmail: 'LAURA@Example.INVALID',
         contactPhone: '3001234567',
+        // El fijo y su extensión se guardan como se escriben: no pasan por E.164.
+        contactLandline: '604 555 0134',
+        contactExtension: '210',
         validUntil: '2030-12-31',
         description: 'Convenio de prueba',
       }),
@@ -237,6 +244,13 @@ try {
   }
   if (full.contactPhone !== '+573001234567' || full.contactEmail !== 'laura@example.invalid') {
     throw new Error('El teléfono o el correo del contacto no se normalizaron.');
+  }
+  // La razón social y el fijo conservan el texto tal cual: son datos que no se normalizan.
+  if (full.legalName !== 'Universidad XYZ S.A.S.') {
+    throw new Error(`La razón social no se guardó, quedó ${full.legalName}.`);
+  }
+  if (full.contactLandline !== '604 555 0134' || full.contactExtension !== '210') {
+    throw new Error('El teléfono fijo o la extensión no se guardaron tal como se escribieron.');
   }
   if (full.createdBy?.id !== adminId) {
     throw new Error('El convenio no registró al administrador como creador.');

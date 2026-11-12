@@ -90,6 +90,10 @@ El botón **Vincular producto**, visible solo para administradores, consulta `GE
 
 Cada convenio puede llevar un logo que se muestra en la tabla, junto al nombre de la empresa, y en la ficha del convenio. El binario se guarda en **Cloudflare R2** y la base de datos solo conserva su URL pública en `agreements.logo_url`: así la fila no se infla y el archivo se sirve desde el CDN de Cloudflare en lugar de la API.
 
+**El campo del logo solo lo ve el administrador** en el formulario de alta y edición: es una decisión de marca del convenio, no un dato operativo. El resto de los campos los edita cualquiera con `agreements.update`.
+
+Un convenio guarda dos nombres porque no siempre coinciden: **nombre comercial** (`company_name`, obligatorio, es el que se lee en la tabla y en la ficha) y **razón social** (`legal_name`, opcional, es el que iría en un contrato). El contacto admite además **teléfono fijo** y **extensión** —`contact_landline` y `contact_extension`—, que se guardan tal como se escriben: una línea fija con extensión no encaja en el E.164 al que se normaliza el móvil de `contact_phone`.
+
 La subida es una acción de edición y exige `agreements.update`, no `agreements.read`. Se aceptan **SVG y WebP** hasta **500 KB**; el tipo y el tamaño se validan en el backend, no solo en el formulario. Como la API no usa multipart, el navegador envía el archivo en base64 dentro del JSON (un logo de 500 KB ocupa 667 KB codificado, por debajo del `bodyLimit` de 1 MB).
 
 Un SVG es texto y puede contener `<script>`, manejadores `on*`, `<foreignObject>` o referencias externas. El CRM lo pinta dentro de un `<img>` —donde el navegador no ejecuta scripts—, pero la URL del bucket es pública y alguien puede abrirla directamente, así que esos casos se rechazan antes de subir.

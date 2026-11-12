@@ -116,6 +116,9 @@ export function AgreementsPage() {
     contactPosition: string;
     contactEmail: string;
     contactPhone: string;
+    contactLandline: string;
+    contactExtension: string;
+    legalName: string;
     validUntil: string;
     logoUrl: string;
     description: string;
@@ -123,6 +126,7 @@ export function AgreementsPage() {
   }) => {
     await saveAgreement.mutateAsync({
       companyName: value.companyName,
+      legalName: value.legalName,
       nit: value.nit,
       country: value.country,
       region: value.region,
@@ -135,6 +139,8 @@ export function AgreementsPage() {
       contactPosition: value.contactPosition,
       contactEmail: value.contactEmail,
       contactPhone: value.contactPhone,
+      contactLandline: value.contactLandline,
+      contactExtension: value.contactExtension,
       validUntil: value.validUntil,
       logoUrl: value.logoUrl,
       description: value.description,
@@ -270,7 +276,12 @@ export function AgreementsPage() {
                       <Table.Cell>
                         <div className="agreement-company-cell">
                           <AgreementLogo src={agreement.logoUrl} name={agreement.companyName} />
-                          <strong className="agreement-name-cell">{agreement.companyName}</strong>
+                          <div className="agreement-company-names">
+                            <strong title={agreement.companyName}>{agreement.companyName}</strong>
+                            {agreement.legalName && (
+                              <span title={agreement.legalName}>{agreement.legalName}</span>
+                            )}
+                          </div>
                         </div>
                       </Table.Cell>
                       <Table.Cell>{agreement.nit ?? '--'}</Table.Cell>
