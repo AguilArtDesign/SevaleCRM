@@ -23,6 +23,9 @@ export type WooCommerceProduct = {
   sku: string;
   priceCop: number | null;
   priceUsd: number | null;
+  /** Monedas añadidas después. Nulas si la tienda todavía no las publica. */
+  priceMxn: number | null;
+  priceEur: number | null;
   stock: number | null;
   productName: string;
   imageUrl: string | null;
@@ -35,6 +38,8 @@ export type WooCommerceProductUpdate = {
   productId: string;
   priceCop: number;
   priceUsd: number;
+  priceMxn: number | null;
+  priceEur: number | null;
   stock: number;
 };
 
@@ -271,6 +276,15 @@ function normalizeOrderSnapshot(value: unknown): WooCommerceOrderSnapshot | null
   };
 }
 
+/** Las monedas adicionales viajan como texto, igual que el USD, y se omiten cuando no hay dato. */
+function wmcpPriceValue(update: WooCommerceBatchProductUpdate) {
+  return JSON.stringify({
+    USD: String(update.priceUsd),
+    ...(update.priceMxn === null ? {} : { MXN: String(update.priceMxn) }),
+    ...(update.priceEur === null ? {} : { EUR: String(update.priceEur) }),
+  });
+}
+
 function updateBody(update: WooCommerceBatchProductUpdate) {
   return {
     regular_price: String(update.priceCop),
@@ -279,29 +293,44 @@ function updateBody(update: WooCommerceBatchProductUpdate) {
     meta_data: [
       {
         key: '_regular_price_wmcp',
-        value: JSON.stringify({ USD: String(update.priceUsd) }),
+        value: wmcpPriceValue(update),
       },
     ],
   };
 }
 
-function usdPrice(metaData: unknown): { price: number | null; invalid: boolean } {
-  if (!Array.isArray(metaData)) return { price: null, invalid: false };
+type WmcpPrices = {
+  priceUsd: number | null;
+  priceMxn: number | null;
+  priceEur: number | null;
+  invalid: boolean;
+};
+
+/**
+ * La tienda guarda las tres monedas en un mismo meta serializado. USD conserva la advertencia de
+ * siempre; MXN y EUR ausentes son un nulo normal, porque la tienda puede no haberlos publicado.
+ */
+function wmcpPrices(metaData: unknown): WmcpPrices {
+  const empty: WmcpPrices = { priceUsd: null, priceMxn: null, priceEur: null, invalid: false };
+  if (!Array.isArray(metaData)) return empty;
   const entry = metaData.filter(isRecord).find((item) => item.key === '_regular_price_wmcp');
-  if (!entry || entry.value === null || entry.value === '') {
-    return { price: null, invalid: false };
-  }
+  if (!entry || entry.value === null || entry.value === '') return empty;
   let value: unknown = entry.value;
   if (typeof value === 'string') {
     try {
       value = JSON.parse(value) as unknown;
     } catch {
-      return { price: null, invalid: true };
+      return { ...empty, invalid: true };
     }
   }
-  if (!isRecord(value)) return { price: null, invalid: true };
-  const price = finiteNumber(value.USD);
-  return { price, invalid: price === null };
+  if (!isRecord(value)) return { ...empty, invalid: true };
+  const priceUsd = finiteNumber(value.USD);
+  return {
+    priceUsd,
+    priceMxn: finiteNumber(value.MXN),
+    priceEur: finiteNumber(value.EUR),
+    invalid: priceUsd === null,
+  };
 }
 
 function imageUrl(product: UnknownRecord): string | null {
@@ -326,18 +355,20 @@ function normalizeProduct(
   const sku = typeof value.sku === 'string' ? value.sku.trim() : '';
   const productName = typeof value.name === 'string' ? value.name.trim() : '';
   if (!variationId || !sku || sku.toUpperCase() !== requestedSku.toUpperCase()) return null;
-  const usd = usdPrice(value.meta_data);
+  const wmcp = wmcpPrices(value.meta_data);
   return {
     store,
     parentId,
     variationId,
     sku,
     priceCop: finiteNumber(value.price ?? value.regular_price),
-    priceUsd: usd.price,
+    priceUsd: wmcp.priceUsd,
+    priceMxn: wmcp.priceMxn,
+    priceEur: wmcp.priceEur,
     stock: finiteNumber(value.stock_quantity),
     productName,
     imageUrl: imageUrl(value),
-    dataWarnings: usd.invalid ? ['INVALID_USD_PRICE'] : [],
+    dataWarnings: wmcp.invalid ? ['INVALID_USD_PRICE'] : [],
   };
 }
 
@@ -503,6 +534,8 @@ export class WooCommerceService {
     productId,
     priceCop,
     priceUsd,
+    priceMxn,
+    priceEur,
     stock,
   }: WooCommerceProductUpdate): Promise<void> {
     const config = wooCommerceConfiguration(store);
@@ -519,7 +552,7 @@ export class WooCommerceService {
     const payload = await integrationPut(
       url,
       wooCommerceAuthorizationHeaders(config),
-      updateBody({ productId, priceCop, priceUsd, stock }),
+      updateBody({ productId, priceCop, priceUsd, priceMxn, priceEur, stock }),
       config.label,
       { timeoutMs: 20_000, retryCount: 1 },
     );

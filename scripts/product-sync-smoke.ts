@@ -165,6 +165,8 @@ async function createProduct({
       sku,
       siigoPriceCop: 45_000,
       siigoPriceUsd: 23,
+      siigoPriceMxn: 847,
+      siigoPriceEur: 45,
       siigoStock: 27,
       store,
       wooParentId: parentId,
@@ -247,6 +249,8 @@ try {
     syncStatus: string;
     wooPriceCop: number;
     wooPriceUsd: number;
+    wooPriceMxn: number | null;
+    wooPriceEur: number | null;
     wooStock: number;
     lastSyncAt: string | null;
   };
@@ -254,6 +258,8 @@ try {
     synchronizedVariation.syncStatus !== 'SYNCED' ||
     synchronizedVariation.wooPriceCop !== 45_000 ||
     synchronizedVariation.wooPriceUsd !== 23 ||
+    synchronizedVariation.wooPriceMxn !== 847 ||
+    synchronizedVariation.wooPriceEur !== 45 ||
     synchronizedVariation.wooStock !== 27 ||
     !synchronizedVariation.lastSyncAt
   ) {
@@ -312,7 +318,7 @@ try {
     regular_price: '45000',
     stock_quantity: 27,
     manage_stock: true,
-    meta_data: [{ key: '_regular_price_wmcp', value: '{"USD":"23"}' }],
+    meta_data: [{ key: '_regular_price_wmcp', value: '{"USD":"23","MXN":"847","EUR":"45"}' }],
   };
   const variationRequest = requests
     .filter((item) => item.path.endsWith('/products/1100/variations/1102'))

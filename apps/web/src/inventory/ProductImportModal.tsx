@@ -9,6 +9,7 @@ const MAX_CSV_BYTES = 800_000;
 
 function ImportSummary({ preview }: { preview: ProductImportPreview }) {
   const issues = [...preview.errors, ...preview.conflicts];
+  const isCurrencies = preview.mode === 'CURRENCIES';
   return (
     <div className="product-import-preview">
       <div className="product-import-summary" aria-label="Resumen de la importación">
@@ -16,14 +17,29 @@ function ImportSummary({ preview }: { preview: ProductImportPreview }) {
           <span>Filas</span>
           <strong>{preview.totalRows.toLocaleString('es-CO')}</strong>
         </div>
-        <div>
-          <span>Nuevos</span>
-          <strong>{preview.newProducts.toLocaleString('es-CO')}</strong>
-        </div>
-        <div>
-          <span>Ya existentes</span>
-          <strong>{preview.existingProducts.toLocaleString('es-CO')}</strong>
-        </div>
+        {isCurrencies ? (
+          <>
+            <div>
+              <span>A actualizar</span>
+              <strong>{preview.existingProducts.toLocaleString('es-CO')}</strong>
+            </div>
+            <div>
+              <span>SKU sin producto</span>
+              <strong>{preview.skippedUnknown.toLocaleString('es-CO')}</strong>
+            </div>
+          </>
+        ) : (
+          <>
+            <div>
+              <span>Nuevos</span>
+              <strong>{preview.newProducts.toLocaleString('es-CO')}</strong>
+            </div>
+            <div>
+              <span>Ya existentes</span>
+              <strong>{preview.existingProducts.toLocaleString('es-CO')}</strong>
+            </div>
+          </>
+        )}
       </div>
 
       {preview.canImport ? (
@@ -31,7 +47,9 @@ function ImportSummary({ preview }: { preview: ProductImportPreview }) {
           <Alert.Content>
             <Alert.Title>Archivo listo para importar</Alert.Title>
             <Alert.Description>
-              Los productos existentes se omitirán y no se sobrescribirá información del CRM.
+              {isCurrencies
+                ? 'Se actualizarán los precios MXN y EUR de los SKU encontrados. Los productos quedarán desactualizados hasta que WooCommerce reciba los valores.'
+                : 'Los productos existentes se omitirán y no se sobrescribirá información del CRM.'}
             </Alert.Description>
           </Alert.Content>
         </Alert>
@@ -40,7 +58,9 @@ function ImportSummary({ preview }: { preview: ProductImportPreview }) {
           <Alert.Content>
             <Alert.Title>El archivo necesita correcciones</Alert.Title>
             <Alert.Description>
-              {preview.errorCount} errores y {preview.conflictCount} conflictos encontrados.
+              {isCurrencies && preview.errorCount === 0
+                ? 'Ninguno de los SKU del archivo existe en el inventario.'
+                : `${preview.errorCount} errores y ${preview.conflictCount} conflictos encontrados.`}
             </Alert.Description>
           </Alert.Content>
         </Alert>
@@ -80,7 +100,10 @@ export function ProductImportModal({
     onSuccess: async (result) => {
       await queryClient.invalidateQueries({ queryKey: ['products'] });
       Toast.toast.success('Importación completada', {
-        description: `${result.imported.toLocaleString('es-CO')} productos importados y ${result.skipped.toLocaleString('es-CO')} existentes omitidos.`,
+        description:
+          result.mode === 'CURRENCIES'
+            ? `${result.updated.toLocaleString('es-CO')} productos actualizados y ${result.skipped.toLocaleString('es-CO')} SKU omitidos.`
+            : `${result.imported.toLocaleString('es-CO')} productos importados y ${result.skipped.toLocaleString('es-CO')} existentes omitidos.`,
       });
       changeOpen(false);
     },
@@ -132,7 +155,7 @@ export function ProductImportModal({
               <div>
                 <Modal.Heading>Importar productos</Modal.Heading>
                 <Typography.Paragraph color="muted" size="sm">
-                  Revisa el archivo antes de agregarlo al inventario
+                  Acepta el inventario completo o el archivo de monedas MXN y EUR
                 </Typography.Paragraph>
               </div>
               <Modal.CloseTrigger aria-label="Cerrar">
@@ -158,7 +181,7 @@ export function ProductImportModal({
                 <FileIcon width={24} height={24} />
                 <span>
                   <strong>{fileName || 'Seleccionar archivo CSV'}</strong>
-                  <small>Máximo 800 KB</small>
+                  <small>Inventario o monedas · Máximo 800 KB</small>
                 </span>
               </button>
 
@@ -212,7 +235,11 @@ export function ProductImportModal({
                     ) : (
                       <ArrowUpFromLine width={17} height={17} />
                     )}
-                    {isPending ? 'Importando' : 'Importar productos'}
+                    {isPending
+                      ? 'Importando'
+                      : previewMutation.data?.mode === 'CURRENCIES'
+                        ? 'Actualizar monedas'
+                        : 'Importar productos'}
                   </>
                 )}
               </Button>

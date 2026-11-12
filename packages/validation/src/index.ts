@@ -986,6 +986,10 @@ const wooSyncResultSchema = z.discriminatedUnion('success', [
       store: storeSchema,
       price_cop: z.number().finite().nonnegative(),
       price_usd: z.number().finite().nonnegative(),
+      // Monedas añadidas después: un n8n sin desplegar todavía no las manda y el producto se
+      // actualiza igual, conservando lo que haya en la base.
+      price_mxn: z.number().finite().nonnegative().optional(),
+      price_eur: z.number().finite().nonnegative().optional(),
       stock: z.number().int().nonnegative(),
     })
     .strict(),
@@ -1004,6 +1008,10 @@ export const siigoProductUpdateSchema = z
     sku: skuSchema,
     siigo_price_cop: z.number().finite().nonnegative(),
     siigo_price_usd: z.number().finite().nonnegative(),
+    // Opcionales por la misma razón que en `woo_sync`: el flujo de n8n puede seguir enviando solo
+    // COP y USD mientras se despliega la versión nueva.
+    siigo_price_mxn: z.number().finite().nonnegative().optional(),
+    siigo_price_eur: z.number().finite().nonnegative().optional(),
     siigo_stock: z.number().int().nonnegative(),
     woo_sync: wooSyncResultSchema.optional(),
   })

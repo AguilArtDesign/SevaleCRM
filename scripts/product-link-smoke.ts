@@ -27,6 +27,9 @@ function siigoProduct(sku: string) {
     prices: [
       { currency_code: 'COP', price_list: [{ name: 'PESOS', value: 87500 }] },
       { currency_code: 'USD', price_list: [{ name: 'DOLAR', value: 21.75 }] },
+      // MXN y EUR se resuelven por código de moneda: Siigo no siempre nombra esas listas.
+      { currency_code: 'MXN', price_list: [{ name: 'PRECIO MEXICO', value: 847 }] },
+      { currency_code: 'EUR', price_list: [{ name: 'PRECIO EUROPA', value: 45 }] },
     ],
   };
 }
@@ -40,7 +43,7 @@ function wooProduct(sku: string, store: 'seratus' | 'pali') {
     price: '87500',
     stock_quantity: 12,
     image: { src: `https://example.invalid/${store}-${sku}.jpg` },
-    meta_data: [{ key: '_regular_price_wmcp', value: '{"USD":"21.75"}' }],
+    meta_data: [{ key: '_regular_price_wmcp', value: '{"USD":"21.75","MXN":"847","EUR":"45"}' }],
   };
 }
 
@@ -273,7 +276,7 @@ try {
     linkUpdateNotifications[0]?.type !== 'PRODUCT_LINK_UPDATED' ||
     linkUpdateNotifications[0].title !== 'Producto actualizado' ||
     linkUpdateNotifications[0].message !==
-      `Producto ${duplicateSku}\nStock 1 ➝ 12\nPrecio COP $1 ➝ $87.500\nPrecio USD $1 ➝ $21,75\nEstado Sincronizado ➝ Desactualizado`
+      `Producto ${duplicateSku}\nStock 1 ➝ 12\nPrecio COP $1 ➝ $87.500\nPrecio USD $1 ➝ $21,75\nPrecio MXN sin dato ➝ $847\nPrecio EUR sin dato ➝ $45\nEstado Sincronizado ➝ Desactualizado`
   ) {
     throw new Error('La actualización del enlace no creó una única notificación consolidada.');
   }
@@ -412,6 +415,15 @@ try {
   const stored = await prisma.product.findUnique({ where: { id: created.id } });
   if (!stored || stored.siigoId !== 'siigo-LINK-OK' || stored.wooSku !== 'LINK-OK') {
     throw new Error('La base de datos no contiene el enlace normalizado esperado.');
+  }
+  // Las monedas nuevas se leen de Siigo por código de moneda y del meta serializado de la tienda.
+  if (
+    Number(stored.siigoPriceMxn) !== 847 ||
+    Number(stored.siigoPriceEur) !== 45 ||
+    Number(stored.wooPriceMxn) !== 847 ||
+    Number(stored.wooPriceEur) !== 45
+  ) {
+    throw new Error('El enlace no guardó los precios MXN y EUR de Siigo y WooCommerce.');
   }
 
   const requestsBeforeConflict = externalRequests.get('LINK-OK') ?? 0;

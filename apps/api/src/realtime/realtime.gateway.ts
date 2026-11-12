@@ -22,8 +22,11 @@ import type { SyncStatus } from '../generated/prisma/client.js';
 export type RealtimeChange<T> = { previous: T; current: T } | null;
 
 export type ProductUpdateChanges = {
-  priceCop: RealtimeChange<number>;
-  priceUsd: RealtimeChange<number>;
+  // Las monedas pueden pasar de «sin dato» a un precio: el nulo es un valor legítimo aquí.
+  priceCop: RealtimeChange<number | null>;
+  priceUsd: RealtimeChange<number | null>;
+  priceMxn: RealtimeChange<number | null>;
+  priceEur: RealtimeChange<number | null>;
   stock: RealtimeChange<number>;
   syncStatus: RealtimeChange<SyncStatus>;
 };
@@ -127,11 +130,13 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection {
     if (changes.stock) {
       this.server.emit('product.stock.updated', { ...base, change: changes.stock });
     }
-    if (changes.priceCop || changes.priceUsd) {
+    if (changes.priceCop || changes.priceUsd || changes.priceMxn || changes.priceEur) {
       this.server.emit('product.price.updated', {
         ...base,
         priceCop: changes.priceCop,
         priceUsd: changes.priceUsd,
+        priceMxn: changes.priceMxn,
+        priceEur: changes.priceEur,
       });
     }
     if (changes.syncStatus) {

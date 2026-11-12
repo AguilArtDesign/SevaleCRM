@@ -207,6 +207,9 @@ model ProductSyncJobItem {
   wooProductId BigInt                   @map("woo_product_id") @db.UnsignedBigInt
   priceCop     Decimal                  @map("price_cop") @db.Decimal(14, 2)
   priceUsd     Decimal                  @map("price_usd") @db.Decimal(14, 2)
+  // Se copian al crear el trabajo para que el envío a WooCommerce no dependa de leer el producto otra vez.
+  priceMxn     Decimal?                 @map("price_mxn") @db.Decimal(14, 2)
+  priceEur     Decimal?                 @map("price_eur") @db.Decimal(14, 2)
   stock        Int
   status       ProductSyncJobItemStatus @default(PENDING)
   attempts     Int                      @default(0)
@@ -383,6 +386,10 @@ model Product {
   sku            String         @unique @db.VarChar(191)
   siigoPriceCop  Decimal        @map("siigo_price_cop") @db.Decimal(14, 2)
   siigoPriceUsd  Decimal        @map("siigo_price_usd") @db.Decimal(14, 2)
+  // MXN y EUR son opcionales: las filas anteriores no los tienen y Siigo puede no devolver esas
+  // listas de precio. Un nulo no es diferencia contra otro nulo, así que el estado se calcula igual.
+  siigoPriceMxn  Decimal?       @map("siigo_price_mxn") @db.Decimal(14, 2)
+  siigoPriceEur  Decimal?       @map("siigo_price_eur") @db.Decimal(14, 2)
   siigoStock     Int            @map("siigo_stock")
   store          Store
   wooParentId    BigInt?        @map("woo_parent_id") @db.UnsignedBigInt
@@ -390,6 +397,8 @@ model Product {
   wooSku         String         @map("woo_sku") @db.VarChar(191)
   wooPriceCop    Decimal        @map("woo_price_cop") @db.Decimal(14, 2)
   wooPriceUsd    Decimal        @map("woo_price_usd") @db.Decimal(14, 2)
+  wooPriceMxn    Decimal?       @map("woo_price_mxn") @db.Decimal(14, 2)
+  wooPriceEur    Decimal?       @map("woo_price_eur") @db.Decimal(14, 2)
   wooStock       Int            @map("woo_stock")
   syncStatus     SyncStatus     @default(PENDING) @map("sync_status")
   lastSyncAt     DateTime?      @map("last_sync_at")

@@ -12,6 +12,7 @@ import {
   Label,
   ListBox,
   Modal,
+  Popover,
   SearchField,
   Separator,
   Skeleton,
@@ -26,6 +27,7 @@ import {
   ArrowRotateLeft,
   ArrowRotateRight,
   Boxes3,
+  CircleDollar,
   EllipsisVertical,
   Eye,
   Link,
@@ -51,6 +53,36 @@ import { useCurrentUser } from '../users/useCurrentUser';
 const tableFeatureSet = tableFeatures({});
 const tableCop = new Intl.NumberFormat('es-CO', { maximumFractionDigits: 0 });
 const tableUsd = new Intl.NumberFormat('es-CO', { maximumFractionDigits: 2 });
+
+/**
+ * Las cuatro monedas del producto. COP es la principal y se lee en la tabla; el resto se consulta en
+ * el popover del precio. El euro no tiene bandera en el catálogo de países, así que lleva el símbolo.
+ */
+const priceCurrencies = [
+  { code: 'COP', key: 'priceCop', label: 'Peso colombiano', flag: '/img/flags/CO.webp' },
+  { code: 'USD', key: 'priceUsd', label: 'Dólar estadounidense', flag: '/img/flags/US.webp' },
+  { code: 'MXN', key: 'priceMxn', label: 'Peso mexicano', flag: '/img/flags/MX.webp' },
+  { code: 'EUR', key: 'priceEur', label: 'Euro', flag: '' },
+] as const;
+
+type PriceCurrencyCode = (typeof priceCurrencies)[number]['code'];
+type SourcePriceKey = (typeof priceCurrencies)[number]['key'];
+
+type CurrencyPrices = Record<PriceCurrencyCode, number | null>;
+
+function siigoCurrencyPrices(
+  product: Pick<
+    ProductRecord,
+    'siigoPriceCop' | 'siigoPriceUsd' | 'siigoPriceMxn' | 'siigoPriceEur'
+  >,
+): CurrencyPrices {
+  return {
+    COP: product.siigoPriceCop,
+    USD: product.siigoPriceUsd,
+    MXN: product.siigoPriceMxn,
+    EUR: product.siigoPriceEur,
+  };
+}
 
 const statusMeta: Record<
   ProductStatusFilter,
@@ -81,6 +113,68 @@ function dateTime(value: string | null): string {
 
 function getProductStatus(product: Pick<ProductRecord, 'siigoStock' | 'syncStatus'>) {
   return product.siigoStock === 0 ? statusMeta.OUT_OF_STOCK : statusMeta[product.syncStatus];
+}
+
+function CurrencyFlag({ flag }: { flag: string }) {
+  if (!flag) {
+    return (
+      <span className="inventory-currency-euro" aria-hidden="true">
+        €
+      </span>
+    );
+  }
+  return <img src={flag} alt="" />;
+}
+
+/** El precio en las cuatro monedas, en el mismo formato compacto de la tabla. */
+function CurrencyPriceList({ prices }: { prices: CurrencyPrices }) {
+  return (
+    <dl className="inventory-currency-list">
+      {priceCurrencies.map(({ code, label, flag }) => (
+        <div key={code}>
+          <dt title={label}>
+            <CurrencyFlag flag={flag} />
+            {code}
+          </dt>
+          <dd>
+            {prices[code] === null ? (
+              <span className="inventory-currency-empty">Sin dato</span>
+            ) : (
+              `$${tableUsd.format(prices[code])}`
+            )}
+          </dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
+/**
+ * El precio principal es COP y las otras tres monedas viven detrás de este botón, igual que las
+ * acciones de la fila: la columna se lee de un vistazo y el detalle aparece al pedirlo.
+ */
+function CurrencyPricePopover({ prices }: { prices: CurrencyPrices }) {
+  return (
+    <Popover>
+      <Button
+        className="inventory-currency-trigger"
+        isIconOnly
+        size="sm"
+        variant="ghost"
+        aria-label="Ver los precios en las cuatro monedas"
+      >
+        <CircleDollar width={16} height={16} />
+      </Button>
+      <Popover.Content
+        placement="bottom start"
+        className="shell-popover inventory-currency-popover"
+      >
+        <Popover.Dialog>
+          <CurrencyPriceList prices={prices} />
+        </Popover.Dialog>
+      </Popover.Content>
+    </Popover>
+  );
 }
 
 function InventorySkeleton() {
@@ -263,7 +357,7 @@ export function InventoryPage() {
         cell: ({ row }) => (
           <div className="inventory-price-cell">
             <span>${tableCop.format(row.original.siigoPriceCop)} COP</span>
-            <small>${tableUsd.format(row.original.siigoPriceUsd)} USD</small>
+            <CurrencyPricePopover prices={siigoCurrencyPrices(row.original)} />
           </div>
         ),
       },
@@ -1013,20 +1107,30 @@ function ProductDetail({ product }: { product: ProductRecord }) {
         <ProductSource
           title="Siigo"
           source="siigo"
-          priceCop={product.siigoPriceCop}
-          priceUsd={product.siigoPriceUsd}
+          prices={{
+            priceCop: product.siigoPriceCop,
+            priceUsd: product.siigoPriceUsd,
+            priceMxn: product.siigoPriceMxn,
+            priceEur: product.siigoPriceEur,
+          }}
           stock={product.siigoStock}
         />
         <ProductSource
           title="WooCommerce"
           source={product.store.toLowerCase() as 'pali' | 'seratus'}
-          priceCop={product.wooPriceCop}
-          priceUsd={product.wooPriceUsd}
+          prices={{
+            priceCop: product.wooPriceCop,
+            priceUsd: product.wooPriceUsd,
+            priceMxn: product.wooPriceMxn,
+            priceEur: product.wooPriceEur,
+          }}
           stock={product.wooStock}
           mismatches={{
             stock: product.wooStock !== product.siigoStock,
             priceCop: product.wooPriceCop !== product.siigoPriceCop,
             priceUsd: product.wooPriceUsd !== product.siigoPriceUsd,
+            priceMxn: product.wooPriceMxn !== product.siigoPriceMxn,
+            priceEur: product.wooPriceEur !== product.siigoPriceEur,
           }}
         />
       </div>
@@ -1037,38 +1141,30 @@ function ProductDetail({ product }: { product: ProductRecord }) {
 function ProductSource({
   title,
   source,
-  priceCop,
-  priceUsd,
+  prices,
   stock,
   mismatches,
 }: {
   title: string;
   source: 'siigo' | 'pali' | 'seratus';
-  priceCop: number;
-  priceUsd: number;
+  prices: Record<SourcePriceKey, number | null>;
   stock: number;
-  mismatches?: Partial<Record<'stock' | 'priceCop' | 'priceUsd', boolean>>;
+  mismatches?: Partial<Record<'stock' | SourcePriceKey, boolean>>;
 }) {
   return (
     <section className={`product-source-${source}`}>
       <span>{title}</span>
       <dl>
-        <div>
-          <dt>Precio COP</dt>
-          <dd>
-            <SourceValue hasMismatch={mismatches?.priceCop}>
-              ${tableCop.format(priceCop)}
-            </SourceValue>
-          </dd>
-        </div>
-        <div>
-          <dt>Precio USD</dt>
-          <dd>
-            <SourceValue hasMismatch={mismatches?.priceUsd}>
-              ${tableCop.format(priceUsd)}
-            </SourceValue>
-          </dd>
-        </div>
+        {priceCurrencies.map(({ code, key }) => (
+          <div key={code}>
+            <dt>Precio {code}</dt>
+            <dd>
+              <SourceValue hasMismatch={mismatches?.[key]}>
+                {prices[key] === null ? 'Sin dato' : `$${tableUsd.format(prices[key])}`}
+              </SourceValue>
+            </dd>
+          </div>
+        ))}
         <div>
           <dt>Stock</dt>
           <dd>

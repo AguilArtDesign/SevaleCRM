@@ -7,8 +7,10 @@ import {
 import { Store, SyncStatus, type Prisma } from '../generated/prisma/client.js';
 import { PrismaService } from '../database/prisma.service.js';
 import { parseCsv } from '../common/csv.js';
+import { pricesAndStockMatch, decimalOrNull } from './product-prices.js';
 
-const EXPECTED_HEADERS = [
+/** El CSV completo del inventario: la unión de Siigo y WooCommerce, con catorce columnas fijas. */
+const INVENTORY_HEADERS = [
   'siigo_id',
   'sku',
   'siigo_price_cop',
@@ -25,15 +27,30 @@ const EXPECTED_HEADERS = [
   'image_url',
 ] as const;
 
+/**
+ * El CSV de monedas nuevas: solo lo que falta por cargar. COP y USD ya se sincronizan por n8n, así
+ * que este archivo no los lleva y nunca los toca.
+ */
+const CURRENCY_HEADERS = ['sku', 'siigo_price_mxn', 'siigo_price_eur'] as const;
+
 const MAX_REPORTED_ISSUES = 50;
 const QUERY_CHUNK_SIZE = 500;
 const INSERT_CHUNK_SIZE = 250;
+const UPDATE_CHUNK_SIZE = 250;
 
-type CsvRow = Record<(typeof EXPECTED_HEADERS)[number], string>;
+type InventoryCsvRow = Record<(typeof INVENTORY_HEADERS)[number], string>;
+type CurrencyCsvRow = Record<(typeof CURRENCY_HEADERS)[number], string>;
 
 type ImportProduct = {
   row: number;
   data: Prisma.ProductUncheckedCreateInput;
+};
+
+type CurrencyPrice = {
+  row: number;
+  sku: string;
+  siigoPriceMxn: number;
+  siigoPriceEur: number;
 };
 
 type ImportIssue = {
@@ -42,11 +59,17 @@ type ImportIssue = {
   message: string;
 };
 
+export type ProductImportMode = 'INVENTORY' | 'CURRENCIES';
+
 export type ProductImportPreview = {
+  /** El modo lo decide la cabecera del archivo; el formulario rotula las cifras con él. */
+  mode: ProductImportMode;
   totalRows: number;
   validRows: number;
   newProducts: number;
   existingProducts: number;
+  /** Solo en el modo CURRENCIES: filas cuyo SKU no existe en el CRM y se omiten. */
+  skippedUnknown: number;
   errorCount: number;
   conflictCount: number;
   errors: ImportIssue[];
@@ -91,10 +114,24 @@ function nullableUrl(value: string): string | null {
   return url.toString();
 }
 
-function calculateSyncStatus(row: CsvRow): SyncStatus {
-  return Number(row.siigo_price_cop) === Number(row.woo_price_cop) &&
-    Number(row.siigo_price_usd) === Number(row.woo_price_usd) &&
-    Number(row.siigo_stock) === Number(row.woo_stock)
+function calculateSyncStatus(row: InventoryCsvRow): SyncStatus {
+  // El CSV de inventario no trae MXN ni EUR, así que ambos lados quedan nulos y no alteran el estado.
+  return pricesAndStockMatch(
+    {
+      priceCop: Number(row.siigo_price_cop),
+      priceUsd: Number(row.siigo_price_usd),
+      priceMxn: null,
+      priceEur: null,
+    },
+    {
+      priceCop: Number(row.woo_price_cop),
+      priceUsd: Number(row.woo_price_usd),
+      priceMxn: null,
+      priceEur: null,
+    },
+    Number(row.siigo_stock),
+    Number(row.woo_stock),
+  )
     ? SyncStatus.SYNCED
     : SyncStatus.OUT_OF_SYNC;
 }
@@ -117,13 +154,25 @@ export class ProductImportService {
 
   async preview(csv: string): Promise<ProductImportPreview> {
     this.assertEnabled();
-    const parsed = this.parse(csv);
-    return this.compareWithDatabase(parsed.products, parsed.errors, parsed.totalRows);
+    const file = this.read(csv);
+    if (file.mode === 'CURRENCIES') {
+      const currencies = this.parseCurrencies(file.rows);
+      return this.compareCurrenciesWithDatabase(
+        currencies.prices,
+        currencies.errors,
+        currencies.totalRows,
+      );
+    }
+    const inventory = this.parseInventory(file.rows);
+    return this.compareWithDatabase(inventory.products, inventory.errors, inventory.totalRows);
   }
 
   async import(csv: string) {
     this.assertEnabled();
-    const parsed = this.parse(csv);
+    const file = this.read(csv);
+    if (file.mode === 'CURRENCIES') return this.importCurrencies(file.rows);
+
+    const parsed = this.parseInventory(file.rows);
     const preview = await this.compareWithDatabase(
       parsed.products,
       parsed.errors,
@@ -154,9 +203,65 @@ export class ProductImportService {
     );
     return {
       success: true,
+      mode: 'INVENTORY' as const,
       totalRows: parsed.totalRows,
       imported: newProducts.length,
+      updated: 0,
       skipped: parsed.products.length - newProducts.length,
+    };
+  }
+
+  /**
+   * El CSV de monedas solo actualiza: los SKU que no existen se omiten en lugar de crear el
+   * producto, porque sin los datos de las tiendas la fila quedaría incompleta. El estado no se
+   * fuerza: la comparación de las cuatro monedas lo deja en desactualizado mientras WooCommerce no
+   * tenga MXN y EUR, y vuelve a sincronizado cuando n8n los confirme.
+   */
+  private async importCurrencies(rows: string[][]) {
+    const parsed = this.parseCurrencies(rows);
+    const preview = await this.compareCurrenciesWithDatabase(
+      parsed.prices,
+      parsed.errors,
+      parsed.totalRows,
+    );
+    if (!preview.canImport) {
+      throw new UnprocessableEntityException({
+        success: false,
+        error: {
+          code: 'PRODUCT_IMPORT_INVALID',
+          message: 'El archivo cambió o no tiene SKU por actualizar. Repite la vista previa.',
+          preview,
+        },
+      });
+    }
+
+    const targets = await this.findCurrencyTargets(parsed.prices);
+    await this.prisma.$transaction(
+      async (transaction) => {
+        for (const group of chunks(targets, UPDATE_CHUNK_SIZE)) {
+          await transaction.$transaction(
+            group.map((target) =>
+              transaction.product.update({
+                where: { id: target.id },
+                data: {
+                  siigoPriceMxn: target.siigoPriceMxn,
+                  siigoPriceEur: target.siigoPriceEur,
+                  syncStatus: target.syncStatus,
+                },
+              }),
+            ),
+          );
+        }
+      },
+      { maxWait: 5_000, timeout: 30_000 },
+    );
+    return {
+      success: true,
+      mode: 'CURRENCIES' as const,
+      totalRows: parsed.totalRows,
+      imported: 0,
+      updated: targets.length,
+      skipped: parsed.prices.length - targets.length,
     };
   }
 
@@ -173,7 +278,11 @@ export class ProductImportService {
     }
   }
 
-  private parse(csv: string) {
+  /**
+   * Lee el archivo y decide el formato por su cabecera. Las dos son fijas y no se solapan, así que
+   * no hay ambigüedad posible; un archivo con otra cabecera se rechaza diciendo cuáles se aceptan.
+   */
+  private read(csv: string): { mode: ProductImportMode; rows: string[][] } {
     let rows: string[][];
     try {
       rows = parseCsv(csv);
@@ -197,38 +306,82 @@ export class ProductImportService {
     const headers = headerRow.map((header, index) =>
       index === 0 ? header.replace(/^\uFEFF/, '').trim() : header.trim(),
     );
-    if (
-      headers.length !== EXPECTED_HEADERS.length ||
-      EXPECTED_HEADERS.some((header, index) => headers[index] !== header)
-    ) {
+    const mode = importMode(headers);
+    if (!mode) {
       throw new BadRequestException({
         success: false,
         error: {
           code: 'INVALID_CSV_HEADERS',
-          message: `Las columnas deben estar en este orden: ${EXPECTED_HEADERS.join(', ')}.`,
+          message:
+            'Las columnas no coinciden con ninguno de los formatos aceptados. ' +
+            `Inventario: ${INVENTORY_HEADERS.join(', ')}. ` +
+            `Monedas: ${CURRENCY_HEADERS.join(', ')}.`,
         },
       });
     }
+    return { mode, rows: rows.slice(1).filter((values) => values.some((value) => value.trim())) };
+  }
 
-    const products: ImportProduct[] = [];
+  private parseCurrencies(dataRows: string[][]) {
+    const prices: CurrencyPrice[] = [];
     const errors: ImportIssue[] = [];
-    const seenSiigoIds = new Map<string, number>();
     const seenSkus = new Map<string, number>();
-    const dataRows = rows.slice(1).filter((values) => values.some((value) => value.trim()));
 
     dataRows.forEach((values, index) => {
       const rowNumber = index + 2;
-      if (values.length !== EXPECTED_HEADERS.length) {
+      if (values.length !== CURRENCY_HEADERS.length) {
         errors.push({
           row: rowNumber,
           field: 'fila',
-          message: `Se esperaban ${EXPECTED_HEADERS.length} columnas y se encontraron ${values.length}.`,
+          message: `Se esperaban ${CURRENCY_HEADERS.length} columnas y se encontraron ${values.length}.`,
         });
         return;
       }
       const row = Object.fromEntries(
-        headers.map((header, column) => [header, values[column]]),
-      ) as CsvRow;
+        CURRENCY_HEADERS.map((header, column) => [header, values[column]]),
+      ) as CurrencyCsvRow;
+      try {
+        const sku = requiredText(row.sku, 'sku', 191);
+        const skuKey = sku.toLocaleUpperCase('es-CO');
+        const previousRow = seenSkus.get(skuKey);
+        if (previousRow) throw new Error(`sku está repetido desde la fila ${previousRow}.`);
+        seenSkus.set(skuKey, rowNumber);
+        prices.push({
+          row: rowNumber,
+          sku,
+          siigoPriceMxn: numberValue(row.siigo_price_mxn, 'siigo_price_mxn'),
+          siigoPriceEur: numberValue(row.siigo_price_eur, 'siigo_price_eur'),
+        });
+      } catch (error) {
+        errors.push({
+          row: rowNumber,
+          field: 'datos',
+          message: error instanceof Error ? error.message : 'La fila no es válida.',
+        });
+      }
+    });
+    return { prices, errors, totalRows: dataRows.length };
+  }
+
+  private parseInventory(dataRows: string[][]) {
+    const products: ImportProduct[] = [];
+    const errors: ImportIssue[] = [];
+    const seenSiigoIds = new Map<string, number>();
+    const seenSkus = new Map<string, number>();
+
+    dataRows.forEach((values, index) => {
+      const rowNumber = index + 2;
+      if (values.length !== INVENTORY_HEADERS.length) {
+        errors.push({
+          row: rowNumber,
+          field: 'fila',
+          message: `Se esperaban ${INVENTORY_HEADERS.length} columnas y se encontraron ${values.length}.`,
+        });
+        return;
+      }
+      const row = Object.fromEntries(
+        INVENTORY_HEADERS.map((header, column) => [header, values[column]]),
+      ) as InventoryCsvRow;
       try {
         const siigoId = requiredText(row.siigo_id, 'siigo_id', 191);
         const sku = requiredText(row.sku, 'sku', 191);
@@ -336,10 +489,12 @@ export class ProductImportService {
     }
 
     return {
+      mode: 'INVENTORY',
       totalRows,
       validRows: products.length,
       newProducts: products.length - existingProducts - conflicts.length,
       existingProducts,
+      skippedUnknown: 0,
       errorCount: errors.length,
       conflictCount: conflicts.length,
       errors: errors.slice(0, MAX_REPORTED_ISSUES),
@@ -347,4 +502,86 @@ export class ProductImportService {
       canImport: errors.length === 0 && conflicts.length === 0 && products.length > 0,
     };
   }
+
+  /** Lee los productos que el archivo de monedas va a actualizar, con lo necesario para el estado. */
+  private async findCurrencyTargets(prices: CurrencyPrice[]) {
+    const records = [];
+    for (const group of chunks(prices, QUERY_CHUNK_SIZE)) {
+      records.push(
+        ...(await this.prisma.product.findMany({
+          where: { sku: { in: group.map(({ sku }) => sku) } },
+          select: {
+            id: true,
+            sku: true,
+            siigoPriceCop: true,
+            siigoPriceUsd: true,
+            wooPriceCop: true,
+            wooPriceUsd: true,
+            wooPriceMxn: true,
+            wooPriceEur: true,
+            siigoStock: true,
+            wooStock: true,
+          },
+        })),
+      );
+    }
+    const bySku = new Map(records.map((record) => [record.sku.toLocaleUpperCase('es-CO'), record]));
+    return prices.flatMap((price) => {
+      const record = bySku.get(price.sku.toLocaleUpperCase('es-CO'));
+      if (!record) return [];
+      const siigo = {
+        priceCop: Number(record.siigoPriceCop),
+        priceUsd: Number(record.siigoPriceUsd),
+        priceMxn: price.siigoPriceMxn,
+        priceEur: price.siigoPriceEur,
+      };
+      const store = {
+        priceCop: Number(record.wooPriceCop),
+        priceUsd: Number(record.wooPriceUsd),
+        priceMxn: decimalOrNull(record.wooPriceMxn),
+        priceEur: decimalOrNull(record.wooPriceEur),
+      };
+      return [
+        {
+          id: record.id,
+          siigoPriceMxn: price.siigoPriceMxn,
+          siigoPriceEur: price.siigoPriceEur,
+          syncStatus: pricesAndStockMatch(siigo, store, record.siigoStock, record.wooStock)
+            ? SyncStatus.SYNCED
+            : SyncStatus.OUT_OF_SYNC,
+        },
+      ];
+    });
+  }
+
+  private async compareCurrenciesWithDatabase(
+    prices: CurrencyPrice[],
+    errors: ImportIssue[],
+    totalRows: number,
+  ): Promise<ProductImportPreview> {
+    const targets = await this.findCurrencyTargets(prices);
+    return {
+      mode: 'CURRENCIES',
+      totalRows,
+      validRows: prices.length,
+      newProducts: 0,
+      existingProducts: targets.length,
+      skippedUnknown: prices.length - targets.length,
+      errorCount: errors.length,
+      conflictCount: 0,
+      errors: errors.slice(0, MAX_REPORTED_ISSUES),
+      conflicts: [],
+      canImport: errors.length === 0 && targets.length > 0,
+    };
+  }
+}
+
+/** La cabecera del archivo decide el modo; una cabecera desconocida no coincide con ninguna. */
+function importMode(headers: string[]): ProductImportMode | null {
+  const matches = (expected: readonly string[]) =>
+    headers.length === expected.length &&
+    expected.every((header, index) => headers[index] === header);
+  if (matches(INVENTORY_HEADERS)) return 'INVENTORY';
+  if (matches(CURRENCY_HEADERS)) return 'CURRENCIES';
+  return null;
 }

@@ -300,6 +300,46 @@ try {
     'Tienda WooCommerce diferente',
   );
 
+  // Las monedas nuevas son opcionales: el payload de siempre las deja como estaban. Cuando n8n las
+  // envía, entran en la comparación igual que COP y USD.
+  const currenciesResponse = await post(
+    {
+      ...matchingPayload,
+      siigo_price_mxn: 847,
+      siigo_price_eur: 45,
+      woo_sync: { ...matchingPayload.woo_sync, price_mxn: 847, price_eur: 40 },
+    },
+    `Bearer ${apiKey}`,
+  );
+  expectStatus(currenciesResponse, 200, 'Monedas nuevas');
+  const currencies = (await currenciesResponse.json()) as {
+    product: { syncStatus: string; siigoPriceMxn: number | null; siigoPriceEur: number | null };
+  };
+  if (
+    currencies.product.siigoPriceMxn !== 847 ||
+    currencies.product.siigoPriceEur !== 45 ||
+    currencies.product.syncStatus !== 'OUT_OF_SYNC'
+  ) {
+    throw new Error('Las monedas MXN y EUR no se guardaron o no entraron en la comparación.');
+  }
+
+  const currenciesMatchResponse = await post(
+    {
+      ...matchingPayload,
+      siigo_price_mxn: 847,
+      siigo_price_eur: 45,
+      woo_sync: { ...matchingPayload.woo_sync, price_mxn: 847, price_eur: 45 },
+    },
+    `Bearer ${apiKey}`,
+  );
+  expectStatus(currenciesMatchResponse, 200, 'Monedas nuevas sincronizadas');
+  const currenciesMatch = (await currenciesMatchResponse.json()) as {
+    product: { syncStatus: string };
+  };
+  if (currenciesMatch.product.syncStatus !== 'SYNCED') {
+    throw new Error('Las cuatro monedas coincidentes no dejaron el producto sincronizado.');
+  }
+
   const beforeFailedSync = await prisma.product.findUniqueOrThrow({ where: { id: product.id } });
   const failedSyncResponse = await post(
     {

@@ -70,6 +70,14 @@ const upstream = createServer((request, response) => {
                     currency_code: 'USD',
                     price_list: [{ name: 'DOLAR', value: 22.5 }],
                   },
+                  {
+                    currency_code: 'MXN',
+                    price_list: [{ name: 'LISTA MEXICO', value: 847 }],
+                  },
+                  {
+                    currency_code: 'EUR',
+                    price_list: [{ name: 'LISTA EUROPA', value: 45 }],
+                  },
                 ],
               },
             ]
@@ -85,7 +93,12 @@ const upstream = createServer((request, response) => {
         price: '85000',
         stock_quantity: 14,
         image: { src: 'https://example.invalid/product.jpg' },
-        meta_data: [{ key: '_regular_price_wmcp', value: '{"USD":"22.5"}' }],
+        meta_data: [
+          {
+            key: '_regular_price_wmcp',
+            value: '{"USD":"22.5","MXN":"847","EUR":"45"}',
+          },
+        ],
       },
     ]);
   } else if (url.pathname === '/pali/wc/v3/products') {
@@ -194,12 +207,16 @@ try {
     id: string;
     priceCop: number;
     priceUsd: number;
+    priceMxn: number | null;
+    priceEur: number | null;
     stock: number;
   };
   if (
     siigo.id !== 'siigo-product-1' ||
     siigo.priceCop !== 85000 ||
     siigo.priceUsd !== 22.5 ||
+    siigo.priceMxn !== 847 ||
+    siigo.priceEur !== 45 ||
     siigo.stock !== 14
   ) {
     throw new Error('La normalización de Siigo no devolvió los valores esperados.');
@@ -215,6 +232,8 @@ try {
     parentId: string;
     variationId: string;
     priceUsd: number;
+    priceMxn: number | null;
+    priceEur: number | null;
     dataWarnings: string[];
   };
   if (
@@ -222,6 +241,8 @@ try {
     seratus.parentId !== '9100' ||
     seratus.variationId !== '9102' ||
     seratus.priceUsd !== 22.5 ||
+    seratus.priceMxn !== 847 ||
+    seratus.priceEur !== 45 ||
     seratus.dataWarnings.length !== 0
   ) {
     throw new Error('La normalización de Seratus no devolvió los valores esperados.');

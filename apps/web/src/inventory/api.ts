@@ -11,6 +11,8 @@ export type ProductRecord = {
   sku: string;
   siigoPriceCop: number;
   siigoPriceUsd: number;
+  siigoPriceMxn: number | null;
+  siigoPriceEur: number | null;
   siigoStock: number;
   store: ProductStore;
   wooParentId: string | null;
@@ -18,6 +20,8 @@ export type ProductRecord = {
   wooSku: string;
   wooPriceCop: number;
   wooPriceUsd: number;
+  wooPriceMxn: number | null;
+  wooPriceEur: number | null;
   wooStock: number;
   syncStatus: ProductSyncStatus;
   lastSyncAt: string | null;
@@ -62,6 +66,8 @@ export type ExternalProductSource = {
   name: string;
   priceCop: number | null;
   priceUsd: number | null;
+  priceMxn: number | null;
+  priceEur: number | null;
   stock: number;
 };
 
@@ -72,6 +78,8 @@ export type ExternalStoreSource = {
   sku: string;
   priceCop: number | null;
   priceUsd: number | null;
+  priceMxn: number | null;
+  priceEur: number | null;
   stock: number | null;
   productName: string;
   imageUrl: string | null;
@@ -94,11 +102,17 @@ export type ProductImportIssue = {
   message: string;
 };
 
+export type ProductImportMode = 'INVENTORY' | 'CURRENCIES';
+
 export type ProductImportPreview = {
+  /** `CURRENCIES` cuando el archivo solo trae SKU y las monedas nuevas. */
+  mode: ProductImportMode;
   totalRows: number;
   validRows: number;
   newProducts: number;
   existingProducts: number;
+  /** Solo en modo monedas: filas cuyo SKU no existe en el CRM y se omiten. */
+  skippedUnknown: number;
   errorCount: number;
   conflictCount: number;
   errors: ProductImportIssue[];
@@ -108,8 +122,10 @@ export type ProductImportPreview = {
 
 export type ProductImportResult = {
   success: true;
+  mode: ProductImportMode;
   totalRows: number;
   imported: number;
+  updated: number;
   skipped: number;
 };
 

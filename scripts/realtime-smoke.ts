@@ -160,10 +160,11 @@ try {
     socket,
     'product.stock.updated',
   );
-  const pricePromise = waitFor<{ priceCop: { previous: number; current: number } }>(
-    socket,
-    'product.price.updated',
-  );
+  const pricePromise = waitFor<{
+    priceCop: { previous: number | null; current: number | null } | null;
+    priceMxn: { previous: number | null; current: number | null } | null;
+    priceEur: { previous: number | null; current: number | null } | null;
+  }>(socket, 'product.price.updated');
   const statusPromise = waitFor<{ change: { previous: string; current: string } }>(
     socket,
     'product.sync.status_changed',
@@ -173,6 +174,8 @@ try {
     {
       priceCop: { previous: 90_000, current: 95_000 },
       priceUsd: null,
+      priceMxn: { previous: null, current: 847 },
+      priceEur: { previous: 40, current: 45 },
       stock: { previous: 10, current: 7 },
       syncStatus: { previous: 'SYNCED', current: 'OUT_OF_SYNC' },
     },
@@ -184,10 +187,12 @@ try {
     statusPromise,
   ]);
   if (
-    updated.changedFields.join(',') !== 'priceCop,stock,syncStatus' ||
+    updated.changedFields.join(',') !== 'priceCop,priceMxn,priceEur,stock,syncStatus' ||
     stock.change.previous !== 10 ||
     stock.change.current !== 7 ||
-    price.priceCop.current !== 95_000 ||
+    price.priceCop?.current !== 95_000 ||
+    price.priceMxn?.current !== 847 ||
+    price.priceEur?.current !== 45 ||
     status.change.current !== 'OUT_OF_SYNC'
   ) {
     throw new Error('Los eventos de actualización no devolvieron los cambios esperados.');

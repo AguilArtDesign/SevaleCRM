@@ -271,6 +271,79 @@ try {
     throw new Error('La segunda importación no fue idempotente.');
   }
 
+  // El CSV de monedas comparte endpoints con el de inventario: la cabecera decide el modo.
+  const currencyHeaders = ['sku', 'siigo_price_mxn', 'siigo_price_eur'].join(',');
+  const currencyCsv = [
+    currencyHeaders,
+    `${existingSku},847,45`,
+    `${newSku},850,46`,
+    `IMPORT-MISSING-${runId},1,1`,
+  ].join('\n');
+
+  const currencyPreviewResponse = await api('/api/products/import/preview', 'POST', adminCookie, {
+    csv: currencyCsv,
+  });
+  expectStatus(currencyPreviewResponse, 201, 'Vista previa de monedas');
+  const currencyPreview = (await currencyPreviewResponse.json()) as {
+    mode: string;
+    totalRows: number;
+    existingProducts: number;
+    skippedUnknown: number;
+    canImport: boolean;
+  };
+  if (
+    currencyPreview.mode !== 'CURRENCIES' ||
+    currencyPreview.totalRows !== 3 ||
+    currencyPreview.existingProducts !== 2 ||
+    currencyPreview.skippedUnknown !== 1 ||
+    !currencyPreview.canImport
+  ) {
+    throw new Error('La vista previa de monedas no separó los SKU existentes de los omitidos.');
+  }
+
+  const currencyImportResponse = await api('/api/products/import', 'POST', adminCookie, {
+    csv: currencyCsv,
+  });
+  expectStatus(currencyImportResponse, 201, 'Importación de monedas');
+  const currencyImported = (await currencyImportResponse.json()) as {
+    mode: string;
+    updated: number;
+    imported: number;
+    skipped: number;
+  };
+  if (
+    currencyImported.mode !== 'CURRENCIES' ||
+    currencyImported.updated !== 2 ||
+    currencyImported.imported !== 0 ||
+    currencyImported.skipped !== 1
+  ) {
+    throw new Error('La importación de monedas no devolvió el resumen esperado.');
+  }
+  const withCurrencies = await prisma.product.findUniqueOrThrow({ where: { id: existing.id } });
+  // Las monedas nuevas existen en Siigo y todavía no en la tienda: la comparación lo dice sola.
+  if (
+    Number(withCurrencies.siigoPriceMxn) !== 847 ||
+    Number(withCurrencies.siigoPriceEur) !== 45 ||
+    withCurrencies.wooPriceMxn !== null ||
+    withCurrencies.syncStatus !== SyncStatus.OUT_OF_SYNC ||
+    withCurrencies.lastCheckAt !== null
+  ) {
+    throw new Error(
+      'El CSV de monedas no actualizó los precios ni marcó el producto desactualizado.',
+    );
+  }
+  if (await prisma.product.findUnique({ where: { sku: `IMPORT-MISSING-${runId}` } })) {
+    throw new Error('El CSV de monedas creó un producto con un SKU inexistente.');
+  }
+
+  expectStatus(
+    await api('/api/products/import/preview', 'POST', adminCookie, {
+      csv: ['sku,precio_mxn', 'X,1'].join('\n'),
+    }),
+    400,
+    'Cabecera desconocida',
+  );
+
   process.env.PRODUCT_IMPORT_ENABLED = 'false';
   expectStatus(
     await api('/api/products/import/preview', 'POST', adminCookie, { csv }),
@@ -279,7 +352,7 @@ try {
   );
 
   process.stdout.write(
-    'Product import smoke: feature flag, auth, RBAC, CSV parsing, preview, conflicts, mapping, idempotency and disabled state checks passed.\n',
+    'Product import smoke: feature flag, auth, RBAC, CSV parsing, preview, conflicts, mapping, idempotency, currency mode and disabled state checks passed.\n',
   );
 } finally {
   process.env.PRODUCT_IMPORT_ENABLED = 'true';

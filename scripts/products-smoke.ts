@@ -77,6 +77,8 @@ try {
         sku: `S7-${runId}-${index}`,
         siigoPriceCop: 150000 + index,
         siigoPriceUsd: 40 + index,
+        siigoPriceMxn: 800 + index,
+        siigoPriceEur: 38 + index,
         siigoStock: fixture.stock ?? 8 + index,
         store: fixture.store,
         wooParentId: BigInt(9_000_000 + index),
@@ -201,11 +203,16 @@ try {
     id: number;
     wooParentId: string | null;
     siigoPriceCop: number;
+    siigoPriceMxn: number | null;
+    wooPriceEur: number | null;
   };
   if (
     detail.id !== productIds[0] ||
     detail.wooParentId !== '9000000' ||
-    typeof detail.siigoPriceCop !== 'number'
+    typeof detail.siigoPriceCop !== 'number' ||
+    // Las monedas nuevas se serializan como número o nulo, nunca como texto de `Decimal`.
+    detail.siigoPriceMxn !== 800 ||
+    detail.wooPriceEur !== null
   ) {
     throw new Error('El detalle no serializó correctamente el producto.');
   }

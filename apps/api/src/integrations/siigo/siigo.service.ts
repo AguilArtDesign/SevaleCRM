@@ -25,6 +25,9 @@ export type SiigoProduct = {
   name: string;
   priceCop: number | null;
   priceUsd: number | null;
+  /** Monedas añadidas después. Nulas mientras Siigo no publique esa lista de precios. */
+  priceMxn: number | null;
+  priceEur: number | null;
   stock: number;
 };
 
@@ -109,13 +112,18 @@ function normalizeName(value: unknown): string {
     : '';
 }
 
-function priceFrom(product: UnknownRecord, listName: 'PESOS' | 'DOLAR', currency: string) {
+/**
+ * Siigo agrupa los precios por moneda (`currency_code`) y, dentro de cada grupo, por lista con
+ * nombre propio. COP y USD usan listas con nombre conocido; para MXN y EUR se busca primero por
+ * código de moneda y, si el proveedor no lo informa, por los nombres en que suele rotularlas.
+ */
+function priceFrom(product: UnknownRecord, listNames: string[], currency: string) {
   if (!Array.isArray(product.prices)) return null;
   const priceGroups = product.prices.filter(isRecord);
   for (const group of priceGroups) {
     if (!Array.isArray(group.price_list)) continue;
     const lists = group.price_list.filter(isRecord);
-    const named = lists.find((entry) => normalizeName(entry.name) === listName);
+    const named = lists.find((entry) => listNames.includes(normalizeName(entry.name)));
     const namedValue = named ? finiteNumber(named.value) : null;
     if (namedValue !== null) return namedValue;
   }
@@ -140,8 +148,10 @@ function normalizeProduct(value: unknown, requestedSku: string): SiigoProduct | 
     id,
     sku,
     name,
-    priceCop: priceFrom(value, 'PESOS', 'COP'),
-    priceUsd: priceFrom(value, 'DOLAR', 'USD'),
+    priceCop: priceFrom(value, ['PESOS'], 'COP'),
+    priceUsd: priceFrom(value, ['DOLAR'], 'USD'),
+    priceMxn: priceFrom(value, ['MEXICAN PESO', 'PESO MEXICANO', 'PESOS MEXICANOS'], 'MXN'),
+    priceEur: priceFrom(value, ['EURO', 'EUROS'], 'EUR'),
     stock,
   };
 }

@@ -5,14 +5,19 @@ import { WooCommerceService } from '../integrations/woocommerce/woocommerce.serv
 import { RealtimeGateway } from '../realtime/realtime.gateway.js';
 import { ProductsRepository } from './products.repository.js';
 import { createInventoryWorkbook } from './product-export.js';
+import { decimalOrNull } from './product-prices.js';
 
 export function serializeProduct(product: Product) {
   return {
     ...product,
     siigoPriceCop: Number(product.siigoPriceCop),
     siigoPriceUsd: Number(product.siigoPriceUsd),
+    siigoPriceMxn: decimalOrNull(product.siigoPriceMxn),
+    siigoPriceEur: decimalOrNull(product.siigoPriceEur),
     wooPriceCop: Number(product.wooPriceCop),
     wooPriceUsd: Number(product.wooPriceUsd),
+    wooPriceMxn: decimalOrNull(product.wooPriceMxn),
+    wooPriceEur: decimalOrNull(product.wooPriceEur),
     wooParentId: product.wooParentId?.toString() ?? null,
     wooVariationId: product.wooVariationId?.toString() ?? null,
   };
@@ -106,6 +111,8 @@ export class ProductsService {
         productId: product.wooVariationId.toString(),
         priceCop: Number(product.siigoPriceCop),
         priceUsd: Number(product.siigoPriceUsd),
+        priceMxn: decimalOrNull(product.siigoPriceMxn),
+        priceEur: decimalOrNull(product.siigoPriceEur),
         stock: product.siigoStock,
       });
     } catch (error) {
@@ -115,6 +122,8 @@ export class ProductsService {
       this.realtime.emitProductUpdated(failed, {
         priceCop: null,
         priceUsd: null,
+        priceMxn: null,
+        priceEur: null,
         stock: null,
         syncStatus:
           product.syncStatus === failed.syncStatus
@@ -127,6 +136,8 @@ export class ProductsService {
     const synchronized = await this.productsRepository.update(product.id, {
       wooPriceCop: product.siigoPriceCop,
       wooPriceUsd: product.siigoPriceUsd,
+      wooPriceMxn: product.siigoPriceMxn,
+      wooPriceEur: product.siigoPriceEur,
       wooStock: product.siigoStock,
       syncStatus: SyncStatus.SYNCED,
       lastSyncAt: new Date(),
@@ -134,6 +145,8 @@ export class ProductsService {
     this.realtime.emitProductUpdated(synchronized, {
       priceCop: null,
       priceUsd: null,
+      priceMxn: null,
+      priceEur: null,
       stock: null,
       syncStatus:
         product.syncStatus === synchronized.syncStatus

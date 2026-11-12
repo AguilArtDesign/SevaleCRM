@@ -7,6 +7,11 @@ import { NotificationsRepository } from './notifications.repository.js';
 
 const compactNumber = new Intl.NumberFormat('es-CO', { maximumFractionDigits: 2 });
 
+/** Una moneda puede no existir todavía: el mensaje lo dice en lugar de mostrar un cero falso. */
+function priceText(value: number | null): string {
+  return value === null ? 'sin dato' : `$${compactNumber.format(value)}`;
+}
+
 const statusLabels: Record<SyncStatus, string> = {
   SYNCED: 'Sincronizado',
   PENDING: 'Pendiente',
@@ -106,7 +111,16 @@ export class NotificationsService {
   }
 
   createSiigoProductUpdate(product: Product, changes: ProductUpdateChanges, syncConfirmed = false) {
-    if (!changes.stock && !changes.priceCop && !changes.priceUsd && !syncConfirmed) return null;
+    if (
+      !changes.stock &&
+      !changes.priceCop &&
+      !changes.priceUsd &&
+      !changes.priceMxn &&
+      !changes.priceEur &&
+      !syncConfirmed
+    ) {
+      return null;
+    }
 
     return this.create({
       type: 'SIIGO_PRODUCT_UPDATED',
@@ -175,12 +189,22 @@ export class NotificationsService {
     }
     if (changes.priceCop) {
       details.push(
-        `Precio COP $${compactNumber.format(changes.priceCop.previous)} ➝ $${compactNumber.format(changes.priceCop.current)}`,
+        `Precio COP ${priceText(changes.priceCop.previous)} ➝ ${priceText(changes.priceCop.current)}`,
       );
     }
     if (changes.priceUsd) {
       details.push(
-        `Precio USD $${compactNumber.format(changes.priceUsd.previous)} ➝ $${compactNumber.format(changes.priceUsd.current)}`,
+        `Precio USD ${priceText(changes.priceUsd.previous)} ➝ ${priceText(changes.priceUsd.current)}`,
+      );
+    }
+    if (changes.priceMxn) {
+      details.push(
+        `Precio MXN ${priceText(changes.priceMxn.previous)} ➝ ${priceText(changes.priceMxn.current)}`,
+      );
+    }
+    if (changes.priceEur) {
+      details.push(
+        `Precio EUR ${priceText(changes.priceEur.previous)} ➝ ${priceText(changes.priceEur.current)}`,
       );
     }
     if (includeSyncStatus && changes.syncStatus) {

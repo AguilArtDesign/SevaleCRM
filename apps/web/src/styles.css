@@ -1625,6 +1625,77 @@ select {
   gap: 0;
 }
 
+/* El precio principal y el botón de monedas van en la misma línea: la columna se lee de un vistazo. */
+.inventory-price-cell {
+  grid-template-columns: auto auto;
+  align-items: center;
+  justify-content: start;
+  gap: 0.35rem;
+}
+
+.inventory-currency-trigger {
+  width: 1.5rem;
+  min-width: 1.5rem;
+  height: 1.5rem;
+  color: var(--muted);
+}
+
+.inventory-currency-list {
+  display: grid;
+  gap: 0.15rem;
+  margin: 0;
+}
+
+.inventory-currency-list > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.3rem 0;
+}
+
+.inventory-currency-list dt {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.inventory-currency-list dt img {
+  width: 1.15rem;
+  height: 0.8rem;
+  border-radius: 0.2rem;
+  object-fit: cover;
+}
+
+/* Sin bandera propia: la insignia con el símbolo distingue el euro sin inventar un país. */
+.inventory-currency-euro {
+  display: grid;
+  width: 1.15rem;
+  height: 0.8rem;
+  place-items: center;
+  color: var(--foreground);
+  background: var(--surface-secondary);
+  border-radius: 0.2rem;
+  font-size: 0.62rem;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.inventory-currency-list dd {
+  margin: 0;
+  color: var(--foreground);
+  font-size: 0.82rem;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.inventory-currency-empty {
+  color: var(--muted);
+  font-weight: 400;
+}
+
 .product-detail-product span {
   font-size: 0.75rem;
 }

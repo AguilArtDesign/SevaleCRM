@@ -80,6 +80,22 @@ La ruta `/inventory` consulta los productos almacenados en la base de datos loca
 
 El listado y el detalle siempre leen la tabla local. Las conexiones externas se activan únicamente cuando un administrador abre el flujo de vinculación y busca un SKU.
 
+## Monedas del producto
+
+Cada producto guarda cuatro precios por cada lado —Siigo y WooCommerce—: **COP**, **USD**, **MXN** y **EUR**. COP y USD son obligatorios; MXN y EUR son opcionales porque Siigo puede no publicar esas listas y las filas anteriores no los tenían (`siigo_price_mxn`, `siigo_price_eur`, `woo_price_mxn`, `woo_price_eur`, todos `DECIMAL(14,2) NULL`).
+
+En la tabla el precio principal es COP y un botón junto a él abre las cuatro monedas con su bandera. El detalle compara las cuatro entre Siigo y WooCommerce y marca con un triángulo las que no coinciden.
+
+El estado de sincronización compara **las cuatro monedas y el stock**: coinciden los cuatro precios y las unidades, o el producto queda desactualizado. Un nulo contra un nulo cuenta como igual; un nulo contra un número es una diferencia, que es justo lo que pasa cuando Siigo ya tiene MXN y la tienda todavía no.
+
+`_regular_price_wmcp` guarda las monedas adicionales en el mismo meta serializado de la tienda:
+
+```json
+[{ "key": "_regular_price_wmcp", "value": "{\"USD\":\"50\",\"MXN\":\"847\",\"EUR\":\"45\"}" }]
+```
+
+Mientras una moneda no exista, su clave se omite en lugar de enviarse vacía.
+
 ## Vinculación de productos
 
 El botón **Vincular producto**, visible solo para administradores, consulta `GET /api/products/link-preview?sku=SKU`. La API comprueba primero que el SKU no esté vinculado, después exige que exista en Siigo y exactamente en una de las tiendas Seratus o Pali. La vista previa devuelve solamente los campos normalizados necesarios para comparar nombre, imagen, SKU, precios, stock, tienda y estado.
@@ -121,6 +137,21 @@ El token necesita permiso de lectura y escritura sobre el bucket. La URL públic
 La importación de inventario está detrás de `PRODUCT_IMPORT_ENABLED`, una variable independiente de la de prospectos para poder apagar una sin la otra. Con el valor `false` los tres endpoints (`GET /api/products/import/status`, `POST /api/products/import/preview` y `POST /api/products/import`) responden `404` con el código `PRODUCT_IMPORT_DISABLED`, y el botón **Importar CSV** desaparece del panel.
 
 El archivo exige catorce columnas con un orden fijo, porque refleja la unión de Siigo y WooCommerce y no lo escribe una persona.
+
+### CSV de monedas MXN y EUR
+
+El mismo modal y los mismos endpoints aceptan un segundo formato para cargar solo las monedas nuevas. Se reconoce por la cabecera, que tiene que ser exactamente esta:
+
+```csv
+sku,siigo_price_mxn,siigo_price_eur
+15005-VERDE-S,847,45
+```
+
+- Los SKU deben existir en `products.sku` (se comparan sin distinguir mayúsculas). Un SKU que no existe **se omite**: no se crea el producto, porque sin los datos de las tiendas la fila quedaría incompleta.
+- COP y USD no se tocan; la vista previa informa cuántas filas se van a actualizar y cuántos SKU se omiten.
+- No fuerza el estado: actualiza los precios y recalcula `sync_status` con la misma comparación de las cuatro monedas. Mientras WooCommerce no tenga MXN ni EUR, los productos quedan **desactualizados**, que es lo esperado hasta sincronizarlos a mano o hasta que n8n confirme los valores.
+- No modifica `last_check_at`, que registra la comprobación con Siigo y no una carga manual.
+- Una cabecera que no coincida con ninguno de los dos formatos devuelve `400 INVALID_CSV_HEADERS` indicando las columnas aceptadas.
 
 ## Importación de prospectos
 
@@ -208,11 +239,24 @@ El payload aceptado es estricto y normalizado:
   "sku": "18002",
   "siigo_price_cop": 45000,
   "siigo_price_usd": 30,
-  "siigo_stock": 116
+  "siigo_price_mxn": 847,
+  "siigo_price_eur": 45,
+  "siigo_stock": 116,
+  "woo_sync": {
+    "success": true,
+    "store": "SERATUS",
+    "price_cop": 45000,
+    "price_usd": 30,
+    "price_mxn": 847,
+    "price_eur": 45,
+    "stock": 116
+  }
 }
 ```
 
-La API busca el enlace por `siigo_id`, comprueba que el SKU coincida, actualiza exclusivamente precio COP, precio USD y stock de Siigo, registra `last_check_at` y recalcula `sync_status` contra los valores WooCommerce almacenados. La respuesta incluye únicamente el producto normalizado y los cambios reales detectados. No se modifican las tiendas externas.
+`siigo_price_mxn`, `siigo_price_eur`, `price_mxn` y `price_eur` son **opcionales**: un n8n que todavía no los envía sigue funcionando y el producto conserva lo que ya tenía guardado en esas columnas. El resto del contrato es estricto y una clave desconocida devuelve `400`.
+
+La API busca el enlace por `siigo_id`, comprueba que el SKU coincida, actualiza los precios de Siigo y el stock, registra `last_check_at` y recalcula `sync_status` comparando las cuatro monedas y el stock contra los valores WooCommerce almacenados. La respuesta incluye únicamente el producto normalizado y los cambios reales detectados. No se modifican las tiendas externas.
 
 `N8N_API_KEY` debe existir solo en el entorno del backend y en la credencial correspondiente de n8n. Este endpoint no utiliza sesiones de usuario.
 
@@ -231,7 +275,7 @@ product.sync.status_changed
 notification.created
 ```
 
-La creación de un enlace emite `product.created`. Las actualizaciones recibidas desde n8n emiten `product.updated` y los eventos específicos correspondientes a los cambios reales. En el frontend, esos avisos invalidan las consultas de TanStack Query para que REST vuelva a cargar el estado vigente. Cada notificación persistida emite además `notification.created`.
+La creación de un enlace emite `product.created`. Las actualizaciones recibidas desde n8n emiten `product.updated` y los eventos específicos correspondientes a los cambios reales; `product.price.updated` lleva las cuatro monedas (`priceCop`, `priceUsd`, `priceMxn`, `priceEur`), y se emite cuando cambia cualquiera de ellas. En el frontend, esos avisos invalidan las consultas de TanStack Query para que REST vuelva a cargar el estado vigente. Cada notificación persistida emite además `notification.created`.
 
 ## Notificaciones
 

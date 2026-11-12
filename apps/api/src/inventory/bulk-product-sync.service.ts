@@ -14,6 +14,7 @@ import {
 } from '../generated/prisma/client.js';
 import { WooCommerceService } from '../integrations/woocommerce/woocommerce.service.js';
 import { RealtimeGateway } from '../realtime/realtime.gateway.js';
+import { decimalOrNull } from './product-prices.js';
 
 const BATCH_SIZE = 25;
 const BATCH_CONCURRENCY = 2;
@@ -93,6 +94,8 @@ export class BulkProductSyncService implements OnApplicationBootstrap {
             wooProductId: product.wooVariationId!,
             priceCop: product.siigoPriceCop,
             priceUsd: product.siigoPriceUsd,
+            priceMxn: product.siigoPriceMxn,
+            priceEur: product.siigoPriceEur,
             stock: product.siigoStock,
           })),
         });
@@ -204,6 +207,8 @@ export class BulkProductSyncService implements OnApplicationBootstrap {
           productId: item.wooProductId.toString(),
           priceCop: Number(item.priceCop),
           priceUsd: Number(item.priceUsd),
+          priceMxn: decimalOrNull(item.priceMxn),
+          priceEur: decimalOrNull(item.priceEur),
           stock: item.stock,
         })),
       });
@@ -226,6 +231,8 @@ export class BulkProductSyncService implements OnApplicationBootstrap {
       data: {
         wooPriceCop: item.priceCop,
         wooPriceUsd: item.priceUsd,
+        wooPriceMxn: item.priceMxn,
+        wooPriceEur: item.priceEur,
         wooStock: item.stock,
         syncStatus: SyncStatus.SYNCED,
         lastSyncAt: new Date(),

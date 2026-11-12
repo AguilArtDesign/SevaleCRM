@@ -13,6 +13,7 @@ import {
 } from '../integrations/woocommerce/woocommerce.service.js';
 import { ProductsRepository } from './products.repository.js';
 import { serializeProduct } from './products.service.js';
+import { decimalOrNull, pricesAndStockMatch } from './product-prices.js';
 import { RealtimeGateway } from '../realtime/realtime.gateway.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
 
@@ -43,6 +44,8 @@ function requiredDataIssues(siigo: SiigoProduct, store: WooCommerceProduct): str
   if (store.priceUsd === null) issues.push('WooCommerce no devolvió un precio USD válido.');
   if (store.stock === null) issues.push('WooCommerce no devolvió el stock de la variación.');
   if (!store.productName) issues.push('WooCommerce no devolvió el nombre del producto.');
+  // MXN y EUR no son requisito: la tienda puede no haberlos publicado todavía y el producto se
+  // vincula igual, con el estado en desactualizado hasta que n8n confirme los valores.
   return issues;
 }
 
@@ -52,11 +55,7 @@ function calculateSyncStatus(
   issues: string[],
 ): SyncStatus {
   if (issues.length > 0) return 'ERROR';
-  return siigo.priceCop === store.priceCop &&
-    siigo.priceUsd === store.priceUsd &&
-    siigo.stock === store.stock
-    ? 'SYNCED'
-    : 'OUT_OF_SYNC';
+  return pricesAndStockMatch(siigo, store, siigo.stock, store.stock) ? 'SYNCED' : 'OUT_OF_SYNC';
 }
 
 function isUniqueConstraintError(error: unknown): boolean {
@@ -68,14 +67,24 @@ function isUniqueConstraintError(error: unknown): boolean {
   );
 }
 
-function numericChange(previous: number, current: number) {
+function numericChange(
+  previous: number,
+  current: number,
+): { previous: number; current: number } | null;
+function numericChange(
+  previous: number | null,
+  current: number | null,
+): { previous: number | null; current: number | null } | null;
+function numericChange(previous: number | null, current: number | null) {
   return previous === current ? null : { previous, current };
 }
 
 function productChanges(previous: Product, preview: ProductLinkPreview) {
   return {
-    priceCop: numericChange(Number(previous.siigoPriceCop), preview.siigo.priceCop as number),
-    priceUsd: numericChange(Number(previous.siigoPriceUsd), preview.siigo.priceUsd as number),
+    priceCop: numericChange(decimalOrNull(previous.siigoPriceCop), preview.siigo.priceCop),
+    priceUsd: numericChange(decimalOrNull(previous.siigoPriceUsd), preview.siigo.priceUsd),
+    priceMxn: numericChange(decimalOrNull(previous.siigoPriceMxn), preview.siigo.priceMxn),
+    priceEur: numericChange(decimalOrNull(previous.siigoPriceEur), preview.siigo.priceEur),
     stock: numericChange(previous.siigoStock, preview.siigo.stock),
     syncStatus:
       previous.syncStatus === preview.syncStatus
@@ -184,6 +193,8 @@ export class ProductLinkService {
         sku: siigo.sku,
         siigoPriceCop: siigo.priceCop,
         siigoPriceUsd: siigo.priceUsd,
+        siigoPriceMxn: siigo.priceMxn,
+        siigoPriceEur: siigo.priceEur,
         siigoStock: siigo.stock,
         store: store.store,
         wooParentId: BigInt(store.parentId),
@@ -191,6 +202,8 @@ export class ProductLinkService {
         wooSku: store.sku,
         wooPriceCop: store.priceCop,
         wooPriceUsd: store.priceUsd,
+        wooPriceMxn: store.priceMxn,
+        wooPriceEur: store.priceEur,
         wooStock: store.stock,
         syncStatus: preview.syncStatus,
         lastCheckAt: new Date(),
@@ -251,6 +264,8 @@ export class ProductLinkService {
       sku: siigo.sku,
       siigoPriceCop: siigo.priceCop,
       siigoPriceUsd: siigo.priceUsd,
+      siigoPriceMxn: siigo.priceMxn,
+      siigoPriceEur: siigo.priceEur,
       siigoStock: siigo.stock,
       store: store.store,
       wooParentId: BigInt(store.parentId),
@@ -258,6 +273,8 @@ export class ProductLinkService {
       wooSku: store.sku,
       wooPriceCop: store.priceCop,
       wooPriceUsd: store.priceUsd,
+      wooPriceMxn: store.priceMxn,
+      wooPriceEur: store.priceEur,
       wooStock: store.stock,
       syncStatus: preview.syncStatus,
       lastCheckAt: new Date(),

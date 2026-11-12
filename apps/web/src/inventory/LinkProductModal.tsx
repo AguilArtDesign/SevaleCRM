@@ -40,47 +40,46 @@ function nullableCurrency(value: number | null): string {
   return value === null ? 'Sin dato' : `$${currencyNumber.format(value)}`;
 }
 
-function nullableUsd(value: number | null): string {
-  return value === null ? 'Sin dato' : `$${currencyNumber.format(value)}`;
-}
-
 function nullableStock(value: number | null): string {
   return value === null ? 'Sin dato' : currencyNumber.format(value);
 }
 
+const sourcePrices = [
+  { code: 'COP', key: 'priceCop' },
+  { code: 'USD', key: 'priceUsd' },
+  { code: 'MXN', key: 'priceMxn' },
+  { code: 'EUR', key: 'priceEur' },
+] as const;
+
+type SourcePriceKey = (typeof sourcePrices)[number]['key'];
+
 function SourcePanel({
   title,
   source,
-  priceCop,
-  priceUsd,
+  prices,
   stock,
   mismatches,
 }: {
   title: string;
   source: 'siigo' | 'pali' | 'seratus';
-  priceCop: number | null;
-  priceUsd: number | null;
+  prices: Record<SourcePriceKey, number | null>;
   stock: number | null;
-  mismatches?: Partial<Record<'stock' | 'priceCop' | 'priceUsd', boolean>>;
+  mismatches?: Partial<Record<'stock' | SourcePriceKey, boolean>>;
 }) {
   return (
     <section className={`product-source-${source}`}>
       <span>{title}</span>
       <dl>
-        <div>
-          <dt>Precio COP</dt>
-          <dd>
-            <SourceValue hasMismatch={mismatches?.priceCop}>
-              {nullableCurrency(priceCop)}
-            </SourceValue>
-          </dd>
-        </div>
-        <div>
-          <dt>Precio USD</dt>
-          <dd>
-            <SourceValue hasMismatch={mismatches?.priceUsd}>{nullableUsd(priceUsd)}</SourceValue>
-          </dd>
-        </div>
+        {sourcePrices.map(({ code, key }) => (
+          <div key={code}>
+            <dt>Precio {code}</dt>
+            <dd>
+              <SourceValue hasMismatch={mismatches?.[key]}>
+                {nullableCurrency(prices[key])}
+              </SourceValue>
+            </dd>
+          </div>
+        ))}
         <div>
           <dt>Stock</dt>
           <dd>
@@ -159,19 +158,29 @@ function Preview({ preview }: { preview: ProductLinkPreview }) {
         <SourcePanel
           title="Siigo"
           source="siigo"
-          priceCop={preview.siigo.priceCop}
-          priceUsd={preview.siigo.priceUsd}
+          prices={{
+            priceCop: preview.siigo.priceCop,
+            priceUsd: preview.siigo.priceUsd,
+            priceMxn: preview.siigo.priceMxn,
+            priceEur: preview.siigo.priceEur,
+          }}
           stock={preview.siigo.stock}
         />
         <SourcePanel
           title="WooCommerce"
           source={preview.store.store.toLowerCase() as 'pali' | 'seratus'}
-          priceCop={preview.store.priceCop}
-          priceUsd={preview.store.priceUsd}
+          prices={{
+            priceCop: preview.store.priceCop,
+            priceUsd: preview.store.priceUsd,
+            priceMxn: preview.store.priceMxn,
+            priceEur: preview.store.priceEur,
+          }}
           stock={preview.store.stock}
           mismatches={{
             priceCop: preview.store.priceCop !== preview.siigo.priceCop,
             priceUsd: preview.store.priceUsd !== preview.siigo.priceUsd,
+            priceMxn: preview.store.priceMxn !== preview.siigo.priceMxn,
+            priceEur: preview.store.priceEur !== preview.siigo.priceEur,
             stock: preview.store.stock !== preview.siigo.stock,
           }}
         />
