@@ -404,6 +404,9 @@ try {
   if (
     seratusPayload?.customer_id !== 501 ||
     paliPayload?.customer_id !== 601 ||
+    // La moneda de la operación viaja tal cual a la tienda, sin conversión.
+    seratusPayload?.currency !== 'COP' ||
+    paliPayload?.currency !== 'COP' ||
     seratusItems?.[0]?.product_id !== 7000 ||
     seratusItems?.[0]?.variation_id !== 7001 ||
     paliItems?.[0]?.product_id !== 8001 ||

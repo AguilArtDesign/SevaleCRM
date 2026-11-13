@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { Alert, Button, Modal, Spinner, Table } from '@heroui/react';
 import { ArrowUpRightFromSquare, PaperPlane } from '@gravity-ui/icons';
+import { orderCurrency } from '@sevale/shared';
 import { Chip } from '../components/Chip';
 import { ordersApi, type SiigoQuotationPreviewRecord } from './api';
 import { formattedDate, formattedMoneyWithCode } from './presentation';
@@ -70,7 +71,8 @@ function payablePrice(item: PreviewItem): number {
 
 /**
  * Antes de enviar nada a Siigo se muestra exactamente lo que se va a cotizar: cliente, vendedor,
- * productos de todas las tiendas de la operación y, en dólares, la TRM que exige el comprobante.
+ * productos de todas las tiendas de la operación y, en moneda extranjera, la tasa de cambio que
+ * exige el comprobante.
  */
 export function SiigoQuotationModal({
   isOpen,
@@ -144,9 +146,7 @@ export function SiigoQuotationModal({
                       <img src="/img/siigo.svg" alt="Siigo" />
                       <Chip className="siigo-quotation-currency" color="default">
                         <img
-                          src={
-                            preview.currency === 'USD' ? '/img/flags/US.webp' : '/img/flags/CO.webp'
-                          }
+                          src={orderCurrency(preview.currency)?.flag ?? '/img/flags/CO.webp'}
                           alt=""
                           aria-hidden="true"
                         />
@@ -203,11 +203,11 @@ export function SiigoQuotationModal({
                             : preview.seller.name || '—'}
                         </dd>
                       </div>
-                      {/* Solo en dólares: Siigo exige la tasa de cambio en el comprobante. En pesos
-                          no hay TRM que mostrar y la celda quedaría vacía. */}
+                      {/* Solo en moneda extranjera: Siigo exige la tasa de cambio en el
+                          comprobante. En pesos no hay tasa que mostrar. */}
                       {preview.exchangeRate.required && (
                         <div>
-                          <dt>TRM</dt>
+                          <dt>{preview.currency === 'USD' ? 'TRM' : 'Tasa de cambio'}</dt>
                           <dd>{exchangeRateLabel(preview)}</dd>
                         </div>
                       )}

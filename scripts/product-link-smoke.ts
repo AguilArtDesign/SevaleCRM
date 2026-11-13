@@ -19,18 +19,38 @@ function recordRequest(sku: string | null) {
 }
 
 function siigoProduct(sku: string) {
+  // Un proveedor puede separar un grupo por moneda en lugar de mezclar las listas en el de pesos:
+  // el segundo formato cubre ese caso, sin nombres ISO en las listas.
+  const separated = sku.startsWith('LINK-GROUPS-');
   return {
     id: `siigo-${sku}`,
     code: sku,
     name: `Producto ${sku}`,
     available_quantity: 12,
-    prices: [
-      { currency_code: 'COP', price_list: [{ name: 'PESOS', value: 87500 }] },
-      { currency_code: 'USD', price_list: [{ name: 'DOLAR', value: 21.75 }] },
-      // MXN y EUR se resuelven por código de moneda: Siigo no siempre nombra esas listas.
-      { currency_code: 'MXN', price_list: [{ name: 'PRECIO MEXICO', value: 847 }] },
-      { currency_code: 'EUR', price_list: [{ name: 'PRECIO EUROPA', value: 45 }] },
-    ],
+    // Forma real de Siigo: todas las listas conviven en el grupo de pesos y cada una se llama por
+    // su código ISO o por un nombre propio. Era el caso que dejaba MXN y EUR en «sin dato».
+    prices: separated
+      ? [
+          { currency_code: 'COP', price_list: [{ position: 1, name: 'PESOS', value: 87500 }] },
+          { currency_code: 'USD', price_list: [{ position: 1, name: 'DOLAR', value: 21.75 }] },
+          {
+            currency_code: 'MXN',
+            price_list: [{ position: 1, name: 'PRECIO MEXICO', value: 847 }],
+          },
+          { currency_code: 'EUR', price_list: [{ position: 1, name: 'PRECIO EUROPA', value: 45 }] },
+        ]
+      : [
+          {
+            currency_code: 'COP',
+            price_list: [
+              { position: 1, name: 'PESOS', value: 87500 },
+              { position: 2, name: 'DOLAR', value: 21.75 },
+              { position: 3, name: 'MAYORISTA', value: 70000 },
+              { position: 4, name: 'EUR', value: 45 },
+              { position: 5, name: 'MXN', value: 847 },
+            ],
+          },
+        ],
   };
 }
 
@@ -69,7 +89,10 @@ const upstream = createServer((request, response) => {
   const store = url.pathname.includes('/seratus/') ? 'seratus' : 'pali';
   let products: unknown[] = [];
   if (
-    (sku === 'LINK-OK' || sku === 'LINK-CAFÉ' || sku?.startsWith('LINK-DUP-')) &&
+    (sku === 'LINK-OK' ||
+      sku === 'LINK-CAFÉ' ||
+      sku?.startsWith('LINK-DUP-') ||
+      sku?.startsWith('LINK-GROUPS-')) &&
     store === 'pali'
   ) {
     const product = wooProduct(sku, store);
@@ -426,6 +449,26 @@ try {
     throw new Error('El enlace no guardó los precios MXN y EUR de Siigo y WooCommerce.');
   }
 
+  // El otro formato de Siigo: un grupo de precio por moneda, con nombres que no son el código ISO.
+  const groupedResponse = await api('/api/products/link-preview?sku=LINK-GROUPS-1', adminCookie);
+  expectStatus(groupedResponse, 200, 'Vista previa con grupos por moneda');
+  const grouped = (await groupedResponse.json()) as {
+    siigo: {
+      priceCop: number | null;
+      priceUsd: number | null;
+      priceMxn: number | null;
+      priceEur: number | null;
+    };
+  };
+  if (
+    grouped.siigo.priceCop !== 87500 ||
+    grouped.siigo.priceUsd !== 21.75 ||
+    grouped.siigo.priceMxn !== 847 ||
+    grouped.siigo.priceEur !== 45
+  ) {
+    throw new Error('Las monedas no se resolvieron cuando Siigo separa un grupo por moneda.');
+  }
+
   const requestsBeforeConflict = externalRequests.get('LINK-OK') ?? 0;
   expectStatus(
     await api('/api/products', adminCookie, {
@@ -446,7 +489,7 @@ try {
   }
 
   process.stdout.write(
-    'Product link smoke: auth, RBAC, linked-product refresh, early duplicate creation stop, three-source validation, mismatches, normalized preview and safe creation checks passed.\n',
+    'Product link smoke: auth, RBAC, linked-product refresh, early duplicate creation stop, three-source validation, mismatches, per-currency price resolution in both Siigo shapes, normalized preview and safe creation checks passed.\n',
   );
 } finally {
   if (createdProductIds.length > 0) {

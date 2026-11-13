@@ -332,8 +332,41 @@ deshabilita el selector cuando se está editando y la API rechaza el intento con
 }
 ```
 
-El umbral de envío depende de la moneda, así que una operación que necesite USD debe crearse en USD
-desde el principio.
+Se admiten cuatro monedas: **COP**, **USD**, **MXN** y **EUR**. El catálogo vive en
+`packages/shared/src/order-currencies.ts` junto al campo del producto que guarda cada precio
+(`wooPriceCop`, `wooPriceUsd`, `wooPriceMxn`, `wooPriceEur`), y el formulario, la API y la cotización
+lo leen de ahí.
+
+El umbral de envío depende de la moneda, así que una operación que necesite EUR debe crearse en EUR
+desde el principio:
+
+| Moneda | Envío gratis desde | Precio fijo por debajo |
+| ------ | ------------------ | ---------------------- |
+| COP    | 100.000            | 16.000                 |
+| USD    | 100                | 20                     |
+| MXN    | 1.500              | 300                    |
+| EUR    | 100                | 20                     |
+
+El umbral se compara en la unidad de la moneda y es inclusivo: un subtotal exactamente igual al
+mínimo activa el envío gratis.
+
+`wooPriceMxn` y `wooPriceEur` son opcionales en el inventario, así que un producto sin precio en la
+moneda elegida no se puede vender en ella. La API lo rechaza con `400` y el código
+`ORDER_ITEM_PRICE_NOT_AVAILABLE`; el formulario lo bloquea antes de enviar y no deja añadir el
+producto desde el buscador.
+
+### Regla de la tasa de cambio
+
+Siigo exige `exchange_rate` en las cotizaciones que no son en pesos, así que una operación en USD,
+MXN o EUR necesita la tasa del día. Se consulta a **dolarapi**
+(`https://co.dolarapi.com/v1/cotizaciones/{usd|mxn|eur}`) y se toma **`ultimoCierre`**, con caché de
+una hora por moneda. Si la fuente falla, la cotización queda rechazada con
+`EXCHANGE_RATE_UNAVAILABLE` en lugar de enviarse con una tasa inventada; la operación sigue existiendo
+y se puede reintentar.
+
+Para USD el valor **no es la TRM oficial** de la Superfinanciera sino el último cierre del mercado:
+es la referencia pactada con el negocio, y conviene tenerlo en cuenta al conciliar. La variable que
+elige la fuente es `EXCHANGE_RATE_API_URL`; la anterior `TRM_API_URL` quedó sin efecto.
 
 ### Regla del envío
 

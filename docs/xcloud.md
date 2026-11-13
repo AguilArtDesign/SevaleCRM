@@ -35,55 +35,55 @@ Todas se configuran en xCloud; no crear ni subir `.env` de producción.
 
 El archivo `.env.production.example` contiene únicamente placeholders y sirve como checklist. No debe renombrarse y completarse dentro del repositorio; los valores reales se cargan directamente en el panel de variables de xCloud.
 
-| Variable                                                       | Requerida             | Uso                                                   |
-| -------------------------------------------------------------- | --------------------- | ----------------------------------------------------- |
-| `NODE_ENV=production`                                          | Sí                    | Activa cookies seguras y validaciones de producción.  |
-| `PORT`                                                         | Sí                    | Puerto asignado por la plataforma.                    |
-| `TRUST_PROXY`                                                  | Sí                    | Confianza explícita en el proxy inverso.              |
-| `FRONTEND_URL`                                                 | Sí                    | Origen HTTPS autorizado.                              |
-| `BETTER_AUTH_URL`                                              | Sí                    | URL HTTPS pública de autenticación.                   |
-| `DATABASE_URL`                                                 | Sí                    | Conexión MySQL de producción con contraseña.          |
-| `BETTER_AUTH_SECRET`                                           | Sí                    | Secreto aleatorio de al menos 32 caracteres.          |
-| `VITE_TURNSTILE_SITE_KEY`                                      | Sí                    | Clave pública real incluida durante el build.         |
-| `TURNSTILE_SECRET_KEY`                                         | Sí                    | Clave privada real, solo backend.                     |
-| `SMTP_HOST`                                                    | Sí                    | Servidor de correo para OTP.                          |
-| `SMTP_PORT`                                                    | Sí                    | Puerto SMTP.                                          |
-| `SMTP_SECURE`                                                  | Sí                    | `false` para STARTTLS/587; `true` para TLS/465.       |
-| `SMTP_USER`                                                    | Sí                    | Usuario SMTP.                                         |
-| `SMTP_PASSWORD`                                                | Sí                    | Credencial SMTP privada.                              |
-| `SMTP_FROM`                                                    | Sí                    | Remitente de los códigos OTP.                         |
-| `SIIGO_API_URL`                                                | Sí                    | Base HTTPS de Siigo.                                  |
-| `SIIGO_USERNAME`                                               | Sí                    | Usuario de autenticación Siigo.                       |
-| `SIIGO_ACCESS_KEY`                                             | Sí                    | Credencial privada Siigo.                             |
-| `SIIGO_PARTNER_ID`                                             | Sí                    | Identificador requerido por Siigo.                    |
-| `SIIGO_QUOTATION_DOCUMENT_ID`                                  | No                    | Comprobante de cotización; por defecto `8652`.        |
-| `SIIGO_COST_CENTER_ID`                                         | No                    | Centro de costo de la cotización; por defecto `1388`. |
-| `SIIGO_QUOTATION_CLOSED_FROM`                                  | No                    | Desde qué día se cotizan los pedidos completados.     |
-| `TRM_API_URL`                                                  | No                    | Fuente de la TRM; solo se usa al cotizar en dólares.  |
-| `SERATUS_API_URL`                                              | Sí                    | Base HTTPS de WooCommerce Seratus.                    |
-| `WOOCOMMERCE_SERATUS_CK`                                       | Sí                    | Consumer key privada.                                 |
-| `WOOCOMMERCE_SERATUS_CS`                                       | Sí                    | Consumer secret privado.                              |
-| `PALI_API_URL`                                                 | Sí                    | Base HTTPS de WooCommerce Pali.                       |
-| `WOOCOMMERCE_PALI_CK`                                          | Sí                    | Consumer key privada.                                 |
-| `WOOCOMMERCE_PALI_CS`                                          | Sí                    | Consumer secret privado.                              |
-| `WOOCOMMERCE_USERNAME`                                         | Sí                    | Usuario de WordPress del endpoint propio de Sevale.   |
-| `SERATUS_PASSWORD`                                             | Sí                    | Contraseña del endpoint propio en Seratus.            |
-| `PALI_PASSWORD`                                                | Sí                    | Contraseña del endpoint propio en Pali.               |
-| `N8N_API_KEY`                                                  | Sí                    | API key aleatoria de al menos 32 caracteres.          |
-| `INITIAL_ADMIN_EMAIL`                                          | Solo seed inicial     | Correo del administrador inicial.                     |
-| `INITIAL_ADMIN_PASSWORD`                                       | Opcional y temporal   | Contraseña inicial; retirarla después del seed.       |
-| `PCO_BASE_URL`                                                 | Para usar el panel    | Base del portal de aliados de Puntos Colombia.        |
-| `PCO_CLIENT_ID`                                                | Para usar el panel    | Credencial de la tokenización. Secreto.               |
-| `PCO_CLIENT_SECRET`                                            | Para usar el panel    | Credencial de la tokenización. Secreto.               |
-| `PCO_PARTNER_CODE`                                             | Para usar el panel    | NIT de la empresa en el programa.                     |
-| `PCO_LOCATION_CODE`                                            | Para usar el panel    | Código del punto de venta.                            |
-| `PCO_CA_CHANNEL`                                               | No                    | Canal informado al proveedor; por defecto `V`.        |
-| `PCO_REMOTE_IPV4`                                              | No                    | IP de salida informada al proveedor.                  |
-| `PCO_TERMINAL_ID`                                              | No                    | Terminal de las transacciones; `PCAliados-01`.        |
-| `PCO_CASHIER_ID`                                               | No                    | Cajero de las transacciones.                          |
-| `PCO_ADMIN_ONLY`                                               | No                    | Cierra el panel a los no administradores.             |
-| `VITE_API_URL`                                                 | No en un solo dominio | URL pública de API para una topología separada.       |
-| `REDIS_HOST`, `REDIS_PORT`, `REDIS_USERNAME`, `REDIS_PASSWORD` | No                    | Reservadas; V1 no utiliza Redis.                      |
+| Variable                                                       | Requerida             | Uso                                                      |
+| -------------------------------------------------------------- | --------------------- | -------------------------------------------------------- |
+| `NODE_ENV=production`                                          | Sí                    | Activa cookies seguras y validaciones de producción.     |
+| `PORT`                                                         | Sí                    | Puerto asignado por la plataforma.                       |
+| `TRUST_PROXY`                                                  | Sí                    | Confianza explícita en el proxy inverso.                 |
+| `FRONTEND_URL`                                                 | Sí                    | Origen HTTPS autorizado.                                 |
+| `BETTER_AUTH_URL`                                              | Sí                    | URL HTTPS pública de autenticación.                      |
+| `DATABASE_URL`                                                 | Sí                    | Conexión MySQL de producción con contraseña.             |
+| `BETTER_AUTH_SECRET`                                           | Sí                    | Secreto aleatorio de al menos 32 caracteres.             |
+| `VITE_TURNSTILE_SITE_KEY`                                      | Sí                    | Clave pública real incluida durante el build.            |
+| `TURNSTILE_SECRET_KEY`                                         | Sí                    | Clave privada real, solo backend.                        |
+| `SMTP_HOST`                                                    | Sí                    | Servidor de correo para OTP.                             |
+| `SMTP_PORT`                                                    | Sí                    | Puerto SMTP.                                             |
+| `SMTP_SECURE`                                                  | Sí                    | `false` para STARTTLS/587; `true` para TLS/465.          |
+| `SMTP_USER`                                                    | Sí                    | Usuario SMTP.                                            |
+| `SMTP_PASSWORD`                                                | Sí                    | Credencial SMTP privada.                                 |
+| `SMTP_FROM`                                                    | Sí                    | Remitente de los códigos OTP.                            |
+| `SIIGO_API_URL`                                                | Sí                    | Base HTTPS de Siigo.                                     |
+| `SIIGO_USERNAME`                                               | Sí                    | Usuario de autenticación Siigo.                          |
+| `SIIGO_ACCESS_KEY`                                             | Sí                    | Credencial privada Siigo.                                |
+| `SIIGO_PARTNER_ID`                                             | Sí                    | Identificador requerido por Siigo.                       |
+| `SIIGO_QUOTATION_DOCUMENT_ID`                                  | No                    | Comprobante de cotización; por defecto `8652`.           |
+| `SIIGO_COST_CENTER_ID`                                         | No                    | Centro de costo de la cotización; por defecto `1388`.    |
+| `SIIGO_QUOTATION_CLOSED_FROM`                                  | No                    | Desde qué día se cotizan los pedidos completados.        |
+| `EXCHANGE_RATE_API_URL`                                        | No                    | Fuente de la tasa; solo al cotizar en moneda extranjera. |
+| `SERATUS_API_URL`                                              | Sí                    | Base HTTPS de WooCommerce Seratus.                       |
+| `WOOCOMMERCE_SERATUS_CK`                                       | Sí                    | Consumer key privada.                                    |
+| `WOOCOMMERCE_SERATUS_CS`                                       | Sí                    | Consumer secret privado.                                 |
+| `PALI_API_URL`                                                 | Sí                    | Base HTTPS de WooCommerce Pali.                          |
+| `WOOCOMMERCE_PALI_CK`                                          | Sí                    | Consumer key privada.                                    |
+| `WOOCOMMERCE_PALI_CS`                                          | Sí                    | Consumer secret privado.                                 |
+| `WOOCOMMERCE_USERNAME`                                         | Sí                    | Usuario de WordPress del endpoint propio de Sevale.      |
+| `SERATUS_PASSWORD`                                             | Sí                    | Contraseña del endpoint propio en Seratus.               |
+| `PALI_PASSWORD`                                                | Sí                    | Contraseña del endpoint propio en Pali.                  |
+| `N8N_API_KEY`                                                  | Sí                    | API key aleatoria de al menos 32 caracteres.             |
+| `INITIAL_ADMIN_EMAIL`                                          | Solo seed inicial     | Correo del administrador inicial.                        |
+| `INITIAL_ADMIN_PASSWORD`                                       | Opcional y temporal   | Contraseña inicial; retirarla después del seed.          |
+| `PCO_BASE_URL`                                                 | Para usar el panel    | Base del portal de aliados de Puntos Colombia.           |
+| `PCO_CLIENT_ID`                                                | Para usar el panel    | Credencial de la tokenización. Secreto.                  |
+| `PCO_CLIENT_SECRET`                                            | Para usar el panel    | Credencial de la tokenización. Secreto.                  |
+| `PCO_PARTNER_CODE`                                             | Para usar el panel    | NIT de la empresa en el programa.                        |
+| `PCO_LOCATION_CODE`                                            | Para usar el panel    | Código del punto de venta.                               |
+| `PCO_CA_CHANNEL`                                               | No                    | Canal informado al proveedor; por defecto `V`.           |
+| `PCO_REMOTE_IPV4`                                              | No                    | IP de salida informada al proveedor.                     |
+| `PCO_TERMINAL_ID`                                              | No                    | Terminal de las transacciones; `PCAliados-01`.           |
+| `PCO_CASHIER_ID`                                               | No                    | Cajero de las transacciones.                             |
+| `PCO_ADMIN_ONLY`                                               | No                    | Cierra el panel a los no administradores.                |
+| `VITE_API_URL`                                                 | No en un solo dominio | URL pública de API para una topología separada.          |
+| `REDIS_HOST`, `REDIS_PORT`, `REDIS_USERNAME`, `REDIS_PASSWORD` | No                    | Reservadas; V1 no utiliza Redis.                         |
 
 No usar las credenciales de prueba de Turnstile en producción. El backend rechaza el arranque si detecta claves de prueba, HTTP, SMTP incompleto, integraciones incompletas o secretos principales débiles.
 
@@ -94,12 +94,12 @@ Las tres primeras son opcionales porque el código trae un valor por defecto. Co
 ```env
 SIIGO_QUOTATION_DOCUMENT_ID=8652
 SIIGO_COST_CENTER_ID=1388
-TRM_API_URL=https://www.datos.gov.co/resource/32sa-8pi3.json
+EXCHANGE_RATE_API_URL=https://co.dolarapi.com/v1/cotizaciones
 ```
 
 El valor por defecto se aplica cuando la variable no existe, viene vacía o no es un entero positivo. Un valor verosímil pero equivocado, por ejemplo `865`, **no** cae al valor por defecto: se envía así y Siigo lo rechaza. Conviene copiar los valores del panel de Siigo tal cual.
 
-`TRM_API_URL` solo se consulta al cotizar en dólares. Si todas las cotizaciones son en pesos, no se usa.
+`EXCHANGE_RATE_API_URL` solo se consulta al cotizar en una moneda extranjera (USD, MXN o EUR): se le añade `/usd`, `/mxn` o `/eur` y se toma `ultimoCierre`. Si todas las cotizaciones son en pesos, no se usa. La variable anterior `TRM_API_URL` quedó sin efecto.
 
 #### Cotizar pedidos ya completados
 

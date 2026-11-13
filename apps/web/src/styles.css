@@ -4262,14 +4262,15 @@ select {
 
 .order-currency-options {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.75rem;
+  /* Las cuatro monedas en una sola fila: la elección se compara de un vistazo. */
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.5rem;
 }
 
 .order-currency-option {
   width: 100%;
   min-width: 0;
-  padding: 0.75rem;
+  padding: 0.6rem;
   background: var(--surface-secondary);
   border: 1px solid transparent;
   border-radius: var(--field-radius);
@@ -4281,30 +4282,23 @@ select {
 
 .order-currency-option .radio__content {
   width: 100%;
+  /* Solo el código: el comercial ya sabe qué moneda es cada uno y la descripción robaba alto. */
+  display: flex;
+  align-items: center;
+  column-gap: 0.55rem;
 }
 
 .order-currency-option img {
-  width: 1.5rem;
-  height: 1rem;
+  width: 1.25rem;
+  height: 0.85rem;
   object-fit: cover;
   border-radius: 0.25rem;
 }
 
-.order-currency-copy {
-  display: grid;
-  min-width: 0;
-  gap: 0.1rem;
-}
-
-.order-currency-copy strong {
+.order-currency-code {
   color: var(--foreground);
-  font-size: 0.875rem;
+  font-size: 0.8125rem;
   font-weight: 600;
-}
-
-.order-currency-copy small {
-  color: var(--muted);
-  font-size: 0.75rem;
 }
 
 /* Al editar, la moneda ya está fijada: la tarjeta elegida conserva su contraste para seguir

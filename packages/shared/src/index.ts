@@ -33,6 +33,9 @@ export type {
 
 export { splitShippingCents, toShippingCents } from './order-shipping.js';
 
+export { isForeignOrderCurrency, orderCurrencies, orderCurrency } from './order-currencies.js';
+export type { OrderCurrency, OrderCurrencyPriceField } from './order-currencies.js';
+
 export {
   isShipmentStatusCode,
   resolveShipmentStatus,

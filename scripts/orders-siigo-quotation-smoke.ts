@@ -42,17 +42,27 @@ const requestedPaths: string[] = [];
 const usersHits: number[] = [];
 const updatedQuotationIds: string[] = [];
 let createdQuotations = 0;
-const trmHits = { count: 0 };
+const trmHits = { usd: 0, mxn: 0, eur: 0 };
+
+const rateByCurrency: Record<string, number> = { usd: 3157.94, mxn: 176.55, eur: 4100.25 };
 
 const server = createServer((request, response) => {
   void (async () => {
     const url = new URL(request.url ?? '/', 'http://localhost');
     requestedPaths.push(url.pathname);
-    if (url.pathname.replace(/\/$/, '').endsWith('/trm')) {
-      trmHits.count += 1;
-      return json(response, 200, [
-        { valor: '3157.94', unidad: 'COP', vigenciadesde: '2026-10-27T00:00:00.000' },
-      ]);
+    // dolarapi: una ruta por moneda, con `ultimoCierre` como tasa.
+    const rateMatch = url.pathname.match(/\/cotizaciones\/(usd|mxn|eur)\/?$/);
+    if (rateMatch) {
+      const currency = rateMatch[1] as 'usd' | 'mxn' | 'eur';
+      trmHits[currency] += 1;
+      return json(response, 200, {
+        moneda: currency.toUpperCase(),
+        nombre: currency.toUpperCase(),
+        compra: rateByCurrency[currency],
+        venta: rateByCurrency[currency],
+        ultimoCierre: rateByCurrency[currency],
+        fechaActualizacion: '2026-10-27T00:00:00.000Z',
+      });
     }
     // Siigo no filtra `users` por id: el vendedor se busca recorriendo las páginas. La cuenta de
     // prueba informa 150 usuarios, así que el vendedor 999 solo aparece en la segunda página.
@@ -135,11 +145,11 @@ const previousEnvironment = {
   SIIGO_QUOTATION_DOCUMENT_ID: process.env.SIIGO_QUOTATION_DOCUMENT_ID,
   SIIGO_COST_CENTER_ID: process.env.SIIGO_COST_CENTER_ID,
   SIIGO_QUOTATION_CLOSED_FROM: process.env.SIIGO_QUOTATION_CLOSED_FROM,
-  TRM_API_URL: process.env.TRM_API_URL,
+  EXCHANGE_RATE_API_URL: process.env.EXCHANGE_RATE_API_URL,
 };
 process.env.SIIGO_API_URL = `http://127.0.0.1:${address.port}/v1`;
 process.env.SIIGO_PARTNER_ID = 'quotation-smoke';
-process.env.TRM_API_URL = `http://127.0.0.1:${address.port}/v1/trm`;
+process.env.EXCHANGE_RATE_API_URL = `http://127.0.0.1:${address.port}/v1/cotizaciones`;
 // Corte fijo: los pedidos del 27/10/2026 quedan por debajo, así que representan el historial.
 process.env.SIIGO_QUOTATION_CLOSED_FROM = '2026-11-03';
 delete process.env.SIIGO_QUOTATION_DOCUMENT_ID;
@@ -234,13 +244,24 @@ try {
   const siigo = new SiigoService({ getAccessToken: () => Promise.resolve('token') } as never);
   const rates = new ExchangeRateService();
 
-  // La TRM se consulta una sola vez y se reutiliza: el panel la pide en cada vista previa.
-  const rate = await rates.current();
-  const cachedRate = await rates.current();
-  assert(rate.value === 3157.94, 'La TRM no se leyó del valor publicado.');
+  // La tasa se consulta una sola vez por moneda y se reutiliza: el panel la pide en cada vista
+  // previa. Una moneda no invalida la caché de la otra.
+  const rate = await rates.current('USD');
+  const cachedRate = await rates.current('USD');
+  assert(rate.value === 3157.94, 'La tasa del dólar no se leyó de `ultimoCierre`.');
   assert(
-    cachedRate.value === 3157.94 && trmHits.count === 1,
-    'La TRM no se reutilizó desde caché.',
+    cachedRate.value === 3157.94 && trmHits.usd === 1,
+    'La tasa del dólar no se reutilizó desde caché.',
+  );
+  const mxnRate = await rates.current('MXN');
+  const eurRate = await rates.current('EUR');
+  assert(
+    mxnRate.value === 176.55 && eurRate.value === 4100.25,
+    'Las tasas de MXN y EUR no se leyeron de su propio endpoint.',
+  );
+  assert(
+    trmHits.mxn === 1 && trmHits.eur === 1,
+    'Las tasas de MXN y EUR no se cachearon por moneda.',
   );
 
   // Vista previa en pesos: el IVA se separa del precio y el porcentaje del cupón viaja igual en
@@ -343,6 +364,42 @@ try {
   );
   assert(usd.input?.exchangeRate === 3157.94, 'La TRM no viajó en la petición.');
   assert(usd.preview.exchangeRate.required, 'La TRM debe marcarse como obligatoria en dólares.');
+
+  // MXN y EUR se cotizan igual que el dólar: exportación sin IVA y con tasa de cambio propia.
+  for (const [currency, exchangeRate] of [
+    ['MXN', 176.55],
+    ['EUR', 4100.25],
+  ] as const) {
+    const withoutRate = buildQuotation(operation({ currency }), {
+      seller,
+      exchangeRate: null,
+      exchangeRateDate: null,
+    });
+    assert(
+      withoutRate.preview.issues[0]?.code === 'SIIGO_EXCHANGE_RATE_REQUIRED',
+      `La cotización en ${currency} sin tasa debería bloquearse.`,
+    );
+    const quotation = buildQuotation(
+      operation({ currency, discountTotal: { toNumber: () => 0 } }),
+      { seller, exchangeRate, exchangeRateDate: '2026-10-27T00:00:00.000' },
+    );
+    assert(
+      quotation.preview.issues.length === 0,
+      `La cotización en ${currency} no debería tener bloqueos.`,
+    );
+    assert(
+      quotation.preview.tax.id === 13882,
+      `La cotización en ${currency} debe llevar el impuesto de exportación.`,
+    );
+    assert(
+      quotation.input?.exchangeRate === exchangeRate && quotation.input.currency === currency,
+      `La tasa o el código de ${currency} no viajaron en la petición.`,
+    );
+    assert(
+      quotation.preview.exchangeRate.required,
+      `La tasa debe marcarse como obligatoria en ${currency}.`,
+    );
+  }
 
   // Bloqueos que el modal muestra antes de sincronizar.
   const unlinked = buildQuotation(
@@ -656,7 +713,7 @@ try {
   );
 
   process.stdout.write(
-    'Siigo quotation smoke: fixed document and cost center, SKU codes, per-currency taxes, tax split, per-product coupon, manual price exclusion, shipping line, TRM cache, paginated seller name fallback, open-order rule per WooCommerce status, blocking issues, discount unit, update of an already created quotation, errors and retry checks passed.\n',
+    'Siigo quotation smoke: fixed document and cost center, SKU codes, per-currency taxes, tax split, per-product coupon, manual price exclusion, shipping line, exchange rate per currency with cache, paginated seller name fallback, open-order rule per WooCommerce status, blocking issues, discount unit, update of an already created quotation, errors and retry checks passed.\n',
   );
 } finally {
   for (const [key, value] of Object.entries(previousEnvironment)) {

@@ -1,14 +1,23 @@
 import { Injectable, ServiceUnavailableException } from '@nestjs/common';
 import { integrationGet, integrationUrl } from '../integration-http.js';
 
-const defaultUrl = 'https://www.datos.gov.co/resource/32sa-8pi3.json';
-/** La TRM cambia una vez al día; una hora de caché evita consultarla en cada vista previa. */
+/**
+ * Cotizaciones de dolarapi. Cada moneda tiene su ruta y devuelve los pesos colombianos por unidad:
+ * se usa `ultimoCierre` como tasa, que es la referencia con la que se cotiza en Siigo.
+ */
+const defaultBaseUrl = 'https://co.dolarapi.com/v1/cotizaciones';
+/** La tasa cambia una vez al día; una hora de caché evita consultarla en cada vista previa. */
 const cacheLifetimeMs = 60 * 60 * 1000;
 
+export const quotedCurrencies = ['USD', 'MXN', 'EUR'] as const;
+
+export type QuotedCurrency = (typeof quotedCurrencies)[number];
+
 export type ExchangeRate = {
-  /** Pesos por dólar. */
+  currency: QuotedCurrency;
+  /** Pesos colombianos por una unidad de la moneda. */
   value: number;
-  /** Primer día de vigencia informado por la fuente. */
+  /** Momento en que la fuente actualizó la cotización. */
   validFrom: string;
 };
 
@@ -21,48 +30,65 @@ function invalidPayload() {
     success: false,
     error: {
       code: 'EXCHANGE_RATE_INVALID_RESPONSE',
-      message: 'La fuente de la TRM devolvió datos con un formato no reconocido.',
+      message: 'La fuente de la tasa de cambio devolvió datos con un formato no reconocido.',
     },
   });
 }
 
-function parseRate(payload: unknown): ExchangeRate {
-  const record = Array.isArray(payload) ? payload.find(isRecord) : payload;
-  if (!isRecord(record)) throw invalidPayload();
-  const value = Number(record.valor);
-  const validFrom = typeof record.vigenciadesde === 'string' ? record.vigenciadesde : '';
+function isQuotedCurrency(value: string): value is QuotedCurrency {
+  return (quotedCurrencies as readonly string[]).includes(value);
+}
+
+function parseRate(payload: unknown, currency: QuotedCurrency): ExchangeRate {
+  if (!isRecord(payload)) throw invalidPayload();
+  const value = Number(payload.ultimoCierre);
+  const validFrom =
+    typeof payload.fechaActualizacion === 'string' ? payload.fechaActualizacion : '';
   if (!Number.isFinite(value) || value <= 0 || !validFrom) throw invalidPayload();
-  return { value, validFrom };
+  return { currency, value, validFrom };
 }
 
 /**
- * TRM oficial publicada en datos.gov.co. Siigo exige `exchange_rate` en las cotizaciones en
- * dólares, así que se consulta al momento de cotizar en lugar de guardarla: el CRM sigue trabajando
- * con el precio en dólares del producto y esta tasa solo viaja en el documento de Siigo.
+ * Tasa de cambio de las monedas extranjeras. Siigo exige `exchange_rate` en las cotizaciones que no
+ * son en pesos, así que se consulta al momento de cotizar en lugar de guardarla: el CRM sigue
+ * trabajando con el precio en la moneda del producto y esta tasa solo viaja en el documento.
+ *
+ * La fuente es una sola para las tres monedas, con caché por moneda: una vista previa en euros no
+ * invalida la del dólar.
  */
 @Injectable()
 export class ExchangeRateService {
-  private cache: { rate: ExchangeRate; expiresAt: number } | null = null;
+  private readonly cache = new Map<QuotedCurrency, { rate: ExchangeRate; expiresAt: number }>();
 
-  async current(): Promise<ExchangeRate> {
-    if (this.cache && this.cache.expiresAt > Date.now()) return this.cache.rate;
-    const url = integrationUrl(process.env.TRM_API_URL?.trim() || defaultUrl, '');
-    url.searchParams.set('$limit', '1');
-    url.searchParams.set('$order', 'vigenciadesde DESC');
+  async current(currency: string): Promise<ExchangeRate> {
+    if (!isQuotedCurrency(currency)) {
+      throw new ServiceUnavailableException({
+        success: false,
+        error: {
+          code: 'EXCHANGE_RATE_CURRENCY_NOT_SUPPORTED',
+          message: `No hay una tasa de cambio configurada para la moneda ${currency}.`,
+        },
+      });
+    }
+    const cached = this.cache.get(currency);
+    if (cached && cached.expiresAt > Date.now()) return cached.rate;
+
+    const base = process.env.EXCHANGE_RATE_API_URL?.trim() || defaultBaseUrl;
+    const url = integrationUrl(`${base.replace(/\/$/, '')}/${currency.toLowerCase()}`, '');
     let payload: unknown;
     try {
-      payload = await integrationGet(url, {}, 'TRM');
+      payload = await integrationGet(url, {}, 'TASA DE CAMBIO');
     } catch {
       throw new ServiceUnavailableException({
         success: false,
         error: {
           code: 'EXCHANGE_RATE_UNAVAILABLE',
-          message: 'No fue posible consultar la TRM del día.',
+          message: 'No fue posible consultar la tasa de cambio del día.',
         },
       });
     }
-    const rate = parseRate(payload);
-    this.cache = { rate, expiresAt: Date.now() + cacheLifetimeMs };
+    const rate = parseRate(payload, currency);
+    this.cache.set(currency, { rate, expiresAt: Date.now() + cacheLifetimeMs });
     return rate;
   }
 }

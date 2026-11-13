@@ -133,6 +133,8 @@ try {
       wooSku: `SERATUS-${runId}`,
       wooPriceCop: 127000,
       wooPriceUsd: 150,
+      wooPriceMxn: 1800,
+      wooPriceEur: 120,
       wooStock: 10,
       syncStatus: 'SYNCED',
       productName: 'Producto Seratus Pedidos',
@@ -478,6 +480,63 @@ try {
     throw new Error('El umbral exacto USD no activó el envío gratis.');
   }
 
+  const mxnFlat = await createOrderCase('MXN 1499.99 con precio fijo', {
+    currency: 'MXN',
+    paymentMethod: 'cod',
+    shippingMethod: 'flat_rate',
+    items: [{ productId: seratus.id, quantity: 1, unitPrice: '1499.99' }],
+  });
+  if (mxnFlat.subtotal !== '1499.99' || mxnFlat.shippingTotal !== '300.00') {
+    throw new Error('La regla MXN por debajo del umbral es incorrecta.');
+  }
+
+  const mxnFree = await createOrderCase('MXN 1500 con envío gratis', {
+    currency: 'MXN',
+    paymentMethod: 'cod',
+    shippingMethod: 'free_shipping',
+    items: [{ productId: seratus.id, quantity: 1, unitPrice: '1500' }],
+  });
+  if (mxnFree.subtotal !== '1500.00' || mxnFree.shippingTotal !== '0.00') {
+    throw new Error('El umbral exacto MXN no activó el envío gratis.');
+  }
+
+  const eurFlat = await createOrderCase('EUR 99.99 con precio fijo', {
+    currency: 'EUR',
+    paymentMethod: 'cod',
+    shippingMethod: 'flat_rate',
+    items: [{ productId: seratus.id, quantity: 1, unitPrice: '99.99' }],
+  });
+  if (eurFlat.subtotal !== '99.99' || eurFlat.shippingTotal !== '20.00') {
+    throw new Error('La regla EUR por debajo del umbral es incorrecta.');
+  }
+
+  const eurFree = await createOrderCase('EUR 100 con envío gratis', {
+    currency: 'EUR',
+    paymentMethod: 'cod',
+    shippingMethod: 'free_shipping',
+    items: [{ productId: seratus.id, quantity: 1, unitPrice: '100' }],
+  });
+  if (eurFree.subtotal !== '100.00' || eurFree.shippingTotal !== '0.00') {
+    throw new Error('El umbral exacto EUR no activó el envío gratis.');
+  }
+
+  // El producto de Pali no tiene precio en pesos mexicanos: venderlo en MXN inventaría un importe.
+  const missingPriceResponse = await api('/api/orders', commercialCookie, {
+    method: 'POST',
+    body: JSON.stringify({
+      ...basePayload,
+      couponId: null,
+      currency: 'MXN',
+      shippingMethod: 'flat_rate',
+      items: [{ productId: pali.id, quantity: 1 }],
+    }),
+  });
+  expectStatus(missingPriceResponse, 400, 'Moneda sin precio en el producto');
+  const missingPrice = (await missingPriceResponse.json()) as { error?: { code?: string } };
+  if (missingPrice.error?.code !== 'ORDER_ITEM_PRICE_NOT_AVAILABLE') {
+    throw new Error('El producto sin precio en la moneda no se rechazó con su código.');
+  }
+
   expectStatus(await api(`/api/orders/${created.id}`, commercialCookie), 200, 'Detalle comercial');
   const searchResponse = await api(
     `/api/orders?search=${encodeURIComponent(seratus.sku)}&store=SERATUS&status=PENDING&page=1&pageSize=20`,
@@ -485,7 +544,7 @@ try {
   );
   expectStatus(searchResponse, 200, 'Búsqueda por SKU y tienda');
   const search = (await searchResponse.json()) as { pagination: { total: number } };
-  if (search.pagination.total !== 6) {
+  if (search.pagination.total !== 10) {
     throw new Error('El listado no encontró la operación por SKU y tienda.');
   }
 
@@ -1193,7 +1252,7 @@ try {
   }
 
   process.stdout.write(
-    'Orders smoke: payment catalogs, COP/USD shipping thresholds, custom shipping, coupon snapshots, missing coupon rejection, consolidated and per-store discounts, manual price capped at the original value, locked currency on edit, name normalization on write and on read, authentication, RBAC, list, create, pending edit and store reconciliation checks passed.\n',
+    'Orders smoke: payment catalogs, COP/USD/MXN/EUR shipping thresholds, custom shipping, coupon snapshots, missing coupon rejection, consolidated and per-store discounts, manual price capped at the original value, missing price per currency, locked currency on edit, name normalization on write and on read, authentication, RBAC, list, create, pending edit and store reconciliation checks passed.\n',
   );
 } finally {
   if (operationIds.length > 0) {

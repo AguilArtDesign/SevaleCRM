@@ -536,7 +536,7 @@ export const productImportCsvSchema = z.object({
 
 export const orderSourceSchema = z.enum(['CRM', 'WOOCOMMERCE']);
 export const operationStatusSchema = z.enum(['PENDING', 'COMPLETED', 'CANCELLED']);
-export const orderCurrencySchema = z.enum(['COP', 'USD']);
+export const orderCurrencySchema = z.enum(['COP', 'USD', 'MXN', 'EUR']);
 
 const orderMoneySchema = z
   .union([

@@ -30,6 +30,8 @@ import {
   getCustomerColombiaStates,
   getCustomerCountries,
   getCustomerWooStates,
+  orderCurrencies,
+  orderCurrency,
   paymentMethods,
   resolveCity,
   resolveCountry,
@@ -39,6 +41,7 @@ import {
   shippingMethods,
   splitShippingCents,
   toShippingCents,
+  type OrderCurrency,
 } from '@sevale/shared';
 import type { CreateOrderOperationInput } from '@sevale/validation';
 import { Input } from '../components/Input';
@@ -117,11 +120,23 @@ function fixed(value: number): string {
   return Math.max(0, value).toFixed(2);
 }
 
-function productPrice(product: ProductRecord, currency: 'COP' | 'USD'): string {
-  return fixed(currency === 'COP' ? product.wooPriceCop : product.wooPriceUsd);
+/**
+ * Precio del producto en la moneda pedida. Las monedas extranjeras pueden no estar cargadas en el
+ * inventario, así que el nulo es un caso real y no un cero: un producto sin precio en esa moneda no
+ * se puede vender en ella.
+ */
+function currencyPrice(product: ProductRecord, currency: OrderCurrency): number | null {
+  const field = orderCurrency(currency)?.priceField ?? 'wooPriceCop';
+  const value = product[field];
+  return value === null || value === undefined ? null : Math.max(0, value);
 }
 
-function formattedProductPrice(value: string | number, currency: 'COP' | 'USD'): string {
+function productPrice(product: ProductRecord, currency: OrderCurrency): string | null {
+  const value = currencyPrice(product, currency);
+  return value === null ? null : fixed(value);
+}
+
+function formattedProductPrice(value: string | number, currency: OrderCurrency): string {
   return new Intl.NumberFormat('es-CO', {
     style: 'currency',
     currency,
@@ -529,7 +544,7 @@ function ProductSearch({
   onAdd,
 }: {
   items: FormItem[];
-  currency: 'COP' | 'USD';
+  currency: OrderCurrency;
   onAdd: (product: ProductRecord) => void;
 }) {
   const [search, setSearch] = useState('');
@@ -575,43 +590,52 @@ function ProductSearch({
               <span>No encontramos productos.</span>
             )}
             {!isLoadingResults &&
-              query.data?.data.map((product) => (
-                <button
-                  key={product.id}
-                  type="button"
-                  className="order-product-result"
-                  disabled={selectedIds.has(product.id)}
-                  onClick={() => {
-                    onAdd(product);
-                    setSearch('');
-                  }}
-                >
-                  <span className="order-product-thumbnail" aria-hidden="true">
-                    {product.imageUrl ? <img src={product.imageUrl} alt="" loading="lazy" /> : '—'}
-                  </span>
-                  <span className="order-product-result-copy">
-                    <strong>{product.productName}</strong>
-                    <span className="order-product-result-details">
-                      <small>{product.sku}</small>
-                      <Chip
-                        className={
-                          product.store === 'SERATUS'
-                            ? 'inventory-store-chip-seratus'
-                            : 'inventory-store-chip-pali'
-                        }
-                      >
-                        {product.store === 'SERATUS' ? 'Seratus' : 'Pali'}
-                      </Chip>
+              query.data?.data.map((product) => {
+                const price = productPrice(product, currency);
+                return (
+                  <button
+                    key={product.id}
+                    type="button"
+                    className="order-product-result"
+                    disabled={selectedIds.has(product.id) || price === null}
+                    onClick={() => {
+                      onAdd(product);
+                      setSearch('');
+                    }}
+                  >
+                    <span className="order-product-thumbnail" aria-hidden="true">
+                      {product.imageUrl ? (
+                        <img src={product.imageUrl} alt="" loading="lazy" />
+                      ) : (
+                        '—'
+                      )}
                     </span>
-                  </span>
-                  <span className="order-product-result-meta">
-                    <strong>
-                      {formattedProductPrice(productPrice(product, currency), currency)}
-                    </strong>
-                    <small>Stock: {product.wooStock}</small>
-                  </span>
-                </button>
-              ))}
+                    <span className="order-product-result-copy">
+                      <strong>{product.productName}</strong>
+                      <span className="order-product-result-details">
+                        <small>{product.sku}</small>
+                        <Chip
+                          className={
+                            product.store === 'SERATUS'
+                              ? 'inventory-store-chip-seratus'
+                              : 'inventory-store-chip-pali'
+                          }
+                        >
+                          {product.store === 'SERATUS' ? 'Seratus' : 'Pali'}
+                        </Chip>
+                      </span>
+                    </span>
+                    <span className="order-product-result-meta">
+                      <strong>
+                        {price === null
+                          ? `Sin precio en ${currency}`
+                          : formattedProductPrice(price, currency)}
+                      </strong>
+                      <small>Stock: {product.wooStock}</small>
+                    </span>
+                  </button>
+                );
+              })}
           </div>
         </div>
       )}
@@ -729,7 +753,9 @@ export function OrderForm({
 }) {
   const [customer, setCustomer] = useState<SelectableCustomer | null>(order?.customer ?? null);
   const isEditing = order !== null;
-  const [currency, setCurrency] = useState<'COP' | 'USD'>(order?.currency ?? 'COP');
+  const [currency, setCurrency] = useState<OrderCurrency>(
+    (order?.currency as OrderCurrency | undefined) ?? 'COP',
+  );
   const [billing, setBilling] = useState<BillingValue>(() =>
     order ? billingFromOrder(order) : { ...emptyAddress, email: '' },
   );
@@ -933,7 +959,7 @@ export function OrderForm({
     setError('');
     setBillingVisible(false);
   };
-  const changeCurrency = (next: 'COP' | 'USD') => {
+  const changeCurrency = (next: OrderCurrency) => {
     setCurrency(next);
     if (shippingMethod === 'custom') setCustomShippingTotal('');
     setEditingPriceId(null);
@@ -941,8 +967,10 @@ export function OrderForm({
     setItems((current) =>
       current.map((item) => ({
         ...item,
-        originalPrice: productPrice(item.product, next),
-        unitPrice: productPrice(item.product, next),
+        // Sin precio en la moneda nueva queda en cero y el envío se bloquea al validar, con el
+        // nombre del producto, en lugar de inventar un importe.
+        originalPrice: productPrice(item.product, next) ?? '0.00',
+        unitPrice: productPrice(item.product, next) ?? '0.00',
         discountTotal: '0.00',
       })),
     );
@@ -959,7 +987,7 @@ export function OrderForm({
     const quantity = Math.max(1, money(item.quantity));
     const effectiveUnitPrice =
       (money(item.unitPrice) * quantity - money(item.discountTotal)) / quantity;
-    const maximumUnitPrice = Math.floor(money(productPrice(item.product, currency)));
+    const maximumUnitPrice = Math.floor(money(productPrice(item.product, currency) ?? 0));
     setEditingPriceId(item.product.id);
     setPriceDraft(String(Math.min(Math.round(effectiveUnitPrice), maximumUnitPrice)));
   };
@@ -969,7 +997,7 @@ export function OrderForm({
   };
   const savePriceEdit = (item: FormItem) => {
     if (!priceDraft.trim() || money(priceDraft) < 0) return cancelPriceEdit();
-    const maximumUnitPrice = money(productPrice(item.product, currency));
+    const maximumUnitPrice = money(productPrice(item.product, currency) ?? 0);
     if (money(priceDraft) > maximumUnitPrice) {
       setError(
         `El precio de ${item.product.productName} no puede superar ${formattedProductPrice(maximumUnitPrice, currency)}.`,
@@ -1025,7 +1053,12 @@ export function OrderForm({
     for (const item of items) {
       if (money(item.quantity) < 1 || !Number.isInteger(money(item.quantity)))
         return setError('Las cantidades deben ser números enteros mayores a cero.');
-      if (money(item.unitPrice) > money(productPrice(item.product, currency)))
+      const originalPrice = productPrice(item.product, currency);
+      if (originalPrice === null)
+        return setError(
+          `${item.product.productName} no tiene precio en ${currency}. Cámbialo en el inventario para venderlo en esta moneda.`,
+        );
+      if (money(item.unitPrice) > money(originalPrice))
         return setError(
           `El precio de ${item.product.productName} no puede superar su valor original.`,
         );
@@ -1167,18 +1200,20 @@ export function OrderForm({
                   <ProductSearch
                     items={items}
                     currency={currency}
-                    onAdd={(product) =>
+                    onAdd={(product) => {
+                      const price = productPrice(product, currency);
+                      if (price === null) return;
                       setItems((current) => [
                         ...current,
                         {
                           product,
                           quantity: '1',
-                          originalPrice: productPrice(product, currency),
-                          unitPrice: productPrice(product, currency),
+                          originalPrice: price,
+                          unitPrice: price,
                           discountTotal: '0.00',
                         },
-                      ])
-                    }
+                      ]);
+                    }}
                   />
                   <div className="order-items">
                     {items.length > 0 && (
@@ -1193,7 +1228,7 @@ export function OrderForm({
                       {items.map((item) => {
                         const quantity = Math.max(1, money(item.quantity));
                         const originalTotal =
-                          money(productPrice(item.product, currency)) * quantity;
+                          money(productPrice(item.product, currency) ?? 0) * quantity;
                         const currentTotal =
                           money(item.unitPrice) * quantity - money(item.discountTotal);
                         const changed = Math.abs(originalTotal - currentTotal) >= 0.01;
@@ -1325,34 +1360,25 @@ export function OrderForm({
                     isDisabled={isEditing}
                     name="order-currency"
                     orientation="horizontal"
-                    onChange={(value) => changeCurrency(String(value) as 'COP' | 'USD')}
+                    onChange={(value) => changeCurrency(String(value) as OrderCurrency)}
                   >
                     <Label>Moneda</Label>
                     <div className="order-currency-options">
-                      <Radio className="order-currency-option" value="COP">
-                        <Radio.Content>
-                          <Radio.Control>
-                            <Radio.Indicator />
-                          </Radio.Control>
-                          <img src="/img/flags/CO.webp" alt="" aria-hidden="true" />
-                          <span className="order-currency-copy">
-                            <strong>COP</strong>
-                            <small>Pesos colombianos</small>
-                          </span>
-                        </Radio.Content>
-                      </Radio>
-                      <Radio className="order-currency-option" value="USD">
-                        <Radio.Content>
-                          <Radio.Control>
-                            <Radio.Indicator />
-                          </Radio.Control>
-                          <img src="/img/flags/US.webp" alt="" aria-hidden="true" />
-                          <span className="order-currency-copy">
-                            <strong>USD</strong>
-                            <small>Dólar americano</small>
-                          </span>
-                        </Radio.Content>
-                      </Radio>
+                      {orderCurrencies.map((option) => (
+                        <Radio
+                          key={option.code}
+                          className="order-currency-option"
+                          value={option.code}
+                        >
+                          <Radio.Content>
+                            <Radio.Control>
+                              <Radio.Indicator />
+                            </Radio.Control>
+                            <img src={option.flag} alt="" aria-hidden="true" />
+                            <strong className="order-currency-code">{option.code}</strong>
+                          </Radio.Content>
+                        </Radio>
+                      ))}
                     </div>
                     {isEditing && (
                       <p className="order-currency-locked">

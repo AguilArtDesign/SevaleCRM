@@ -28,11 +28,16 @@ export const quotationShippingCode = 'FLETES';
 /**
  * Los precios del pedido ya traen el IVA incluido, pero el comprobante de Siigo espera el valor sin
  * impuestos y lo suma aparte, así que se divide para que el total de la cotización coincida con el
- * del pedido. Una cotización en dólares es de exportación: no lleva IVA y el precio pasa tal cual.
+ * del pedido. Una cotización en moneda extranjera es de exportación: no lleva IVA y el precio pasa
+ * tal cual, con el mismo impuesto que usa Siigo para el dólar.
  */
+const exportTax = { id: 13882, label: 'Sin IVA (exportación)', divisor: 1 } as const;
+
 const taxRules = {
   COP: { id: 4651, label: 'IVA 19%', divisor: 1.19 },
-  USD: { id: 13882, label: 'Sin IVA (exportación)', divisor: 1 },
+  USD: exportTax,
+  MXN: exportTax,
+  EUR: exportTax,
 } as const;
 
 /**
@@ -133,7 +138,11 @@ function bogotaDate(date = new Date()): string {
 }
 
 function currencyRule(currency: string): (typeof taxRules)[QuotationCurrency] | null {
-  return currency === 'COP' || currency === 'USD' ? taxRules[currency] : null;
+  return isOrderCurrencyInRules(currency) ? taxRules[currency] : null;
+}
+
+function isOrderCurrencyInRules(currency: string): currency is QuotationCurrency {
+  return Object.hasOwn(taxRules, currency);
 }
 
 /** El corte en el formato que se lee en el panel: `03/11/2026`. */
@@ -233,11 +242,12 @@ export function buildQuotation(
       message: 'Tu usuario no tiene Seller ID de Siigo configurado.',
     });
   }
-  const exchangeRate = operation.currency === 'USD' ? options.exchangeRate : null;
-  if (operation.currency === 'USD' && (!exchangeRate || exchangeRate <= 0)) {
+  const foreignCurrency = operation.currency !== 'COP';
+  const exchangeRate = foreignCurrency ? options.exchangeRate : null;
+  if (foreignCurrency && (!exchangeRate || exchangeRate <= 0)) {
     issues.push({
       code: 'SIIGO_EXCHANGE_RATE_REQUIRED',
-      message: 'No hay una TRM válida para crear la cotización en dólares.',
+      message: `No hay una tasa de cambio válida para crear la cotización en ${operation.currency}.`,
     });
   }
 
@@ -328,9 +338,9 @@ export function buildQuotation(
     costCenter: quotationCostCenter(),
     tax,
     exchangeRate: {
-      required: operation.currency === 'USD',
+      required: foreignCurrency,
       value: exchangeRate,
-      validFrom: operation.currency === 'USD' ? options.exchangeRateDate : null,
+      validFrom: foreignCurrency ? options.exchangeRateDate : null,
     },
     items: previewItems,
     issues,

@@ -1,4 +1,5 @@
 import { HttpException, Injectable, NotFoundException } from '@nestjs/common';
+import { isForeignOrderCurrency } from '@sevale/shared';
 import { SiigoService } from '../integrations/siigo/siigo.service.js';
 import { ExchangeRateService, type ExchangeRate } from '../integrations/trm/trm.service.js';
 import { IntegrationLogsService } from '../integration-logs/integration-logs.service.js';
@@ -260,13 +261,13 @@ export class SiigoQuotationService {
    * la cotización queda marcada con ese error en lugar de enviarse con una tasa inventada.
    */
   private async exchangeRateFor(operation: QuotationOperation) {
-    if (operation.currency !== 'USD') return null;
+    if (!isForeignOrderCurrency(operation.currency)) return null;
     try {
-      return await this.exchangeRate.current();
+      return await this.exchangeRate.current(operation.currency);
     } catch {
       throw new SiigoQuotationError(
         'EXCHANGE_RATE_UNAVAILABLE',
-        'No fue posible consultar la TRM del día.',
+        'No fue posible consultar la tasa de cambio del día.',
       );
     }
   }

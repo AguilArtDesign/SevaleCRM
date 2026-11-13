@@ -39,7 +39,7 @@ export type SiigoQuotationCreateInput = {
   customerExternalId: string;
   customerIdentification: string;
   sellerId: number;
-  currency: 'COP' | 'USD';
+  currency: 'COP' | 'USD' | 'MXN' | 'EUR';
   exchangeRate?: number;
   date: string;
   items: Array<{
@@ -112,27 +112,68 @@ function normalizeName(value: unknown): string {
     : '';
 }
 
+type PriceCurrency = 'COP' | 'USD' | 'MXN' | 'EUR';
+
 /**
- * Siigo agrupa los precios por moneda (`currency_code`) y, dentro de cada grupo, por lista con
- * nombre propio. COP y USD usan listas con nombre conocido; para MXN y EUR se busca primero por
- * código de moneda y, si el proveedor no lo informa, por los nombres en que suele rotularlas.
+ * Nombres con que Siigo rotula cada lista de precios. Rara vez coincide con el código ISO: la de
+ * dólares se llama «DOLAR», pero las de pesos mexicanos y euros sí llegan como «MXN» y «EUR».
  */
-function priceFrom(product: UnknownRecord, listNames: string[], currency: string) {
-  if (!Array.isArray(product.prices)) return null;
-  const priceGroups = product.prices.filter(isRecord);
-  for (const group of priceGroups) {
-    if (!Array.isArray(group.price_list)) continue;
-    const lists = group.price_list.filter(isRecord);
-    const named = lists.find((entry) => listNames.includes(normalizeName(entry.name)));
-    const namedValue = named ? finiteNumber(named.value) : null;
-    if (namedValue !== null) return namedValue;
+const priceListNames: Record<PriceCurrency, readonly string[]> = {
+  COP: ['PESOS', 'COP'],
+  USD: ['DOLAR', 'USD'],
+  MXN: ['MXN', 'MEXICAN PESO', 'PESO MEXICANO', 'PESOS MEXICANOS'],
+  EUR: ['EUR', 'EURO', 'EUROS'],
+};
+
+/** Moneda a la que pertenece un nombre de lista, si es de las conocidas. */
+function currencyOfListName(name: string): PriceCurrency | null {
+  for (const [code, names] of Object.entries(priceListNames) as [
+    PriceCurrency,
+    readonly string[],
+  ][]) {
+    if (names.includes(name)) return code;
   }
-  const currencyGroup = priceGroups.find(
-    (group) => normalizeName(group.currency_code) === currency,
-  );
-  if (!currencyGroup || !Array.isArray(currencyGroup.price_list)) return null;
-  const first = currencyGroup.price_list.find(isRecord);
-  return first ? finiteNumber(first.value) : null;
+  return null;
+}
+
+/**
+ * índice de precios por nombre de lista.
+ *
+ * Siigo no agrupa una moneda por grupo: en la práctica devuelve **todas** las listas dentro del
+ * grupo de pesos (`currency_code: "COP"`), con los nombres «PESOS», «DOLAR», «EUR» y «MXN». Por eso
+ * se indexa cada lista por su nombre y, además, el código del grupo apunta a su primera lista, que
+ * cubre a los proveedores que sí separan un grupo por moneda.
+ */
+function priceIndex(product: UnknownRecord): Map<string, number> {
+  const index = new Map<string, number>();
+  if (!Array.isArray(product.prices)) return index;
+  for (const group of product.prices.filter(isRecord)) {
+    if (!Array.isArray(group.price_list)) continue;
+    const groupCurrency = normalizeName(group.currency_code);
+    let groupAssigned = false;
+    for (const entry of group.price_list.filter(isRecord)) {
+      const value = finiteNumber(entry.value);
+      if (value === null) continue;
+      const name = normalizeName(entry.name);
+      if (name && !index.has(name)) index.set(name, value);
+      // El código del grupo solo identifica su moneda con la primera lista que no sea de otra:
+      // dentro del grupo «COP» conviven las listas de todas las monedas.
+      if (groupAssigned || !groupCurrency) continue;
+      const owner = name ? currencyOfListName(name) : null;
+      if (owner !== null && owner !== groupCurrency) continue;
+      if (!index.has(groupCurrency)) index.set(groupCurrency, value);
+      groupAssigned = true;
+    }
+  }
+  return index;
+}
+
+function priceOf(index: Map<string, number>, currency: PriceCurrency): number | null {
+  for (const name of priceListNames[currency]) {
+    const value = index.get(name);
+    if (value !== undefined) return value;
+  }
+  return null;
 }
 
 function normalizeProduct(value: unknown, requestedSku: string): SiigoProduct | null {
@@ -144,14 +185,15 @@ function normalizeProduct(value: unknown, requestedSku: string): SiigoProduct | 
   if (!id || !sku || stock === null || sku.toUpperCase() !== requestedSku.toUpperCase()) {
     return null;
   }
+  const prices = priceIndex(value);
   return {
     id,
     sku,
     name,
-    priceCop: priceFrom(value, ['PESOS'], 'COP'),
-    priceUsd: priceFrom(value, ['DOLAR'], 'USD'),
-    priceMxn: priceFrom(value, ['MEXICAN PESO', 'PESO MEXICANO', 'PESOS MEXICANOS'], 'MXN'),
-    priceEur: priceFrom(value, ['EURO', 'EUROS'], 'EUR'),
+    priceCop: priceOf(prices, 'COP'),
+    priceUsd: priceOf(prices, 'USD'),
+    priceMxn: priceOf(prices, 'MXN'),
+    priceEur: priceOf(prices, 'EUR'),
     stock,
   };
 }
@@ -422,9 +464,10 @@ export class SiigoService {
         branch_office: customer.branchOffice,
       },
       cost_center: input.costCenter,
-      ...(input.currency === 'USD'
-        ? { currency: { code: 'USD', exchange_rate: input.exchangeRate } }
-        : {}),
+      // Siigo exige el código y la tasa en cualquier moneda que no sea pesos.
+      ...(input.currency === 'COP'
+        ? {}
+        : { currency: { code: input.currency, exchange_rate: input.exchangeRate } }),
       seller: input.sellerId,
       items: input.items.map((item) => {
         // El descuento ya viene como porcentaje, que es lo que usa el comprobante. Un comprobante

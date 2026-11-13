@@ -14,6 +14,7 @@ import type {
   UpdateOrderOperationInput,
 } from '@sevale/validation';
 import {
+  orderCurrency,
   resolveCouponType,
   resolvePaymentMethod,
   resolveShippingMethod,
@@ -842,7 +843,16 @@ export class OrdersService {
     input: OperationInput['items'][number],
     currency: OperationInput['currency'],
   ): PreparedOrderItem {
-    const originalPrice = currency === 'COP' ? product.wooPriceCop : product.wooPriceUsd;
+    // El precio sale del campo que corresponde a la moneda. `wooPriceMxn` y `wooPriceEur` son
+    // opcionales en el inventario, así que un producto sin precio en esa moneda no se puede vender.
+    const originalPrice = product[orderCurrency(currency)?.priceField ?? 'wooPriceCop'];
+    if (originalPrice === null) {
+      throw businessError(
+        BadRequestException,
+        'ORDER_ITEM_PRICE_NOT_AVAILABLE',
+        `${product.productName} no tiene precio en ${currency}.`,
+      );
+    }
     const unitPrice = input.unitPrice === undefined ? originalPrice : decimal(input.unitPrice);
     if (unitPrice.greaterThan(originalPrice)) {
       throw businessError(

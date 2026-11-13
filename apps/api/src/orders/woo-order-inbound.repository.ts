@@ -1,7 +1,16 @@
 import { Injectable } from '@nestjs/common';
+import { orderCurrency } from '@sevale/shared';
 import { PrismaService } from '../database/prisma.service.js';
 import { Prisma, type Product, type Store } from '../generated/prisma/client.js';
 import type { NormalizedWooOrderInbound } from './woo-order-inbound.normalizer.js';
+
+/**
+ * Campo del producto con el precio en la moneda del pedido. Una moneda fuera del catálogo devuelve
+ * `null` en lugar de pesos: el CRM prefiere no registrar un precio de referencia equivocado.
+ */
+function priceFieldFor(currency: string) {
+  return orderCurrency(currency)?.priceField ?? null;
+}
 
 export class WooInboundError extends Error {
   constructor(
@@ -225,11 +234,8 @@ export class WooOrderInboundRepository {
       };
       const itemData = input.items.map((item, index) => {
         const product = products[index] ?? null;
-        const originalPrice = product
-          ? input.currency === 'USD'
-            ? product.wooPriceUsd
-            : product.wooPriceCop
-          : null;
+        const priceField = priceFieldFor(input.currency);
+        const originalPrice = product && priceField ? product[priceField] : null;
         const unitPrice = decimal(item.unitPrice);
         return {
           productId: product?.id ?? null,
