@@ -343,9 +343,9 @@ desde el principio:
 | Moneda | Envío gratis desde | Precio fijo por debajo |
 | ------ | ------------------ | ---------------------- |
 | COP    | 100.000            | 16.000                 |
-| USD    | 100                | 20                     |
-| MXN    | 1.500              | 300                    |
-| EUR    | 100                | 20                     |
+| USD    | 50                 | 20                     |
+| MXN    | 600                | 200                    |
+| EUR    | 50                 | 20                     |
 
 El umbral se compara en la unidad de la moneda y es inclusivo: un subtotal exactamente igual al
 mínimo activa el envío gratis.

@@ -12,17 +12,17 @@
           "shipping_total": 0
         },
         "USD": {
-          "minimum_order_total": 100,
+          "minimum_order_total": 50,
           "comparison": "GTE",
           "shipping_total": 0
         },
         "MXN": {
-          "minimum_order_total": 1500,
+          "minimum_order_total": 600,
           "comparison": "GTE",
           "shipping_total": 0
         },
         "EUR": {
-          "minimum_order_total": 100,
+          "minimum_order_total": 50,
           "comparison": "GTE",
           "shipping_total": 0
         }
@@ -40,17 +40,17 @@
           "shipping_total": 16000
         },
         "USD": {
-          "maximum_order_total": 100,
+          "maximum_order_total": 50,
           "comparison": "LT",
           "shipping_total": 20
         },
         "MXN": {
-          "maximum_order_total": 1500,
+          "maximum_order_total": 600,
           "comparison": "LT",
-          "shipping_total": 300
+          "shipping_total": 200
         },
         "EUR": {
-          "maximum_order_total": 100,
+          "maximum_order_total": 50,
           "comparison": "LT",
           "shipping_total": 20
         }

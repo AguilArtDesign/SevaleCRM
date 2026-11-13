@@ -54,6 +54,7 @@ import {
   type InventoryCurrencyCode,
   type InventoryPriceKey,
 } from './presentation';
+import { StockChip } from './StockChip';
 import { useCurrentUser } from '../users/useCurrentUser';
 
 const tableFeatureSet = tableFeatures({});
@@ -1136,11 +1137,14 @@ function ProductSource({
 }) {
   return (
     <section className={`product-source-${source}`}>
-      <span>{title}</span>
+      <header className="product-source-heading">
+        <span>{title}</span>
+        <StockChip stock={stock} hasMismatch={mismatches?.stock} />
+      </header>
       <dl>
         {inventoryCurrencies.map(({ code, key }) => (
           <div key={code}>
-            <dt>Precio {code}</dt>
+            <dt>{code}</dt>
             <dd>
               <SourceValue hasMismatch={mismatches?.[key]}>
                 {formatCurrencyPrice(prices[key], code) ?? 'Sin dato'}
@@ -1148,12 +1152,6 @@ function ProductSource({
             </dd>
           </div>
         ))}
-        <div>
-          <dt>Stock</dt>
-          <dd>
-            <SourceValue hasMismatch={mismatches?.stock}>{stock}</SourceValue>
-          </dd>
-        </div>
       </dl>
     </section>
   );

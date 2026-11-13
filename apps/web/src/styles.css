@@ -1679,7 +1679,6 @@ select {
   color: var(--foreground);
   font-size: 0.8rem;
   font-weight: 500;
-  font-variant-numeric: tabular-nums;
 }
 
 .inventory-currency-empty {
@@ -1964,6 +1963,29 @@ select {
   border-radius: 0.9rem;
 }
 
+/* El nombre de la fuente y sus unidades juntos: el chip describe el total y va pegado al título, no
+   empujado al otro extremo. Las monedas van debajo en cuatro columnas. */
+.product-source-heading {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* El chip de Hero UI conserva su tamaño (0.75rem / 500): la regla del título no debe alcanzarlo.
+   Toma el color del panel que lo contiene, porque sobre el degradado el fondo por defecto se perdía. */
+.product-source-stock-chip {
+  color: var(--source-text);
+  background: var(--source-bg);
+}
+
+.product-source-stock {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
 .product-source-siigo {
   --source-bg: var(--siigo-bg);
   --source-text: var(--siigo-text);
@@ -1979,7 +2001,8 @@ select {
   --source-text: var(--seratus-text);
 }
 
-.product-source-panels section > span {
+.product-source-panels section > span,
+.product-source-heading > span:not(.chip) {
   color: var(--foreground);
   font-size: 0.875rem;
   font-weight: 600;
@@ -1987,7 +2010,8 @@ select {
 
 .product-source-panels dl {
   margin: 0;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  /* Las cuatro monedas en una fila, para comparar cada precio sin bajar la vista. */
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 0.625rem;
 }
 

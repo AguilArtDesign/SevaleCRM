@@ -452,71 +452,71 @@ try {
     throw new Error('El umbral exacto COP no activó el envío gratis.');
   }
 
-  const usdFlat = await createOrderCase('USD 99.99 con precio fijo', {
+  const usdFlat = await createOrderCase('USD 49.99 con precio fijo', {
     currency: 'USD',
     paymentMethod: 'addi',
     shippingMethod: 'flat_rate',
-    items: [{ productId: seratus.id, quantity: 1, unitPrice: '99.99' }],
+    items: [{ productId: seratus.id, quantity: 1, unitPrice: '49.99' }],
   });
   if (
-    usdFlat.subtotal !== '99.99' ||
+    usdFlat.subtotal !== '49.99' ||
     usdFlat.shippingTotal !== '20.00' ||
     usdFlat.paymentMethodTitle !== 'Addi'
   ) {
     throw new Error('La regla USD por debajo del umbral es incorrecta.');
   }
 
-  const usdFree = await createOrderCase('USD 100 con envío gratis', {
+  const usdFree = await createOrderCase('USD 50 con envío gratis', {
     currency: 'USD',
     paymentMethod: 'sistecredito',
     shippingMethod: 'free_shipping',
-    items: [{ productId: seratus.id, quantity: 1, unitPrice: '100' }],
+    items: [{ productId: seratus.id, quantity: 1, unitPrice: '50' }],
   });
   if (
-    usdFree.subtotal !== '100.00' ||
+    usdFree.subtotal !== '50.00' ||
     usdFree.shippingTotal !== '0.00' ||
     usdFree.paymentMethodTitle !== 'SisteCredito'
   ) {
     throw new Error('El umbral exacto USD no activó el envío gratis.');
   }
 
-  const mxnFlat = await createOrderCase('MXN 1499.99 con precio fijo', {
+  const mxnFlat = await createOrderCase('MXN 599.99 con precio fijo', {
     currency: 'MXN',
     paymentMethod: 'cod',
     shippingMethod: 'flat_rate',
-    items: [{ productId: seratus.id, quantity: 1, unitPrice: '1499.99' }],
+    items: [{ productId: seratus.id, quantity: 1, unitPrice: '599.99' }],
   });
-  if (mxnFlat.subtotal !== '1499.99' || mxnFlat.shippingTotal !== '300.00') {
+  if (mxnFlat.subtotal !== '599.99' || mxnFlat.shippingTotal !== '200.00') {
     throw new Error('La regla MXN por debajo del umbral es incorrecta.');
   }
 
-  const mxnFree = await createOrderCase('MXN 1500 con envío gratis', {
+  const mxnFree = await createOrderCase('MXN 600 con envío gratis', {
     currency: 'MXN',
     paymentMethod: 'cod',
     shippingMethod: 'free_shipping',
-    items: [{ productId: seratus.id, quantity: 1, unitPrice: '1500' }],
+    items: [{ productId: seratus.id, quantity: 1, unitPrice: '600' }],
   });
-  if (mxnFree.subtotal !== '1500.00' || mxnFree.shippingTotal !== '0.00') {
+  if (mxnFree.subtotal !== '600.00' || mxnFree.shippingTotal !== '0.00') {
     throw new Error('El umbral exacto MXN no activó el envío gratis.');
   }
 
-  const eurFlat = await createOrderCase('EUR 99.99 con precio fijo', {
+  const eurFlat = await createOrderCase('EUR 49.99 con precio fijo', {
     currency: 'EUR',
     paymentMethod: 'cod',
     shippingMethod: 'flat_rate',
-    items: [{ productId: seratus.id, quantity: 1, unitPrice: '99.99' }],
+    items: [{ productId: seratus.id, quantity: 1, unitPrice: '49.99' }],
   });
-  if (eurFlat.subtotal !== '99.99' || eurFlat.shippingTotal !== '20.00') {
+  if (eurFlat.subtotal !== '49.99' || eurFlat.shippingTotal !== '20.00') {
     throw new Error('La regla EUR por debajo del umbral es incorrecta.');
   }
 
-  const eurFree = await createOrderCase('EUR 100 con envío gratis', {
+  const eurFree = await createOrderCase('EUR 50 con envío gratis', {
     currency: 'EUR',
     paymentMethod: 'cod',
     shippingMethod: 'free_shipping',
-    items: [{ productId: seratus.id, quantity: 1, unitPrice: '100' }],
+    items: [{ productId: seratus.id, quantity: 1, unitPrice: '50' }],
   });
-  if (eurFree.subtotal !== '100.00' || eurFree.shippingTotal !== '0.00') {
+  if (eurFree.subtotal !== '50.00' || eurFree.shippingTotal !== '0.00') {
     throw new Error('El umbral exacto EUR no activó el envío gratis.');
   }
 
@@ -738,12 +738,12 @@ try {
     currency: 'USD',
     paymentMethod: 'cod',
     shippingMethod: 'free_shipping',
-    items: [{ productId: seratus.id, quantity: 1, unitPrice: '100.01' }],
+    items: [{ productId: seratus.id, quantity: 1, unitPrice: '50.01' }],
   });
   if (
-    usdAboveThreshold.subtotal !== '100.01' ||
+    usdAboveThreshold.subtotal !== '50.01' ||
     usdAboveThreshold.shippingTotal !== '0.00' ||
-    usdAboveThreshold.total !== '100.01'
+    usdAboveThreshold.total !== '50.01'
   ) {
     throw new Error('La regla USD por encima del umbral es incorrecta.');
   }

@@ -6,10 +6,7 @@ import { Chip } from '../components/Chip';
 import { Input } from '../components/Input';
 import { inventoryApi, type ProductLinkPreview, type ProductSyncStatus } from './api';
 import { formatCurrencyPrice, inventoryCurrencies, type InventoryPriceKey } from './presentation';
-
-const currencyNumber = new Intl.NumberFormat('es-CO', {
-  maximumFractionDigits: 0,
-});
+import { StockChip } from './StockChip';
 
 const statusMeta: Record<
   ProductSyncStatus,
@@ -37,10 +34,6 @@ function LinkPreviewSkeleton() {
   );
 }
 
-function nullableStock(value: number | null): string {
-  return value === null ? 'Sin dato' : currencyNumber.format(value);
-}
-
 function SourcePanel({
   title,
   source,
@@ -56,11 +49,14 @@ function SourcePanel({
 }) {
   return (
     <section className={`product-source-${source}`}>
-      <span>{title}</span>
+      <header className="product-source-heading">
+        <span>{title}</span>
+        <StockChip stock={stock} hasMismatch={mismatches?.stock} />
+      </header>
       <dl>
         {inventoryCurrencies.map(({ code, key }) => (
           <div key={code}>
-            <dt>Precio {code}</dt>
+            <dt>{code}</dt>
             <dd>
               <SourceValue hasMismatch={mismatches?.[key]}>
                 {formatCurrencyPrice(prices[key], code) ?? 'Sin dato'}
@@ -68,12 +64,6 @@ function SourcePanel({
             </dd>
           </div>
         ))}
-        <div>
-          <dt>Stock</dt>
-          <dd>
-            <SourceValue hasMismatch={mismatches?.stock}>{nullableStock(stock)}</SourceValue>
-          </dd>
-        </div>
       </dl>
     </section>
   );
