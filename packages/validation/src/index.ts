@@ -1589,10 +1589,14 @@ export const pointsInvoiceNumberSchema = z
 export const pointsInvoiceSearchSchema = z.object({
   number: pointsInvoiceNumberSchema,
   /**
-   * Sellers que puede elegir el administrador. Es obligatorio solo cuando el prefijo se repite
-   * entre varios sellers; el servicio lo exige en ese caso y no antes.
+   * Usuario del CRM con cuyo prefijo se arma la factura. Solo lo manda el administrador cuando opera
+   * en nombre de un comercial; el comercial nunca lo envía y el backend usa el suyo.
+   *
+   * Se identifica por usuario y no por `sellerId` porque el seller se comparte entre varios
+   * comerciales desde que el negocio cerró cuentas de Siigo: dos personas con el mismo seller y
+   * prefijos distintos serían indistinguibles.
    */
-  sellerId: z.coerce.number().int().positive().optional(),
+  ownerId: z.string().uuid('El comercial seleccionado no es válido.').optional(),
 });
 
 export const pointsAccountLookupSchema = z.object({
@@ -1698,7 +1702,11 @@ export const pointsInvoiceListQuerySchema = z.object({
       'IN_PROGRESS',
     ])
     .default('all'),
-  sellerId: z.coerce.number().int().positive().optional(),
+  /**
+   * Filtra por el comercial que registró la operación, no por el seller de Siigo: el seller se
+   * comparte entre varios usuarios, así que filtrar por él juntaría a dos personas en una sola fila.
+   */
+  ownerId: z.string().uuid('El comercial seleccionado no es válido.').optional(),
   dateFrom: z.coerce.date().optional(),
   dateTo: z.coerce.date().optional(),
   page: z.coerce.number().int().min(1).default(1),

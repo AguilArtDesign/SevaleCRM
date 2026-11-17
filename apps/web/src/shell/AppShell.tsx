@@ -4,15 +4,15 @@ import {
   ArrowRightFromSquare,
   Box,
   Briefcase,
-  Car,
   Gear,
   LayoutSideContentLeft,
   Persons,
   PersonsLock,
   PersonMagnifier,
-  ShoppingCart,
+  Receipt,
+  Tag,
   Terminal,
-  Ticket,
+  Trolley,
   Xmark,
 } from '@gravity-ui/icons';
 import { hasPermission, type Permission } from '@sevale/permissions';
@@ -168,8 +168,8 @@ export function AppShell() {
           icon: <Persons />,
           when: can('customers.read'),
         },
-        { to: '/orders', label: 'Pedidos', icon: <ShoppingCart /> },
-        { to: '/coupons', label: 'Cupones', icon: <Ticket />, when: can('coupons.read') },
+        { to: '/orders', label: 'Pedidos', icon: <Receipt /> },
+        { to: '/coupons', label: 'Cupones', icon: <Tag />, when: can('coupons.read') },
       ],
     },
     {
@@ -200,7 +200,7 @@ export function AppShell() {
         // Despacho: las operaciones completadas con cotización en Siigo. Por ahora solo el
         // administrador; se sirve de su propio permiso para poder abrirlo a logística sin tocar la
         // pantalla.
-        { to: '/shipments', label: 'Envíos', icon: <Car />, when: can('shipments.read') },
+        { to: '/shipments', label: 'Envíos', icon: <Trolley />, when: can('shipments.read') },
       ],
     },
     {

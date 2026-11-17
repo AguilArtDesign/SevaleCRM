@@ -570,7 +570,7 @@ export function UsersPage() {
                       onChange={(event) => setSellerId(event.target.value.replace(/[^0-9]/g, ''))}
                     />
                     <Description>
-                      Identificador del vendedor en Siigo. No puede repetirse entre usuarios.
+                      Identificador del vendedor en Siigo. Varios usuarios pueden compartirlo.
                     </Description>
                   </TextField>
 

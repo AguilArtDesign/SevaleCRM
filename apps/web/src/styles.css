@@ -5404,6 +5404,13 @@ select {
   max-width: 24rem;
 }
 
+/* El buscador de factura solo tiene el comercial y el número: en 32rem sobraba media pantalla
+   vacía. */
+.siigo-quotation-modal.points-invoice-search-modal {
+  width: min(24rem, calc(100vw - 2rem));
+  max-width: 24rem;
+}
+
 /* El alta de una factura de prueba son cinco campos cortos: en 32rem sobraba media pantalla vacía. */
 .siigo-quotation-modal.points-uat-modal {
   width: min(24rem, calc(100vw - 2rem));
@@ -7386,6 +7393,25 @@ select {
   width: 1rem;
   height: 1rem;
   object-fit: contain;
+}
+
+/* La cifra de puntos va en seminegrita: el `strong` por defecto pesa 700 y en una columna de tres
+   dígitos se ve más pesada que el resto de valores de la tabla. */
+.points-cell strong {
+  font-weight: 500;
+}
+
+/* Puntos devueltos al cliente por una anulación: se tachan y se apagan, para que la cifra no se lea
+   como saldo vigente ni compita con las filas que sí acumularon. El icono se apaga con el texto
+   porque si no quedaría a plena intensidad junto a un número apagado. */
+.points-cell.is-revoked {
+  color: var(--muted);
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+}
+
+.points-cell.is-revoked img {
+  opacity: 0.5;
 }
 
 /* Solo el mensaje de error del último intento: la tabla no es el lugar para el diagnóstico. Va en

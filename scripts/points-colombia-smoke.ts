@@ -180,6 +180,14 @@ const users = [
     siigoInvoicePrefix: 'FV-2-',
     pcoLocationCode: 'PDVBRA0001',
   },
+  // Mismo seller que `user-commercial`: en Siigo comparten cuenta, pero en el CRM son dos personas.
+  {
+    id: 'user-commercial-2',
+    name: 'Colega Con El Mismo Seller',
+    sellerId: 821,
+    siigoInvoicePrefix: 'FV-2-',
+    pcoLocationCode: 'PDVBRA0001',
+  },
   {
     id: 'user-sin-prefijo',
     name: 'Sin Prefijo',
@@ -210,6 +218,8 @@ function newRow(input: {
   sellerId?: number;
   source?: string;
   points?: number;
+  /** Quién la registró en el CRM: es lo que decide la propiedad cuando el seller se comparte. */
+  createdByUserId?: string;
 }): Row {
   const row: Row = {
     id: nextInvoiceId++,
@@ -225,7 +235,7 @@ function newRow(input: {
     points: input.points ?? pointsForTotal(new Prisma.Decimal(input.total)),
     status: input.status ?? 'PENDING',
     completedAt: null,
-    createdByUserId: 'user-admin',
+    createdByUserId: input.createdByUserId ?? 'user-admin',
     createdAt: new Date('2026-10-20T10:00:00.000Z'),
     accruals: [],
   };
@@ -665,10 +675,39 @@ try {
     'Debe rechazarse la factura ajena.',
   );
 
-  const adminEligeSeller = await service.search({ number: '500', sellerId: 821 }, admin);
+  // Dos comerciales con el MISMO seller: compartir cuenta de Siigo no da acceso a las facturas del
+  // otro. La propiedad la decide quién la registró en el CRM, no el seller.
+  const sharedRow = newRow({
+    name: 'FV-2-777',
+    siigoInvoiceId: 'siigo-777',
+    total: '300000.00',
+    sellerId: 821,
+    createdByUserId: 'user-commercial',
+  });
+  const sharedSellerError = await rejects(
+    service.accrue(
+      sharedRow.id,
+      { documentNumber: '1011237867', documentType: '2' },
+      { id: 'user-commercial-2', role: 'COMMERCIAL' },
+    ),
+    'Un comercial no puede acumular la factura de un colega con el mismo seller.',
+  );
+  assert(
+    businessCode(sharedSellerError) === 'POINTS_INVOICE_NOT_OWNED',
+    'El seller compartido no debe conceder acceso a la factura del colega.',
+  );
+  assert(
+    invoices.get(sharedRow.id)?.status === 'PENDING',
+    'El intento ajeno no debe mover la factura de estado.',
+  );
+
+  const adminEligeSeller = await service.search(
+    { number: '500', ownerId: 'user-commercial' },
+    admin,
+  );
   assert(
     adminEligeSeller.invoice.name === 'FV-2-500',
-    'El administrador elige el seller en el buscador.',
+    'El administrador elige el comercial en el buscador.',
   );
 
   // Registro: se revalida contra Siigo y no se duplica.
@@ -697,7 +736,10 @@ try {
     sellerNameRequests.length === 0,
     'Un vendedor que existe en el CRM no debe consultarse en Siigo.',
   );
-  const withUnknownSeller = await service.register({ number: '500', sellerId: 821 }, admin);
+  const withUnknownSeller = await service.register(
+    { number: '500', ownerId: 'user-commercial' },
+    admin,
+  );
   assert(
     withUnknownSeller.sellerName === 'Vendedor de Siigo',
     'Un vendedor que no está en el CRM debe resolverse contra Siigo.',

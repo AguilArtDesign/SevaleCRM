@@ -128,6 +128,8 @@ export type PointsPrefixOption = {
   prefix: string;
   sellerId: number | null;
   userName: string;
+  /** Identifica al comercial en el CRM: el seller se comparte y no distingue a dos personas. */
+  userId: string;
 };
 
 type ApiErrorBody = { message?: string; error?: { message?: string } };
@@ -156,22 +158,22 @@ export const pointsColombiaApi = {
       page: String(input.page),
       pageSize: String(input.pageSize),
     });
-    if (input.sellerId) query.set('sellerId', String(input.sellerId));
+    if (input.ownerId) query.set('ownerId', input.ownerId);
     if (input.dateFrom) query.set('dateFrom', input.dateFrom.toISOString());
     if (input.dateTo) query.set('dateTo', input.dateTo.toISOString());
     return apiRequest<PointsInvoiceListResponse>(`/api/points-colombia/invoices?${query}`);
   },
   prefixes: () => apiRequest<PointsPrefixOption[]>('/api/points-colombia/invoices/prefixes'),
   detail: (id: number) => apiRequest<PointsInvoiceRecord>(`/api/points-colombia/invoices/${id}`),
-  search: (number: string, sellerId?: number) =>
+  search: (number: string, ownerId?: string) =>
     apiRequest<PointsInvoicePreview>('/api/points-colombia/invoices/search', {
       method: 'POST',
-      body: JSON.stringify(sellerId ? { number, sellerId } : { number }),
+      body: JSON.stringify(ownerId ? { number, ownerId } : { number }),
     }),
-  register: (number: string, sellerId?: number) =>
+  register: (number: string, ownerId?: string) =>
     apiRequest<PointsInvoiceRecord>('/api/points-colombia/invoices', {
       method: 'POST',
-      body: JSON.stringify(sellerId ? { number, sellerId } : { number }),
+      body: JSON.stringify(ownerId ? { number, ownerId } : { number }),
     }),
   lookupAccount: (documentNumber: string, documentType: PointsDocumentType) =>
     apiRequest<PointsLookupResult>('/api/points-colombia/accounts/lookup', {
@@ -232,10 +234,10 @@ export const pointsColombiaApi = {
       body: JSON.stringify(input),
     }),
   /** Asocia la factura de Siigo que documenta la venta y cierra la redención. */
-  attachRedemptionInvoice: (id: number, number: string, sellerId?: number) =>
+  attachRedemptionInvoice: (id: number, number: string, ownerId?: string) =>
     apiRequest<PointsRedemptionRecord>(`/api/points-colombia/redemptions/${id}/invoice`, {
       method: 'POST',
-      body: JSON.stringify(sellerId ? { number, sellerId } : { number }),
+      body: JSON.stringify(ownerId ? { number, ownerId } : { number }),
     }),
   /** Anula la redención: los puntos vuelven a la cuenta del cliente. */
   revokeRedemption: (id: number) =>

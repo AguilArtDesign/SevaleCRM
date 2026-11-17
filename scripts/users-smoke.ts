@@ -26,9 +26,10 @@ const runId = randomUUID();
 const adminId = randomUUID();
 const commercialId = randomUUID();
 const createdEmail = `users-created-${runId}@example.invalid`;
+const sharedSellerEmail = `users-duplicate-seller-${runId}@example.invalid`;
 const password = `S-${randomUUID()}-9a!`;
-// El seller id de Siigo es único por usuario, así que cada ejecución usa valores
-// propios derivados del runId para no chocar con datos residuales de otras corridas.
+// El seller de Siigo se comparte entre varios usuarios, así que cada ejecución usa valores propios
+// derivados del runId para no chocar con datos residuales de otras corridas.
 const sellerIdSeed = Number.parseInt(runId.replace(/\D/g, '').slice(0, 5), 10);
 const adminSellerId = 10_000_000 + sellerIdSeed * 4 + 1;
 const commercialSellerId = adminSellerId + 1;
@@ -190,23 +191,27 @@ try {
   });
   expectStatus(nonNumericSellerId, 400, 'Seller id no numérico');
 
-  const duplicateSellerId = await api('/api/users', adminCookie, {
+  // El negocio cerró cuentas de Siigo que no se usaban y ahora varios comerciales comparten seller,
+  // así que repetirlo es válido: la identidad en el CRM la da el correo.
+  const sharedSellerResponse = await api('/api/users', adminCookie, {
     method: 'POST',
     body: JSON.stringify({
-      name: 'Usuario Seller Id Duplicado',
-      email: `users-duplicate-seller-${runId}@example.invalid`,
+      name: 'Usuario Seller Id Compartido',
+      email: sharedSellerEmail,
       sellerId: commercialSellerId,
       role: 'LOGISTICS',
       active: true,
     }),
   });
-  expectStatus(duplicateSellerId, 409, 'Seller id duplicado en la creación');
-  const duplicateSellerBody = (await duplicateSellerId.json()) as {
-    error?: { code?: string };
+  expectStatus(sharedSellerResponse, 201, 'Seller id compartido en la creación');
+  const sharedSellerBody = (await sharedSellerResponse.json()) as {
+    id: string;
+    sellerId: number | null;
   };
-  if (duplicateSellerBody.error?.code !== 'SELLER_ID_TAKEN') {
-    throw new Error('El conflicto por seller id no expuso el código esperado al cliente.');
+  if (sharedSellerBody.sellerId !== commercialSellerId) {
+    throw new Error('El seller compartido no se guardó en el usuario nuevo.');
   }
+  await api(`/api/users/${sharedSellerBody.id}`, adminCookie, { method: 'DELETE' });
 
   const createResponse = await api('/api/users', adminCookie, {
     method: 'POST',
@@ -272,21 +277,21 @@ try {
     throw new Error('La edición no devolvió los valores esperados.');
   }
 
-  const duplicateSellerUpdate = await api(`/api/users/${created.id}`, adminCookie, {
+  // Editar para poner un seller que ya tiene otro usuario también es válido.
+  const sharedSellerUpdate = await api(`/api/users/${created.id}`, adminCookie, {
     method: 'PATCH',
     body: JSON.stringify({ sellerId: commercialSellerId }),
   });
-  expectStatus(duplicateSellerUpdate, 409, 'Seller id duplicado en la edición');
-  const duplicateSellerUpdateBody = (await duplicateSellerUpdate.json()) as {
-    error?: { code?: string };
-  };
-  if (duplicateSellerUpdateBody.error?.code !== 'SELLER_ID_TAKEN') {
-    throw new Error('La edición no expuso el conflicto por seller id al cliente.');
+  expectStatus(sharedSellerUpdate, 200, 'Seller id compartido en la edición');
+  const afterSharedSeller = await prisma.user.findUniqueOrThrow({ where: { id: created.id } });
+  if (afterSharedSeller.sellerId !== commercialSellerId) {
+    throw new Error('La edición con seller compartido no guardó el valor.');
   }
-  const afterConflict = await prisma.user.findUniqueOrThrow({ where: { id: created.id } });
-  if (afterConflict.sellerId !== updatedSellerId) {
-    throw new Error('La edición rechazada por seller id duplicado modificó el usuario.');
-  }
+  // Se devuelve el seller propio para que la comprobación siguiente hable de otra cosa.
+  await api(`/api/users/${created.id}`, adminCookie, {
+    method: 'PATCH',
+    body: JSON.stringify({ sellerId: updatedSellerId }),
+  });
 
   const emptySellerUpdate = await api(`/api/users/${created.id}`, adminCookie, {
     method: 'PATCH',
@@ -327,12 +332,17 @@ try {
   expectStatus(revokedProfile, 401, 'Sesión revocada tras desactivación');
 
   process.stdout.write(
-    'Users smoke: authentication, ADMIN access, RBAC denial, pagination, role filtering, seller id validation/unicity, create, duplicate, update, self-protection, physical deletion, disable and session revocation checks passed.\n',
+    'Users smoke: authentication, ADMIN access, RBAC denial, pagination, role filtering, seller id validation and sharing, create, duplicate, update, self-protection, physical deletion, disable and session revocation checks passed.\n',
   );
 } finally {
   await prisma.user.deleteMany({
     where: {
-      OR: [{ id: adminId }, { id: commercialId }, { email: createdEmail }],
+      OR: [
+        { id: adminId },
+        { id: commercialId },
+        { email: createdEmail },
+        { email: sharedSellerEmail },
+      ],
     },
   });
   await app.close();

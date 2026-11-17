@@ -268,7 +268,8 @@ function redemptionStatusFilter(
 function invoiceWhere(query: PointsInvoiceListQuery): Prisma.PointsInvoiceWhereInput {
   return {
     ...(query.status === 'all' ? {} : { status: invoiceStatusFilter(query.status) }),
-    ...(query.sellerId ? { sellerId: query.sellerId } : {}),
+    // Por el comercial que la registró, no por seller: el seller se comparte entre varios usuarios.
+    ...(query.ownerId ? { createdByUserId: query.ownerId } : {}),
     ...(query.search
       ? {
           OR: [
@@ -294,6 +295,10 @@ function redemptionWhere(query: PointsInvoiceListQuery): Prisma.PointsRedemption
   const conditions: Prisma.PointsRedemptionWhereInput[] = [];
   if (query.status !== 'all') {
     conditions.push({ status: redemptionStatusFilter(query.status) });
+  }
+  // Igual que en las facturas: el comercial que la registró, porque el seller se comparte.
+  if (query.ownerId) {
+    conditions.push({ createdByUserId: query.ownerId });
   }
   if (query.search) {
     conditions.push({
@@ -343,8 +348,8 @@ export class PointsInvoicesService {
      */
     const take = query.page * query.pageSize;
     const showsInvoices = hasInvoiceStatus(query.status);
-    /** Sin vendedor no hay redención que filtrar: una redención no pertenece a un seller de Siigo. */
-    const showsRedemptions = hasRedemptionStatus(query.status) && !query.sellerId;
+    // Una redención también la registró un comercial, así que el filtro por comercial la alcanza.
+    const showsRedemptions = hasRedemptionStatus(query.status);
 
     const [invoiceRows, invoiceTotal, redemptionRows, redemptionTotal] = await Promise.all([
       showsInvoices ? this.invoices.listSlice(invoiceWhere(query), take) : Promise.resolve([]),
@@ -440,6 +445,8 @@ export class PointsInvoicesService {
         prefix: user.siigoInvoicePrefix as string,
         sellerId: user.sellerId,
         userName: user.name,
+        /** Identifica al comercial en el CRM: el seller ya no sirve, porque se comparte. */
+        userId: user.id,
       }));
   }
 
@@ -448,7 +455,7 @@ export class PointsInvoicesService {
    * backend: el navegador solo manda el número, así que no puede pedir la factura de otro seller.
    */
   async search(input: PointsInvoiceSearchInput, user: SessionUser) {
-    const { prefix, sellerId } = await this.resolveInvoicePrefix(user, input.sellerId);
+    const { prefix, sellerId } = await this.resolveInvoicePrefix(user, input.ownerId);
     const name = `${prefix}${input.number}`;
     const invoice = await this.siigo.findInvoiceByName(name);
     if (!invoice) {
@@ -486,7 +493,7 @@ export class PointsInvoicesService {
 
   /** Registra la factura ya validada. Se vuelve a consultar Siigo: el navegador no es la fuente. */
   async register(input: PointsInvoiceSearchInput, user: SessionUser) {
-    const { prefix, sellerId } = await this.resolveInvoicePrefix(user, input.sellerId);
+    const { prefix, sellerId } = await this.resolveInvoicePrefix(user, input.ownerId);
     const name = `${prefix}${input.number}`;
     const invoice = await this.siigo.findInvoiceByName(name);
     if (!invoice) {
@@ -599,16 +606,7 @@ export class PointsInvoicesService {
   async accrue(id: number, input: PointsAccrualInput, user: SessionUser) {
     const invoice = await this.invoices.detail(id);
     if (!invoice) throw new NotFoundException('La factura no existe en el panel.');
-    if (invoice.source === 'SIIGO' && user.role !== 'ADMIN') {
-      const own = await this.ownPrefix(user.id);
-      if (!own?.sellerId || invoice.sellerId !== own.sellerId) {
-        throw businessError(
-          ForbiddenException,
-          'POINTS_INVOICE_NOT_OWNED',
-          'La factura pertenece a otro vendedor.',
-        );
-      }
-    }
+    this.assertOwned(invoice, user);
 
     // El punto de venta es de quien opera: sin él no se acumula, y se valida antes de tocar la factura.
     const locationCode = await this.location.requireLocationCode(user.id);
@@ -750,16 +748,7 @@ export class PointsInvoicesService {
   async remove(id: number, user: SessionUser) {
     const invoice = await this.invoices.detail(id);
     if (!invoice) throw new NotFoundException('La factura no existe en el panel.');
-    if (invoice.source === 'SIIGO' && user.role !== 'ADMIN') {
-      const own = await this.ownPrefix(user.id);
-      if (!own?.sellerId || invoice.sellerId !== own.sellerId) {
-        throw businessError(
-          ForbiddenException,
-          'POINTS_INVOICE_NOT_OWNED',
-          'La factura pertenece a otro vendedor.',
-        );
-      }
-    }
+    this.assertOwned(invoice, user);
 
     const result = await this.invoices.remove(id);
     if (result.outcome === 'NOT_FOUND') {
@@ -785,16 +774,7 @@ export class PointsInvoicesService {
   async revoke(id: number, user: SessionUser) {
     const invoice = await this.invoices.detail(id);
     if (!invoice) throw new NotFoundException('La factura no existe en el panel.');
-    if (invoice.source === 'SIIGO' && user.role !== 'ADMIN') {
-      const own = await this.ownPrefix(user.id);
-      if (!own?.sellerId || invoice.sellerId !== own.sellerId) {
-        throw businessError(
-          ForbiddenException,
-          'POINTS_INVOICE_NOT_OWNED',
-          'La factura pertenece a otro vendedor.',
-        );
-      }
-    }
+    this.assertOwned(invoice, user);
     const accrual = invoice.accruals[0];
     if (!accrual) {
       throw businessError(
@@ -896,23 +876,27 @@ export class PointsInvoicesService {
     }
   }
 
-  /** El prefijo sale del usuario; el administrador lo elige entre los configurados. */
+  /**
+   * El prefijo sale del usuario que opera. El administrador puede elegir a nombre de quién trabaja,
+   * y lo hace por **usuario del CRM** y no por seller: varios comerciales comparten el mismo seller
+   * desde que el negocio cerró cuentas de Siigo, así que el seller ya no identifica a una persona.
+   */
   async resolveInvoicePrefix(
     user: SessionUser,
-    requestedSellerId?: number,
-  ): Promise<{ prefix: string; sellerId: number | null }> {
-    if (user.role === 'ADMIN' && requestedSellerId) {
+    requestedOwnerId?: string,
+  ): Promise<{ prefix: string; sellerId: number | null; ownerId: string }> {
+    if (user.role === 'ADMIN' && requestedOwnerId) {
       const owner = await this.invoices
         .invoicePrefixes()
-        .then((rows) => rows.find((row) => row.sellerId === requestedSellerId));
+        .then((rows) => rows.find((row) => row.id === requestedOwnerId));
       if (!owner?.siigoInvoicePrefix) {
         throw businessError(
           BadRequestException,
           'POINTS_PREFIX_NOT_CONFIGURED',
-          'Ese vendedor no tiene prefijo de factura.',
+          'Ese comercial no tiene prefijo de factura.',
         );
       }
-      return { prefix: owner.siigoInvoicePrefix, sellerId: owner.sellerId };
+      return { prefix: owner.siigoInvoicePrefix, sellerId: owner.sellerId, ownerId: owner.id };
     }
     const own = await this.ownPrefix(user.id);
     if (!own?.siigoInvoicePrefix) {
@@ -922,10 +906,32 @@ export class PointsInvoicesService {
         'Tu usuario no tiene prefijo de factura.',
       );
     }
-    return { prefix: own.siigoInvoicePrefix, sellerId: own.sellerId };
+    return { prefix: own.siigoInvoicePrefix, sellerId: own.sellerId, ownerId: own.id };
   }
 
-  /** El prefijo y el seller del usuario que opera. El prefijo no es único; el seller sí. */
+  /**
+   * Una operación de Puntos Colombia pertenece al comercial que la **registró**, no al seller de
+   * Siigo: desde que el negocio cerró cuentas que no se usaban, varios comerciales comparten seller y
+   * compararlo dejaría que uno operara las facturas del otro. El correo del CRM sí es único por
+   * persona, y es lo que distingue a dos usuarios con el mismo seller.
+   *
+   * El administrador no pasa por aquí: opera en nombre de cualquiera.
+   */
+  private assertOwned(
+    invoice: { source: string; createdByUserId: string | null },
+    user: SessionUser,
+  ) {
+    if (invoice.source !== 'SIIGO' || user.role === 'ADMIN') return;
+    if (invoice.createdByUserId !== user.id) {
+      throw businessError(
+        ForbiddenException,
+        'POINTS_INVOICE_NOT_OWNED',
+        'La factura pertenece a otro comercial.',
+      );
+    }
+  }
+
+  /** El prefijo y el seller del usuario que opera. El prefijo no es único; el seller tampoco. */
   private ownPrefix(userId: string) {
     return this.invoices
       .invoicePrefixes()

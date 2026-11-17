@@ -48,21 +48,17 @@ function uniqueConflictMessage(error: unknown): { code: string; message: string 
   ]
     .join(' ')
     .toLowerCase();
-  if (hint.includes('seller')) {
-    return {
-      code: 'SELLER_ID_TAKEN',
-      message: 'Ese seller id de Siigo ya está asignado a otro usuario.',
-    };
-  }
   if (hint.includes('email')) {
     return {
       code: 'EMAIL_TAKEN',
       message: 'Ya existe un usuario con ese correo electrónico.',
     };
   }
+  // El seller ya no es único: varios comerciales comparten cuenta de Siigo, así que el choque que
+  // queda por reportar es el correo, que sí identifica a la persona.
   return {
     code: 'USER_CONFLICT',
-    message: 'Ya existe un usuario con ese correo electrónico o seller id de Siigo.',
+    message: 'Ya existe un usuario con ese correo electrónico.',
   };
 }
 

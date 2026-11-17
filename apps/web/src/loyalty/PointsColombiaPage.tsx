@@ -8,7 +8,6 @@ import {
   DateField,
   DatePicker,
   DateRangePicker,
-  Description,
   Dropdown,
   EmptyState,
   InputOTP,
@@ -98,7 +97,7 @@ export function PointsColombiaPage() {
   const [status, setStatus] = useState<PointsStatusFilter>('all');
   const [search, setSearch] = useState('');
   const [dateRange, setDateRange] = useState<DateRangeValue | null>(null);
-  const [sellerId, setSellerId] = useState('all');
+  const [ownerId, setOwnerId] = useState('all');
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -123,7 +122,7 @@ export function PointsColombiaPage() {
       search,
       dateRange?.start.toString() ?? '',
       dateRange?.end.toString() ?? '',
-      sellerId,
+      ownerId,
       page,
       pageSize,
     ],
@@ -133,7 +132,7 @@ export function PointsColombiaPage() {
         status,
         page,
         pageSize,
-        sellerId: sellerId === 'all' ? undefined : Number(sellerId),
+        ownerId: ownerId === 'all' ? undefined : ownerId,
         dateFrom: dateRange ? new Date(`${dateRange.start.toString()}T00:00:00`) : undefined,
         dateTo: dateRange ? new Date(`${dateRange.end.toString()}T23:59:59`) : undefined,
       }),
@@ -147,14 +146,9 @@ export function PointsColombiaPage() {
   const refresh = () => queryClient.invalidateQueries({ queryKey: ['points-colombia'] });
   const result = listQuery.data;
   const totalPages = result?.pagination.totalPages ?? 1;
-  // Un comercial puede tener varias cuentas con prefijo, así que el filtro agrupa por seller.
-  const sellerOptions = Array.from(
-    new Map(
-      (prefixesQuery.data ?? [])
-        .filter((option) => option.sellerId !== null)
-        .map((option) => [option.sellerId as number, option]),
-    ).values(),
-  );
+  // El filtro agrupa por comercial del CRM, no por seller: varios comparten seller desde que el
+  // negocio cerró cuentas de Siigo, y agrupar por seller escondería a uno de los dos.
+  const sellerOptions = prefixesQuery.data ?? [];
 
   return (
     <section className="customers-layout">
@@ -222,10 +216,10 @@ export function PointsColombiaPage() {
           {sellerOptions.length > 1 && (
             <Select
               aria-label="Filtrar por comercial"
-              value={sellerId}
+              value={ownerId}
               variant="secondary"
               onChange={(value) => {
-                setSellerId(String(value));
+                setOwnerId(String(value));
                 setPage(1);
               }}
             >
@@ -237,7 +231,11 @@ export function PointsColombiaPage() {
                 <ListBox>
                   <ListBox.Item id="all">Todos los comerciales</ListBox.Item>
                   {sellerOptions.map((option) => (
-                    <ListBox.Item key={option.sellerId} id={String(option.sellerId)}>
+                    <ListBox.Item
+                      key={option.userId}
+                      id={option.userId}
+                      textValue={option.userName}
+                    >
                       {option.userName}
                     </ListBox.Item>
                   ))}
@@ -350,7 +348,7 @@ export function PointsColombiaPage() {
                   cambiaría mientras `useCurrentUser` carga: la cabecera tendría 8 y las filas 9, y
                   HeroUI lanza «Cell count must match column count» y desmonta la pantalla. Por eso
                   quien se condiciona es el contenido de la celda, no la columna. */}
-              <Table.Column>Vendedor</Table.Column>
+              <Table.Column>Comercial</Table.Column>
               <Table.Column>Total COP</Table.Column>
               <Table.Column>Puntos</Table.Column>
               <Table.Column>Estado</Table.Column>
@@ -406,7 +404,13 @@ export function PointsColombiaPage() {
                         {formattedMoneyWithCode(row.invoice?.total ?? row.amountCop, 'COP')}
                       </Table.Cell>
                       <Table.Cell>
-                        <span className="points-cell">
+                        {/* Los puntos de una redención anulada volvieron al cliente: se muestran
+                            tachados para que no se lean como puntos gastados. */}
+                        <span
+                          className={
+                            row.status === 'REVOKED' ? 'points-cell is-revoked' : 'points-cell'
+                          }
+                        >
                           <img src="/img/puntos-colombia.svg" alt="" aria-hidden="true" />
                           <strong>{row.pointsRedeemed ?? row.pointsRequested}</strong>
                         </span>
@@ -522,14 +526,20 @@ export function PointsColombiaPage() {
                       </div>
                     </Table.Cell>
                     <Table.Cell>
-                      {isAdmin
-                        ? (invoice.sellerName ??
-                          (invoice.sellerId === null ? '—' : `Siigo #${invoice.sellerId}`))
-                        : '—'}
+                      {/* El comercial del CRM, no el seller de Siigo: varios comparten seller desde
+                          que el negocio cerró cuentas. Solo el nombre: el correo alargaba la columna
+                          y no hace falta para identificarlo en la tabla. */}
+                      {isAdmin ? (invoice.createdBy?.name ?? '—') : '—'}
                     </Table.Cell>
                     <Table.Cell>{formattedMoneyWithCode(invoice.total, 'COP')}</Table.Cell>
                     <Table.Cell>
-                      <span className="points-cell">
+                      {/* Revocado significa que los puntos se devolvieron: el número se tacha y se
+                          apaga para que no se confunda con puntos vigentes. */}
+                      <span
+                        className={
+                          invoice.status === 'REVOKED' ? 'points-cell is-revoked' : 'points-cell'
+                        }
+                      >
                         <img src="/img/puntos-colombia.svg" alt="" aria-hidden="true" />
                         <strong>{invoice.points}</strong>
                       </span>
@@ -861,7 +871,7 @@ function InvoiceDetailModal({
                   <dd>{invoice.customerIdentification}</dd>
                 </div>
                 <div>
-                  <dt>Vendedor</dt>
+                  <dt>Seller de Siigo</dt>
                   <dd>
                     {invoice.sellerName ??
                       (invoice.sellerId === null ? '—' : `Siigo #${invoice.sellerId}`)}
@@ -1354,29 +1364,33 @@ function InvoiceSearchModal({
   onClose: () => void;
   onRegistered: (invoice: PointsInvoiceRecord) => void;
 }) {
+  const { user } = useCurrentUser();
+  const isAdmin = user?.role === 'ADMIN';
   const [number, setNumber] = useState('');
-  const [sellerId, setSellerId] = useState('');
+  const [ownerId, setOwnerId] = useState('');
   const [error, setError] = useState('');
 
   const searchMutation = useMutation({
-    mutationFn: () =>
-      pointsColombiaApi.search(number.trim(), sellerId ? Number(sellerId) : undefined),
+    mutationFn: () => pointsColombiaApi.search(number.trim(), ownerId || undefined),
     onError: (failure: Error) => setError(failure.message),
     onSuccess: () => setError(''),
   });
   const registerMutation = useMutation({
-    mutationFn: () =>
-      pointsColombiaApi.register(number.trim(), sellerId ? Number(sellerId) : undefined),
+    mutationFn: () => pointsColombiaApi.register(number.trim(), ownerId || undefined),
     onSuccess: onRegistered,
     onError: (failure: Error) => setError(failure.message),
   });
 
   const preview = searchMutation.data;
-  // Con un solo prefijo configurado no hay contexto que elegir.
-  const needsSeller = prefixes.length > 1;
+  /**
+   * Elegir a nombre de quién se opera es cosa del administrador: el comercial siempre trabaja con su
+   * propio prefijo y solo escribe el número. Antes el selector aparecía para todos en cuanto había
+   * más de un prefijo configurado, y en producción eso le mostraba al comercial los de sus colegas.
+   */
+  const needsOwner = isAdmin && prefixes.length > 1;
   const close = () => {
     setNumber('');
-    setSellerId('');
+    setOwnerId('');
     setError('');
     searchMutation.reset();
     registerMutation.reset();
@@ -1386,28 +1400,27 @@ function InvoiceSearchModal({
   return (
     <Modal isOpen={isOpen} onOpenChange={(open) => !open && close()}>
       <Modal.Backdrop>
-        <Modal.Container placement="center">
-          <Modal.Dialog className="siigo-quotation-modal">
+        <Modal.Container placement="center" size="sm">
+          <Modal.Dialog className="siigo-quotation-modal points-invoice-search-modal">
             <Modal.CloseTrigger aria-label="Cerrar búsqueda" />
             <Modal.Header>
               <div>
                 <Modal.Heading>Agregar factura</Modal.Heading>
-                <p className="siigo-quotation-subtitle">
-                  Consulta la factura en Siigo antes de agregarla al panel
-                </p>
+                <p className="siigo-quotation-subtitle">Consulta la factura en Siigo</p>
               </div>
             </Modal.Header>
             <Modal.Body>
               {error && <PointsFeedback>{error}</PointsFeedback>}
-              {needsSeller && (
+              {needsOwner && (
                 <div className="customer-field">
-                  <Label>Punto de venta o comercial</Label>
+                  <Label>Comercial</Label>
                   <Select
-                    aria-label="Punto de venta o comercial"
-                    value={sellerId}
+                    aria-label="Comercial de la factura"
+                    placeholder="Seleccionar comercial"
+                    value={ownerId}
                     variant="secondary"
                     onChange={(value) => {
-                      setSellerId(String(value));
+                      setOwnerId(String(value));
                       searchMutation.reset();
                     }}
                   >
@@ -1419,17 +1432,17 @@ function InvoiceSearchModal({
                       <ListBox>
                         {prefixes.map((option) => (
                           <ListBox.Item
-                            key={String(option.sellerId) + option.prefix}
-                            id={String(option.sellerId ?? '')}
+                            key={option.userId}
+                            id={option.userId}
+                            textValue={option.userName}
                           >
-                            {option.userName} · {option.prefix}
+                            {option.userName}
                             <ListBox.ItemIndicator />
                           </ListBox.Item>
                         ))}
                       </ListBox>
                     </Select.Popover>
                   </Select>
-                  <Description>Define con qué prefijo se arma el nombre de la factura.</Description>
                 </div>
               )}
               <div className="customer-field">
@@ -1447,7 +1460,6 @@ function InvoiceSearchModal({
                     <SearchField.ClearButton />
                   </SearchField.Group>
                 </SearchField>
-                <Description>Solo el número. El prefijo lo pone el CRM.</Description>
               </div>
 
               {preview && (
@@ -2485,7 +2497,7 @@ function AttachInvoiceModal({
 }) {
   const { user } = useCurrentUser();
   const [number, setNumber] = useState('');
-  const [sellerId, setSellerId] = useState('all');
+  const [ownerId, setOwnerId] = useState('');
   const [error, setError] = useState<string | null>(null);
   const isAdmin = user?.role === 'ADMIN';
 
@@ -2497,14 +2509,10 @@ function AttachInvoiceModal({
 
   const attach = useMutation({
     mutationFn: () =>
-      pointsColombiaApi.attachRedemptionInvoice(
-        redemption.id,
-        number.trim(),
-        sellerId === 'all' ? undefined : Number(sellerId),
-      ),
+      pointsColombiaApi.attachRedemptionInvoice(redemption.id, number.trim(), ownerId || undefined),
     onSuccess: () => {
       setNumber('');
-      setSellerId('all');
+      setOwnerId('');
       setError(null);
       onDone();
     },
@@ -2539,12 +2547,12 @@ function AttachInvoiceModal({
               </div>
               {isAdmin && (
                 <div className="customer-field">
-                  <Label>Vendedor</Label>
+                  <Label>Comercial</Label>
                   <Select
-                    aria-label="Vendedor de la factura"
-                    value={sellerId}
+                    aria-label="Comercial de la factura"
+                    value={ownerId}
                     variant="secondary"
-                    onChange={(value) => setSellerId(String(value))}
+                    onChange={(value) => setOwnerId(String(value))}
                   >
                     <Select.Trigger>
                       <Select.Value />
@@ -2552,16 +2560,16 @@ function AttachInvoiceModal({
                     </Select.Trigger>
                     <Select.Popover>
                       <ListBox>
-                        <ListBox.Item id="all" textValue="Seleccionar vendedor">
-                          Seleccionar vendedor
+                        <ListBox.Item id="" textValue="Seleccionar comercial">
+                          Seleccionar comercial
                         </ListBox.Item>
                         {(prefixesQuery.data ?? []).map((option) => (
                           <ListBox.Item
-                            key={option.sellerId ?? option.userName}
-                            id={String(option.sellerId)}
-                            textValue={`${option.userName} · ${option.prefix}`}
+                            key={option.userId}
+                            id={option.userId}
+                            textValue={option.userName}
                           >
-                            {option.userName} · {option.prefix}
+                            {option.userName}
                             <ListBox.ItemIndicator />
                           </ListBox.Item>
                         ))}

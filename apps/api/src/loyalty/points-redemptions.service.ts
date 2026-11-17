@@ -305,7 +305,7 @@ export class PointsRedemptionsService {
       );
     }
 
-    const { prefix, sellerId } = await this.invoices.resolveInvoicePrefix(user, input.sellerId);
+    const { prefix, sellerId } = await this.invoices.resolveInvoicePrefix(user, input.ownerId);
     const name = `${prefix}${input.number}`;
     const invoice = await this.siigo.findInvoiceByName(name);
     if (!invoice) {
@@ -315,11 +315,20 @@ export class PointsRedemptionsService {
         `No encontramos la factura ${name} en Siigo.`,
       );
     }
+    // La redención pertenece al comercial que la hizo, no al seller de Siigo: varios comparten seller
+    // desde que el negocio cerró cuentas, y ahí el único que distingue es el usuario del CRM.
+    if (user.role !== 'ADMIN' && redemption.createdByUserId !== user.id) {
+      throw businessError(
+        ForbiddenException,
+        'POINTS_REDEMPTION_NOT_OWNED',
+        'La redención pertenece a otro comercial.',
+      );
+    }
     if (user.role !== 'ADMIN' && sellerId !== invoice.sellerId) {
       throw businessError(
         ForbiddenException,
         'POINTS_INVOICE_NOT_OWNED',
-        'La factura pertenece a otro vendedor.',
+        'La factura es de otro seller en Siigo.',
       );
     }
 
