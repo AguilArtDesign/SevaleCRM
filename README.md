@@ -548,6 +548,14 @@ Es el mismo endpoint que la anulación de la acumulación (`POST pos-management/
 
 **La factura asociada se conserva** como dato histórico: existe en Siigo y hay que corregirla allí, así que la fila sigue mostrando su número después de anular. Un rechazo del proveedor deja la anulación en `FAILED` y la redención vuelve a su estado anterior, de modo que se puede repetir; un `5xx` o un tiempo de espera agotado la dejan en `UNVERIFIED` y la bloquean, porque los puntos pudieron volver y reintentar a ciegas los devolvería dos veces. Una redención `FAILED` no se puede anular: nunca descontó puntos, así que no hay nada que devolver.
 
+### Eliminar una redención
+
+Una redención resuelta no ofrece ninguna acción, así que sin borrado se queda en la tabla para siempre. La fila tiene **Eliminar**, aparte del resto de acciones, para limpiar las operaciones de prueba que se hacen en UAT. Va con el permiso `loyalty.delete`, el mismo del borrado de facturas: el efecto es el mismo —el registro y su historial desaparecen— y no puede depender de quien tenga habilitado redimir.
+
+No habla con el proveedor: la redención ya está resuelta y lo que se borra es el registro local. **Los puntos no se devuelven al cliente**; para eso hay que revocar la redención antes de eliminarla, y el diálogo de confirmación lo dice.
+
+Lo que todavía puede necesitar conciliación no se borra: un intento `PROCESSING` o `UNVERIFIED`, o una anulación en el mismo estado, son la única prueba de lo que pasó con los puntos del cliente. Igual que en las facturas, la condición viaja en el `where` del `deleteMany`, así que una anulación que empiece en paralelo no se borra a mitad de camino, y un comercial solo puede borrar las redenciones que hizo él. `npm run test:points-redemption` cubre el borrado de una redención resuelta, el bloqueo de lo que sigue por conciliar y el rechazo de la redención de un colega.
+
 ### Intentos ambiguos
 
 El identificador de transacción se persiste **antes** del `POST`, de modo que se reutiliza si el proceso se interrumpe. Un `5xx` o un tiempo de espera agotado dejan la factura en `UNVERIFIED`: el proveedor pudo haber acumulado, así que el panel bloquea el reintento en lugar de arriesgar una doble acumulación. La reconciliación manual de esos casos sigue pendiente de definir con el proveedor para la certificación.

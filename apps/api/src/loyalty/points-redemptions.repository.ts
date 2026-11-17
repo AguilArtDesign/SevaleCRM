@@ -47,6 +47,12 @@ export type PointsRedemptionRevocationClaim =
   | { outcome: 'UNVERIFIED' }
   | { outcome: 'CLAIMED'; previousStatus: PointsRedemptionRevocableStatus };
 
+/** Resultado de borrar una redención del panel. `NOT_DELETABLE` significa que hay algo por conciliar. */
+export type PointsRedemptionRemoval =
+  | { outcome: 'NOT_FOUND' }
+  | { outcome: 'NOT_DELETABLE' }
+  | { outcome: 'DELETED'; documentNumber: string };
+
 @Injectable()
 export class PointsRedemptionsRepository {
   constructor(private readonly prisma: PrismaService) {}
@@ -237,6 +243,35 @@ export class PointsRedemptionsRepository {
         revocationErrorMessage: message,
       },
       include: redemptionInclude,
+    });
+  }
+
+  /**
+   * Quita la redención del panel. Es la forma de limpiar las operaciones de prueba, que de otro modo
+   * se quedan para siempre porque ya no ofrecen ninguna acción.
+   *
+   * Solo se borra lo que está resuelto: una redención cuyo resultado todavía no se conoce —el
+   * proveedor no ha respondido o la anulación quedó por verificar— es la única prueba de lo que pasó
+   * con esos puntos, así que no se puede tirar. La condición se repite en el `deleteMany` para que
+   * una anulación que empiece en paralelo no se borre a mitad de camino.
+   */
+  remove(id: number): Promise<PointsRedemptionRemoval> {
+    return this.prisma.$transaction(async (transaction) => {
+      const redemption = await transaction.pointsRedemption.findUnique({
+        where: { id },
+        select: { documentNumber: true },
+      });
+      if (!redemption) return { outcome: 'NOT_FOUND' };
+
+      const deleted = await transaction.pointsRedemption.deleteMany({
+        where: {
+          id,
+          status: { in: ['FAILED', 'PENDING_INVOICE', 'COMPLETED', 'REVOKED'] },
+          OR: [{ revocationStatus: null }, { revocationStatus: { in: ['FAILED', 'COMPLETED'] } }],
+        },
+      });
+      if (deleted.count !== 1) return { outcome: 'NOT_DELETABLE' };
+      return { outcome: 'DELETED', documentNumber: redemption.documentNumber };
     });
   }
 }

@@ -335,6 +335,17 @@ const repository = {
     Object.assign(row, { status: 'COMPLETED', ...invoice });
     return withAuthor(row);
   },
+  /** Misma regla que el repositorio real: lo que aún puede conciliarse no se borra. */
+  remove(id: number) {
+    const row = rows.get(id);
+    if (!row) return Promise.resolve({ outcome: 'NOT_FOUND' as const });
+    const settled = ['FAILED', 'PENDING_INVOICE', 'COMPLETED', 'REVOKED'].includes(row.status);
+    const revocationBusy =
+      row.revocationStatus === 'PROCESSING' || row.revocationStatus === 'UNVERIFIED';
+    if (!settled || revocationBusy) return Promise.resolve({ outcome: 'NOT_DELETABLE' as const });
+    rows.delete(id);
+    return Promise.resolve({ outcome: 'DELETED' as const, documentNumber: row.documentNumber });
+  },
 };
 
 const invoices = {
@@ -878,8 +889,50 @@ try {
     '«En proceso» no debía devolver redenciones ya terminadas.',
   );
 
+  /**
+   * 18. Borrar una redención resuelta la quita del panel sin hablar con el proveedor. Es la forma de
+   * limpiar las operaciones de prueba, que ya no ofrecen ninguna otra acción.
+   */
+  const deleteSeed = seedRevocable('PENDING_INVOICE', 'nut-delete');
+  const removed = await service.remove(deleteSeed.id, admin);
+  assert(removed.success === true, 'Borrar una redención resuelta debía responder con éxito.');
+  assert(!rows.has(deleteSeed.id), 'La redención borrada no debía quedar en la tabla.');
+
+  // 19. Lo que todavía puede conciliarse no se borra: es la única prueba de lo que pasó con los puntos.
+  const busySeed = seedRevocable('PENDING_INVOICE', 'nut-busy');
+  busySeed.status = 'UNVERIFIED';
+  const busyError = await rejects(
+    service.remove(busySeed.id, admin),
+    'Una redención por verificar no debía borrarse.',
+  );
+  assert(
+    businessCode(busyError) === 'POINTS_REDEMPTION_NOT_DELETABLE',
+    'El borrado bloqueado debía responder POINTS_REDEMPTION_NOT_DELETABLE.',
+  );
+  assert(rows.has(busySeed.id), 'Una redención por verificar debía conservarse.');
+
+  const revokingSeed = seedRevocable('COMPLETED', 'nut-revoking');
+  revokingSeed.revocationStatus = 'UNVERIFIED';
+  await rejects(
+    service.remove(revokingSeed.id, admin),
+    'Una anulación por verificar no debía permitir borrar la redención.',
+  );
+  assert(rows.has(revokingSeed.id), 'La redención con anulación incierta debía conservarse.');
+
+  // 20. Un comercial no borra la redención de un colega, igual que no puede facturarla.
+  const foreignSeed = seedRevocable('PENDING_INVOICE', 'nut-foreign');
+  foreignSeed.createdByUserId = 'user-commercial-2';
+  const foreignError = await rejects(
+    service.remove(foreignSeed.id, { id: 'user-commercial', role: 'COMMERCIAL' }),
+    'Un comercial no debía borrar la redención de otro.',
+  );
+  assert(
+    businessCode(foreignError) === 'POINTS_REDEMPTION_NOT_OWNED',
+    'El borrado ajeno debía responder POINTS_REDEMPTION_NOT_OWNED.',
+  );
+
   console.log(
-    'Points redemption smoke: lookup, OTP challenge sin filtrar el código, saldo insuficiente, cuenta inhabilitada, redención correcta con importe puntos × 6, fallo incierto, rechazo definitivo, factura asociada, bitácora sin PIN, anulación con identificador nuevo, factura conservada, rechazo reintentable, 5xx bloqueado y filtro «En proceso» OK.',
+    'Points redemption smoke: lookup, OTP challenge sin filtrar el código, saldo insuficiente, cuenta inhabilitada, redención correcta con importe puntos × 6, fallo incierto, rechazo definitivo, factura asociada, bitácora sin PIN, anulación con identificador nuevo, factura conservada, rechazo reintentable, 5xx bloqueado, filtro «En proceso», borrado de una redención resuelta y bloqueo de lo que sigue por conciliar OK.',
   );
 } finally {
   server.close();

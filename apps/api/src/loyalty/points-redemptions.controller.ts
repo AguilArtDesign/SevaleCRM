@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Delete,
   ForbiddenException,
   Param,
   Post,
@@ -102,5 +103,16 @@ export class PointsRedemptionsController {
   @RequirePermissions('loyalty.revoke')
   revoke(@Param('id') id: string, @Req() request: AuthenticatedRequest) {
     return this.redemptions.revoke(parseInput(pointsInvoiceIdSchema, id), this.user(request));
+  }
+
+  /**
+   * Quita la redención del panel, igual que una factura: sirve para limpiar las operaciones de
+   * prueba. Comparte permiso con el borrado de facturas porque el efecto es el mismo —el registro y
+   * su historial desaparecen— y no puede depender de quien tenga habilitado redimir.
+   */
+  @Delete(':id')
+  @RequirePermissions('loyalty.delete')
+  remove(@Param('id') id: string, @Req() request: AuthenticatedRequest) {
+    return this.redemptions.remove(parseInput(pointsInvoiceIdSchema, id), this.user(request));
   }
 }

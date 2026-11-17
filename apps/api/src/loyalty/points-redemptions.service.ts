@@ -461,6 +461,52 @@ export class PointsRedemptionsService {
     }
   }
 
+  /**
+   * Quita la redención del panel. Existe para las operaciones de prueba: una redención ya resuelta no
+   * ofrece ninguna acción, así que sin esto se queda en la tabla para siempre.
+   *
+   * No se llama al proveedor: la redención ya está resuelta y lo que se borra es el registro local.
+   * Lo que queda por conciliar —un intento en curso o una anulación sin confirmar— no se borra.
+   */
+  async remove(id: number, user: SessionUser) {
+    const redemption = await this.redemptions.find(id);
+    if (!redemption) {
+      throw businessError(
+        NotFoundException,
+        'POINTS_REDEMPTION_NOT_FOUND',
+        'La redención no existe en el panel.',
+      );
+    }
+    // Igual que al asociar la factura: la redención es del comercial que la hizo, no del seller.
+    if (user.role !== 'ADMIN' && redemption.createdByUserId !== user.id) {
+      throw businessError(
+        ForbiddenException,
+        'POINTS_REDEMPTION_NOT_OWNED',
+        'La redención pertenece a otro comercial.',
+      );
+    }
+
+    const result = await this.redemptions.remove(id);
+    if (result.outcome === 'NOT_FOUND') {
+      throw businessError(
+        NotFoundException,
+        'POINTS_REDEMPTION_NOT_FOUND',
+        'La redención no existe en el panel.',
+      );
+    }
+    if (result.outcome === 'NOT_DELETABLE') {
+      throw businessError(
+        ConflictException,
+        'POINTS_REDEMPTION_NOT_DELETABLE',
+        'Esta redención todavía tiene una operación por confirmar.',
+      );
+    }
+    this.logger.log(
+      `Redención ${id} del documento ${result.documentNumber} eliminada del panel por ${user.id}.`,
+    );
+    return { success: true as const };
+  }
+
   /** La redención tal como la ve el panel, para responder a sus propias acciones. */
   private async detail(id: number, user: SessionUser) {
     const redemption = await this.redemptions.find(id);

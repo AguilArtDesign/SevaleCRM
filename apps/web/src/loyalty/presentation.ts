@@ -77,6 +77,24 @@ export function canAccrue(invoice: PointsInvoiceRecord) {
 }
 
 /**
+ * Quitar una redención del panel.
+ *
+ * Existe para las operaciones de prueba: una redención resuelta ya no ofrece ninguna acción, así que
+ * sin esto se queda en la tabla para siempre. No se borra lo que todavía puede necesitar
+ * conciliación: un intento en curso o una anulación sin confirmar son la única prueba de lo que pasó
+ * con los puntos del cliente. La regla se repite en el backend, que es quien la aplica.
+ */
+export function canDeleteRedemption(redemption: {
+  status: PointsRedemptionStatus;
+  revocationStatus: 'PROCESSING' | 'COMPLETED' | 'FAILED' | 'UNVERIFIED' | null;
+}) {
+  if (redemption.status === 'PROCESSING' || redemption.status === 'UNVERIFIED') return false;
+  if (redemption.status === 'REVOKING') return false;
+  const revocation = redemption.revocationStatus;
+  return revocation !== 'PROCESSING' && revocation !== 'UNVERIFIED';
+}
+
+/**
  * Anular solo tiene sentido sobre puntos acreditados. Un intento de anulación que quedó fallido se
  * puede repetir; uno ambiguo, no: repetir podría anular una operación que ya se anuló.
  */

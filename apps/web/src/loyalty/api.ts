@@ -244,4 +244,7 @@ export const pointsColombiaApi = {
     apiRequest<PointsRedemptionRecord>(`/api/points-colombia/redemptions/${id}/revoke`, {
       method: 'POST',
     }),
+  /** Quita la redención del panel. No habla con el proveedor: borra el registro local. */
+  removeRedemption: (id: number) =>
+    apiRequest<{ success: true }>(`/api/points-colombia/redemptions/${id}`, { method: 'DELETE' }),
 };

@@ -61,6 +61,7 @@ import {
   canAccrue,
   canAttachInvoice,
   canDelete,
+  canDeleteRedemption,
   canRevoke,
   canRevokeRedemption,
   invoiceDate,
@@ -109,6 +110,8 @@ export function PointsColombiaPage() {
   const [redeemOpen, setRedeemOpen] = useState(false);
   const [invoiceTarget, setInvoiceTarget] = useState<PointsRedemptionRecord | null>(null);
   const [revokeRedemptionTarget, setRevokeRedemptionTarget] =
+    useState<PointsRedemptionRecord | null>(null);
+  const [deleteRedemptionTarget, setDeleteRedemptionTarget] =
     useState<PointsRedemptionRecord | null>(null);
   const [redemptionDetailTarget, setRedemptionDetailTarget] =
     useState<PointsRedemptionRecord | null>(null);
@@ -451,6 +454,7 @@ export function PointsColombiaPage() {
                                   if (String(key) === 'detail') setRedemptionDetailTarget(row);
                                   if (String(key) === 'invoice') setInvoiceTarget(row);
                                   if (String(key) === 'revoke') setRevokeRedemptionTarget(row);
+                                  if (String(key) === 'delete') setDeleteRedemptionTarget(row);
                                 }}
                               >
                                 <Dropdown.Section>
@@ -481,6 +485,26 @@ export function PointsColombiaPage() {
                                     </Dropdown.Item>
                                   )}
                                 </Dropdown.Section>
+                                {/* Quitar la redención va apartado, como en las facturas: es para
+                                    limpiar una operación de prueba, no una acción del día a día. */}
+                                {canDeleteRedemption(row) && canDeletePoints && (
+                                  <>
+                                    <Separator />
+                                    <Dropdown.Section>
+                                      <Dropdown.Item
+                                        id="delete"
+                                        textValue="Eliminar"
+                                        variant="danger"
+                                      >
+                                        <TrashBin
+                                          className="size-4 shrink-0 text-danger"
+                                          aria-hidden="true"
+                                        />
+                                        <Label>Eliminar</Label>
+                                      </Dropdown.Item>
+                                    </Dropdown.Section>
+                                  </>
+                                )}
                               </Dropdown.Menu>
                             </Dropdown.Popover>
                           </Dropdown>
@@ -817,6 +841,18 @@ export function PointsColombiaPage() {
           onClose={() => setRevokeRedemptionTarget(null)}
           onDone={() => {
             setRevokeRedemptionTarget(null);
+            void refresh();
+          }}
+        />
+      )}
+
+      {deleteRedemptionTarget && (
+        <DeleteRedemptionModal
+          key={deleteRedemptionTarget.id}
+          redemption={deleteRedemptionTarget}
+          onClose={() => setDeleteRedemptionTarget(null)}
+          onDone={() => {
+            setDeleteRedemptionTarget(null);
             void refresh();
           }}
         />
@@ -2073,6 +2109,75 @@ function DeleteInvoiceModal({
                 {invoice.source === 'UAT_SEED'
                   ? 'Si la vuelves a necesitar, puedes crearla otra vez desde el formulario de factura UAT.'
                   : 'Si la vuelves a necesitar, tendrás que agregarla otra vez desde Siigo.'}
+              </p>
+            </AlertDialog.Body>
+            <AlertDialog.Footer>
+              <Button variant="tertiary" onPress={onClose} isDisabled={deleteMutation.isPending}>
+                Cancelar
+              </Button>
+              <Button
+                variant="danger"
+                isPending={deleteMutation.isPending}
+                isDisabled={deleteMutation.isPending}
+                onPress={() => deleteMutation.mutate()}
+              >
+                {deleteMutation.isPending ? (
+                  <Spinner color="current" size="sm" />
+                ) : (
+                  <TrashBin width={16} height={16} />
+                )}
+                Eliminar
+              </Button>
+            </AlertDialog.Footer>
+          </AlertDialog.Dialog>
+        </AlertDialog.Container>
+      </AlertDialog.Backdrop>
+    </AlertDialog>
+  );
+}
+
+/**
+ * Quita del panel una redención ya resuelta. Se confirma aparte porque el registro y su historial
+ * desaparecen, y desde el CRM no hay forma de recuperarlos: el proveedor ya no tiene la operación.
+ */
+function DeleteRedemptionModal({
+  redemption,
+  onClose,
+  onDone,
+}: {
+  redemption: PointsRedemptionRecord;
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const [error, setError] = useState('');
+  const deleteMutation = useMutation({
+    mutationFn: () => pointsColombiaApi.removeRedemption(redemption.id),
+    onError: (failure: Error) => setError(failure.message),
+    onSuccess: onDone,
+  });
+  const points = redemption.pointsRedeemed ?? redemption.pointsRequested;
+
+  return (
+    <AlertDialog isOpen onOpenChange={(open) => !open && onClose()}>
+      <AlertDialog.Backdrop>
+        <AlertDialog.Container size="sm">
+          <AlertDialog.Dialog>
+            <AlertDialog.Header>
+              <AlertDialog.Icon status="danger">
+                <TrashBin />
+              </AlertDialog.Icon>
+              <AlertDialog.Heading>Eliminar redención</AlertDialog.Heading>
+            </AlertDialog.Header>
+            <AlertDialog.Body>
+              {error && <PointsFeedback>{error}</PointsFeedback>}
+              <p>
+                Se quitará del panel la redención de <strong>{points}</strong> puntos (
+                {formattedMoneyWithCode(redemption.amountCop, 'COP')}) del documento{' '}
+                <strong>{redemption.documentNumber}</strong> con su historial.
+              </p>
+              <p>
+                Los puntos del cliente no se devuelven: para eso hay que revocar la redención antes
+                de eliminarla.
               </p>
             </AlertDialog.Body>
             <AlertDialog.Footer>
