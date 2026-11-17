@@ -17,7 +17,8 @@ import { PuntosColombiaTokenService } from './puntos-colombia-token.service.js';
 
 type UnknownRecord = Record<string, unknown>;
 
-export type PointsDocumentType = '2' | '3' | '5';
+/** Los dos tipos con los que Puntos Colombia opera: cédula de ciudadanía y de extranjería. */
+export type PointsDocumentType = '2' | '3';
 
 /** Lo que el panel necesita del saldo: nada más se guarda ni se muestra. */
 export type PointsBalance = {
@@ -166,12 +167,19 @@ export class PuntosColombiaService {
 
   /**
    * Saldo corto de una cuenta. `documentNo` va en la ruta y `documentType` en la query, como exige el
-   * proveedor. Un 401 se reintenta una sola vez con token nuevo: es el único fallo que el token
-   * explica, y repetir más veces solo duplicaría llamadas.
+   * proveedor. El `LocationCode` es el punto de venta del usuario que opera y viaja en la query: el
+   * proveedor rechaza con `POS_LOCATION_NOT_OF_PARTNER` un código que no sea del partner.
+   *
+   * Un 401 se reintenta una sola vez con token nuevo: es el único fallo que el token explica, y
+   * repetir más veces solo duplicaría llamadas.
    */
-  lookupAccount(documentNumber: string, documentType: PointsDocumentType): Promise<PointsBalance> {
+  lookupAccount(
+    documentNumber: string,
+    documentType: PointsDocumentType,
+    locationCode: string,
+  ): Promise<PointsBalance> {
     return this.withToken((token, config) =>
-      this.requestBalance(token, config, documentNumber, documentType),
+      this.requestBalance(token, config, documentNumber, documentType, locationCode),
     );
   }
 
@@ -252,13 +260,14 @@ export class PuntosColombiaService {
     config: PuntosColombiaConfig,
     documentNumber: string,
     documentType: PointsDocumentType,
+    locationCode: string,
   ): Promise<PointsBalance> {
     const url = integrationUrl(
       config.baseUrl,
       `pos-management/v1/accounts/${encodeURIComponent(documentNumber)}/shortBalance`,
     );
     url.searchParams.set('PartnerCode', config.partnerCode);
-    url.searchParams.set('LocationCode', config.locationCode);
+    url.searchParams.set('LocationCode', locationCode);
     url.searchParams.set('documentType', documentType);
 
     let payload: unknown;

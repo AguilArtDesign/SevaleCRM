@@ -76,7 +76,6 @@ El archivo `.env.production.example` contiene únicamente placeholders y sirve c
 | `PCO_CLIENT_ID`                                                | Para usar el panel    | Credencial de la tokenización. Secreto.                  |
 | `PCO_CLIENT_SECRET`                                            | Para usar el panel    | Credencial de la tokenización. Secreto.                  |
 | `PCO_PARTNER_CODE`                                             | Para usar el panel    | NIT de la empresa en el programa.                        |
-| `PCO_LOCATION_CODE`                                            | Para usar el panel    | Código del punto de venta.                               |
 | `PCO_CA_CHANNEL`                                               | No                    | Canal informado al proveedor; por defecto `V`.           |
 | `PCO_REMOTE_IPV4`                                              | No                    | IP de salida informada al proveedor.                     |
 | `PCO_TERMINAL_ID`                                              | No                    | Terminal de las transacciones; `PCAliados-01`.           |
@@ -122,7 +121,6 @@ PCO_BASE_URL=https://apinp.puntoscolombia.com
 PCO_CLIENT_ID=
 PCO_CLIENT_SECRET=
 PCO_PARTNER_CODE=
-PCO_LOCATION_CODE=
 PCO_CA_CHANNEL=V
 PCO_REMOTE_IPV4=
 PCO_TERMINAL_ID=PCAliados-01
@@ -130,7 +128,7 @@ PCO_CASHIER_ID=Yohander-01
 PCO_ADMIN_ONLY=true
 ```
 
-`PCO_CLIENT_ID` y `PCO_CLIENT_SECRET` son secretos y solo viven en el servidor: la tokenización envía el secreto en la URL, así que el registro de integración guarda la ruta sin la cadena de consulta. `PCO_PARTNER_CODE` es el NIT de la empresa y `PCO_LOCATION_CODE`, el código del punto de venta; los dos los entrega el programa al certificar. `PCO_ADMIN_ONLY` ausente equivale a `true`.
+`PCO_CLIENT_ID` y `PCO_CLIENT_SECRET` son secretos y solo viven en el servidor: la tokenización envía el secreto en la URL, así que el registro de integración guarda la ruta sin la cadena de consulta. `PCO_PARTNER_CODE` es el NIT de la empresa y lo entrega el programa al certificar. El punto de venta (`LocationCode`) **no** es una variable de entorno: cada usuario lleva el suyo en su ficha, porque no es un valor fijo de la empresa y puede repetirse entre algunos usuarios. `PCO_ADMIN_ONLY` ausente equivale a `true`.
 
 ### Gmail SMTP
 

@@ -1,4 +1,5 @@
 import type { PointsDocumentType, PointsInvoiceListQuery } from '@sevale/validation';
+import type { PointsErrorDiagnosis } from '@sevale/shared';
 import { apiUrl } from '../config/api-url';
 
 export type PointsInvoiceStatus =
@@ -23,6 +24,8 @@ export type PointsRedemptionRecord = {
   status: PointsRedemptionStatus;
   errorCode: string | null;
   errorMessage: string | null;
+  /** Traducción del error para el administrador. Nula para el resto de roles. */
+  diagnosis: PointsErrorDiagnosis | null;
   invoice: { name: string; date: string | null; total: string | null } | null;
   completedAt: string | null;
   createdBy: { id: string; name: string; email: string } | null;
@@ -31,6 +34,8 @@ export type PointsRedemptionRecord = {
   revocationStatus: 'PROCESSING' | 'COMPLETED' | 'FAILED' | 'UNVERIFIED' | null;
   revocationErrorCode: string | null;
   revocationErrorMessage: string | null;
+  /** Traducción del error de anulación para el administrador. */
+  revocationDiagnosis: PointsErrorDiagnosis | null;
   revokedAt: string | null;
 };
 
@@ -67,10 +72,13 @@ export type PointsInvoiceRecord = {
     documentType: string;
     errorCode: string | null;
     errorMessage: string | null;
+    /** Traducción del error para el administrador. Nula para el resto de roles. */
+    diagnosis: PointsErrorDiagnosis | null;
     /** Anulación de la acumulación. Nulo mientras nadie la haya intentado. */
     revocationStatus: 'PROCESSING' | 'COMPLETED' | 'FAILED' | 'UNVERIFIED' | null;
     revocationErrorCode: string | null;
     revocationErrorMessage: string | null;
+    revocationDiagnosis: PointsErrorDiagnosis | null;
     revokedAt: string | null;
     revokedBy: { id: string; name: string } | null;
     completedAt: string | null;

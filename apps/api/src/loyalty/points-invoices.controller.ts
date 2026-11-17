@@ -56,7 +56,7 @@ export class PointsInvoicesController {
         success: false,
         error: {
           code: 'POINTS_ADMIN_ONLY',
-          message: 'El panel de Puntos Colombia está habilitado solo para administradores.',
+          message: 'Tu usuario no tiene permisos.',
         },
       });
     }
@@ -64,8 +64,8 @@ export class PointsInvoicesController {
   }
 
   @Get('invoices')
-  list(@Query() query: unknown) {
-    return this.points.list(parseInput(pointsInvoiceListQuerySchema, query));
+  list(@Query() query: unknown, @Req() request: AuthenticatedRequest) {
+    return this.points.list(parseInput(pointsInvoiceListQuerySchema, query), this.user(request));
   }
 
   @Get('invoices/prefixes')
@@ -74,8 +74,8 @@ export class PointsInvoicesController {
   }
 
   @Get('invoices/:id')
-  detail(@Param('id') id: string) {
-    return this.points.detail(parseInput(pointsInvoiceIdSchema, id));
+  detail(@Param('id') id: string, @Req() request: AuthenticatedRequest) {
+    return this.points.detail(parseInput(pointsInvoiceIdSchema, id), this.user(request));
   }
 
   @Post('invoices/search')
@@ -110,8 +110,10 @@ export class PointsInvoicesController {
 
   @Post('accounts/lookup')
   lookup(@Body() body: unknown, @Req() request: AuthenticatedRequest) {
-    this.user(request);
-    return this.points.lookupAccount(parseInput(pointsAccountLookupSchema, body));
+    return this.points.lookupAccount(
+      parseInput(pointsAccountLookupSchema, body),
+      this.user(request),
+    );
   }
 
   @Post('invoices/:id/accrue')

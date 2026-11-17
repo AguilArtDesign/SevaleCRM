@@ -7,6 +7,8 @@ import { PointsInvoicesService } from '../apps/api/src/loyalty/points-invoices.s
 import type { PointsInvoicesRepository } from '../apps/api/src/loyalty/points-invoices.repository.js';
 import type { IntegrationLogsService } from '../apps/api/src/integration-logs/integration-logs.service.js';
 import type { SiigoService } from '../apps/api/src/integrations/siigo/siigo.service.js';
+import type { PrismaService } from '../apps/api/src/database/prisma.service.js';
+import { PointsLocationService } from '../apps/api/src/loyalty/points-location.service.js';
 import { serializeLogBody } from '../apps/api/src/integration-logs/integration-log.types.js';
 
 function assert(condition: unknown, message: string): asserts condition {
@@ -20,6 +22,14 @@ async function rejects(promise: Promise<unknown>, message: string): Promise<unkn
     return error;
   }
   throw new Error(message);
+}
+
+/** Código de negocio del error, que es lo que el panel usa para decidir qué mostrar. */
+function businessCode(error: unknown): string {
+  const response = (error as { getResponse?: () => unknown }).getResponse?.();
+  const code = (response as { error?: { code?: unknown } } | undefined)?.error?.code;
+  assert(typeof code === 'string', `El error no trae código de negocio: ${String(error)}`);
+  return code;
 }
 
 function json(response: ServerResponse, status: number, value: unknown) {
@@ -152,7 +162,6 @@ if (!address || typeof address === 'string') throw new Error('Sin puerto para el
 
 process.env.PCO_BASE_URL = `http://127.0.0.1:${address.port}`;
 process.env.PCO_PARTNER_CODE = '901647454';
-process.env.PCO_LOCATION_CODE = 'PDVBRA0001';
 process.env.PCO_TERMINAL_ID = 'PCAliados-01';
 process.env.PCO_CASHIER_ID = 'Yohander-01';
 
@@ -359,15 +368,33 @@ function statusOf(where: unknown) {
   return status?.in ?? null;
 }
 
+// El punto de venta vive en la ficha del usuario: se ejerce el servicio real contra un doble de
+// Prisma para cubrir también el usuario sin código.
+const users = [
+  { id: 'user-admin', pcoLocationCode: 'PDVBRA0001' },
+  { id: 'user-sin-punto', pcoLocationCode: null },
+];
+const prisma = {
+  user: {
+    findUnique({ where }: { where: { id: string } }) {
+      const found = users.find((user) => user.id === where.id);
+      return Promise.resolve(found ? { pcoLocationCode: found.pcoLocationCode } : null);
+    },
+  },
+} as unknown as PrismaService;
+const location = new PointsLocationService(prisma);
+
 const service = new PointsRedemptionsService(
   repository as unknown as PointsRedemptionsRepository,
   new PuntosColombiaService({ getAccessToken: () => Promise.resolve('token') } as never),
   siigo as unknown as SiigoService,
   invoices as unknown as PointsInvoicesService,
   { record: () => Promise.resolve(null) } as unknown as IntegrationLogsService,
+  location,
 );
 
 const admin = { id: 'user-admin', role: 'ADMIN' };
+const sinPunto = { id: 'user-sin-punto', role: 'ADMIN' };
 
 /**
  * Filas de las dos tablas para el listado unido: una redención del 6 y dos acumulaciones del 5 y el
@@ -482,18 +509,28 @@ function seedRevocable(status: 'PENDING_INVOICE' | 'COMPLETED', nut: string): Ro
 
 try {
   // 1. La consulta distingue una cuenta inexistente de una que existe.
-  const found = await service.lookup({ documentNumber: '1011237866', documentType: '2' });
+  const found = await service.lookup({ documentNumber: '1011237866', documentType: '2' }, admin);
   assert(found.found === true, 'La cuenta de prueba debía existir.');
   assert(found.balance.pointsAmount === 9185, 'El saldo debía ser el del proveedor.');
   assert(found.balance.allowRedemption === true, 'La cuenta debía permitir redimir.');
-  const missing = await service.lookup({ documentNumber: '999999999', documentType: '2' });
+  const missing = await service.lookup({ documentNumber: '999999999', documentType: '2' }, admin);
   assert(missing.found === false, 'Una cuenta inexistente debía informarse como no encontrada.');
-
+  const sinPuntoError = await rejects(
+    service.lookup({ documentNumber: '1011237866', documentType: '2' }, sinPunto),
+    'Un usuario sin punto de venta no puede consultar cuentas.',
+  );
+  assert(
+    businessCode(sinPuntoError) === 'POINTS_LOCATION_NOT_CONFIGURED',
+    'Sin punto de venta el código debía ser POINTS_LOCATION_NOT_CONFIGURED.',
+  );
   // 2. El código se pide y el que devuelve el proveedor no se propaga.
-  const challenge = await service.requestChallenge({
-    documentNumber: '1011237866',
-    documentType: '2',
-  });
+  const challenge = await service.requestChallenge(
+    {
+      documentNumber: '1011237866',
+      documentType: '2',
+    },
+    admin,
+  );
   assert(challenge.validationMethod === 'OTP', 'El método de validación debía ser OTP.');
   assert(
     !JSON.stringify(challenge).includes('979518'),
@@ -651,14 +688,18 @@ try {
     { sellerName: () => Promise.resolve(null) } as unknown as SiigoService,
     new PuntosColombiaService({ getAccessToken: () => Promise.resolve('token') } as never),
     { record: () => Promise.resolve(null) } as unknown as IntegrationLogsService,
+    location,
   );
 
-  const firstPage = await panel.list({
-    search: '',
-    status: 'all',
-    page: 1,
-    pageSize: 2,
-  } as never);
+  const firstPage = await panel.list(
+    {
+      search: '',
+      status: 'all',
+      page: 1,
+      pageSize: 2,
+    } as never,
+    admin,
+  );
   assert(
     firstPage.pagination.total === 4,
     `El total debía sumar las dos tablas, fue ${firstPage.pagination.total}.`,
@@ -674,35 +715,44 @@ try {
     'La segunda fila debía ser la acumulación del día anterior.',
   );
 
-  const secondPage = await panel.list({
-    search: '',
-    status: 'all',
-    page: 2,
-    pageSize: 2,
-  } as never);
+  const secondPage = await panel.list(
+    {
+      search: '',
+      status: 'all',
+      page: 2,
+      pageSize: 2,
+    } as never,
+    admin,
+  );
   assert(secondPage.data.length === 2, 'La segunda página debía traer las dos filas restantes.');
   assert(
     !secondPage.data.some((row) => row.kind === 'REDEMPTION' && row.id === 2),
     'Una fila no puede repetirse entre páginas.',
   );
 
-  const onlyPendingInvoice = await panel.list({
-    search: '',
-    status: 'PENDING_INVOICE',
-    page: 1,
-    pageSize: 20,
-  } as never);
+  const onlyPendingInvoice = await panel.list(
+    {
+      search: '',
+      status: 'PENDING_INVOICE',
+      page: 1,
+      pageSize: 20,
+    } as never,
+    admin,
+  );
   assert(
     onlyPendingInvoice.data.every((row) => row.kind === 'REDEMPTION'),
     'Filtrar por pendiente de factura no debe devolver acumulaciones.',
   );
 
-  const onlyRevoked = await panel.list({
-    search: '',
-    status: 'REVOKED',
-    page: 1,
-    pageSize: 20,
-  } as never);
+  const onlyRevoked = await panel.list(
+    {
+      search: '',
+      status: 'REVOKED',
+      page: 1,
+      pageSize: 20,
+    } as never,
+    admin,
+  );
   assert(
     onlyRevoked.data.every((row) => row.kind === 'ACCRUAL'),
     'Filtrar por revocado no debe devolver redenciones sin anular: una redención también se anula y entra en ese filtro.',
@@ -808,12 +858,15 @@ try {
    */
   const inProgressSeed = seedRevocable('PENDING_INVOICE', 'nut-inprogress');
   inProgressSeed.status = 'PROCESSING';
-  const inProgress = await panel.list({
-    search: '',
-    status: 'IN_PROGRESS',
-    page: 1,
-    pageSize: 20,
-  } as never);
+  const inProgress = await panel.list(
+    {
+      search: '',
+      status: 'IN_PROGRESS',
+      page: 1,
+      pageSize: 20,
+    } as never,
+    admin,
+  );
   assert(
     inProgress.data.some((row) => row.kind === 'REDEMPTION' && row.id === inProgressSeed.id),
     '«En proceso» debía incluir la redención PROCESSING.',

@@ -10,6 +10,8 @@ export type UserRecord = {
   sellerId: number | null;
   /** Prefijo con el que se arma el nombre de la factura en Siigo (`FV-2-`). */
   siigoInvoicePrefix: string | null;
+  /** Punto de venta del usuario en Puntos Colombia. Sin él no puede operar el panel. */
+  pcoLocationCode: string | null;
   role: UserRole;
   active: boolean;
   createdAt: string;

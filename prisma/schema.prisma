@@ -142,6 +142,10 @@ model User {
   /// Prefijo con el que se arma el nombre de la factura que se busca en Siigo (`FV-2-`). No es
   /// único: en oficina varios comerciales comparten prefijo y se distinguen por el seller.
   siigoInvoicePrefix       String?            @map("siigo_invoice_prefix") @db.VarChar(20)
+  /// Punto de venta del usuario en Puntos Colombia. No es fijo ni único: cada usuario de la
+  /// empresa tiene el suyo y algunos lo comparten. Sin él, el usuario no puede operar el panel:
+  /// el proveedor rechazaría la petición con `POS_LOCATION_NOT_OF_PARTNER`.
+  pcoLocationCode          String?            @map("pco_location_code") @db.VarChar(32)
   emailVerified            Boolean            @default(false) @map("email_verified")
   image                    String?            @db.Text
   role                     Role               @default(COMMERCIAL)

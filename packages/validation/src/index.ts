@@ -60,11 +60,33 @@ export const siigoInvoicePrefixSchema = z.preprocess(
     .nullable(),
 );
 
+/**
+ * Punto de venta del usuario en Puntos Colombia (`PDVBRA0001`). No es un valor de la empresa: cada
+ * usuario tiene el suyo y algunos lo comparten, así que vive en la ficha y no en el entorno.
+ *
+ * Es opcional a propósito: hay usuarios que no operan el programa y no deben quedar bloqueados al
+ * crearse. Sin código, el panel les responde «tu usuario no está autorizado» en vez de enviar una
+ * petición que el proveedor rechazaría.
+ */
+export const pcoLocationCodeSchema = z.preprocess(
+  (value) => {
+    if (typeof value !== 'string') return value;
+    const normalized = value.trim().toUpperCase();
+    return normalized === '' ? null : normalized;
+  },
+  z
+    .string()
+    .max(32, 'El código de punto de venta no puede superar los 32 caracteres.')
+    .regex(/^[A-Z0-9-]+$/, 'Usa letras, números y guiones, por ejemplo PDVBRA0001.')
+    .nullable(),
+);
+
 export const createUserSchema = z.object({
   name: z.string().trim().min(2, 'El nombre debe tener al menos 2 caracteres.').max(191),
   email: emailSchema,
   sellerId: sellerIdSchema,
   siigoInvoicePrefix: siigoInvoicePrefixSchema.optional(),
+  pcoLocationCode: pcoLocationCodeSchema.optional(),
   role: roleSchema,
   active: z.boolean().default(true),
 });
@@ -76,6 +98,7 @@ export const updateUserSchema = z
     active: z.boolean().optional(),
     sellerId: sellerIdSchema.optional(),
     siigoInvoicePrefix: siigoInvoicePrefixSchema.optional(),
+    pcoLocationCode: pcoLocationCodeSchema.optional(),
   })
   .refine((data) => Object.keys(data).length > 0, 'Debes enviar al menos un cambio.');
 
@@ -1538,17 +1561,19 @@ export type ProspectSourceInput = z.infer<typeof prospectSourceSchema>;
 // --- Puntos Colombia --------------------------------------------------------------------------
 
 /**
- * Tipos de documento que acepta Puntos Colombia. Es su propio catálogo: `2` cédula de ciudadanía,
- * `3` cédula de extranjería y `5` NIT. No coincide con los códigos que usa Siigo, así que no se
- * reutiliza `customerDocumentTypes`.
+ * Tipos de documento que acepta Puntos Colombia. Es su propio catálogo: `2` cédula de ciudadanía y
+ * `3` cédula de extranjería. No coincide con los códigos que usa Siigo, así que no se reutiliza
+ * `customerDocumentTypes`.
+ *
+ * El NIT (`5`) queda fuera a propósito: por acuerdo con el programa, la acumulación y la redención
+ * solo operan con personas naturales, así que ofrecerlo llevaría a un rechazo del proveedor.
  */
 export const pointsDocumentTypes = [
   { value: '2', label: 'Cédula de ciudadanía' },
   { value: '3', label: 'Cédula de extranjería' },
-  { value: '5', label: 'NIT' },
 ] as const;
 
-export const pointsDocumentTypeSchema = z.enum(['2', '3', '5'], {
+export const pointsDocumentTypeSchema = z.enum(['2', '3'], {
   error: 'Selecciona el tipo de documento.',
 });
 

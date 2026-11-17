@@ -7491,6 +7491,59 @@ select {
   line-height: 1.45;
 }
 
+/* Explicación del error para el administrador. Va sobre superficie neutra y no sobre el rojo del
+   aviso: no es el fallo, es su traducción, y dos bloques rojos seguidos se leen como dos fallos. */
+.points-diagnosis {
+  display: grid;
+  padding: 0.75rem 0.9rem;
+  gap: 0.55rem;
+  background: var(--surface-secondary);
+  border: 1px solid var(--separator);
+  border-radius: var(--field-radius);
+}
+
+.points-diagnosis-title {
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.points-diagnosis dl {
+  display: grid;
+  margin: 0;
+  gap: 0.5rem;
+}
+
+.points-diagnosis dl > div {
+  display: grid;
+  gap: 0.1rem;
+}
+
+.points-diagnosis dt {
+  color: var(--muted);
+  font-size: 0.7rem;
+}
+
+.points-diagnosis dd {
+  margin: 0;
+  color: var(--foreground);
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
+.points-diagnosis code {
+  color: var(--accent);
+  font-size: 0.75rem;
+}
+
+/* La respuesta del proveedor puede ser larga y con caracteres raros: se parte en vez de desbordar. */
+.points-diagnosis-raw {
+  color: var(--muted) !important;
+  overflow-wrap: anywhere;
+}
+
 /* El selector de rango ocupa el ancho de los dos campos de fecha que reemplazó. */
 .points-date-range {
   width: 19.5rem;

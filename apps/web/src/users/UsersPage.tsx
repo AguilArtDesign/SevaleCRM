@@ -98,6 +98,7 @@ export function UsersPage() {
   const [email, setEmail] = useState('');
   const [sellerId, setSellerId] = useState('');
   const [invoicePrefix, setInvoicePrefix] = useState('');
+  const [locationCode, setLocationCode] = useState('');
   const [role, setRole] = useState<UserRole>('COMMERCIAL');
   const [active, setActive] = useState(true);
   const [deleteTarget, setDeleteTarget] = useState<UserRecord | null>(null);
@@ -135,6 +136,7 @@ export function UsersPage() {
     setEmail('');
     setSellerId('');
     setInvoicePrefix('');
+    setLocationCode('');
     setRole('COMMERCIAL');
     setActive(true);
   };
@@ -151,6 +153,7 @@ export function UsersPage() {
     setEmail(selected.email);
     setSellerId(selected.sellerId === null ? '' : String(selected.sellerId));
     setInvoicePrefix(selected.siigoInvoicePrefix ?? '');
+    setLocationCode(selected.pcoLocationCode ?? '');
     setRole(selected.role);
     setActive(selected.active);
   };
@@ -173,7 +176,15 @@ export function UsersPage() {
     event.preventDefault();
     setFormError('');
 
-    const values = { name, email, sellerId, siigoInvoicePrefix: invoicePrefix, role, active };
+    const values = {
+      name,
+      email,
+      sellerId,
+      siigoInvoicePrefix: invoicePrefix,
+      pcoLocationCode: locationCode,
+      role,
+      active,
+    };
     const createResult = formMode === 'create' ? createUserSchema.safeParse(values) : null;
     const updateResult = formMode === 'edit' ? updateUserSchema.safeParse(values) : null;
     const validationError = createResult?.error ?? updateResult?.error;
@@ -192,17 +203,24 @@ export function UsersPage() {
           name: nextName,
           sellerId: nextSellerId,
           siigoInvoicePrefix: nextPrefix,
+          pcoLocationCode: nextLocationCode,
           role: nextRole,
           active: nextActive,
         } = updateResult.data;
         await usersApi.update(
           editingId,
           editingId === currentUser?.id
-            ? { name: nextName, sellerId: nextSellerId, siigoInvoicePrefix: nextPrefix }
+            ? {
+                name: nextName,
+                sellerId: nextSellerId,
+                siigoInvoicePrefix: nextPrefix,
+                pcoLocationCode: nextLocationCode,
+              }
             : {
                 name: nextName,
                 sellerId: nextSellerId,
                 siigoInvoicePrefix: nextPrefix,
+                pcoLocationCode: nextLocationCode,
                 role: nextRole,
                 active: nextActive,
               },
@@ -319,6 +337,7 @@ export function UsersPage() {
               <Table.Header>
                 <Table.Column isRowHeader>Usuario</Table.Column>
                 <Table.Column>Seller ID</Table.Column>
+                <Table.Column>Punto de venta</Table.Column>
                 <Table.Column>Rol</Table.Column>
                 <Table.Column>Estado</Table.Column>
                 <Table.Column>Último acceso</Table.Column>
@@ -344,6 +363,7 @@ export function UsersPage() {
                       </div>
                     </Table.Cell>
                     <Table.Cell>{listedUser.sellerId ?? emptyValue}</Table.Cell>
+                    <Table.Cell>{listedUser.pcoLocationCode ?? emptyValue}</Table.Cell>
                     <Table.Cell>{roleLabels[listedUser.role]}</Table.Cell>
                     <Table.Cell>
                       <Chip color={listedUser.active ? 'success' : 'default'}>
@@ -567,6 +587,22 @@ export function UsersPage() {
                     <Description>
                       Con este prefijo se arma la factura que se busca en Puntos Colombia, por
                       ejemplo FV-2 + 789. Puede repetirse entre usuarios.
+                    </Description>
+                  </TextField>
+
+                  <TextField fullWidth name="pcoLocationCode">
+                    <Label>Código de punto de venta (Puntos Colombia)</Label>
+                    <Input
+                      variant="secondary"
+                      placeholder="Ej. PDVBRA0001"
+                      value={locationCode}
+                      onChange={(event) =>
+                        setLocationCode(event.target.value.replace(/[^0-9a-zA-Z-]/g, ''))
+                      }
+                    />
+                    <Description>
+                      Punto de venta del usuario en Puntos Colombia. Sin él no puede acumular ni
+                      redimir puntos. Puede repetirse entre usuarios.
                     </Description>
                   </TextField>
 

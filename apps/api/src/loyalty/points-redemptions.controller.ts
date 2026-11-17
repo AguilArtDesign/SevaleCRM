@@ -48,7 +48,7 @@ export class PointsRedemptionsController {
         success: false,
         error: {
           code: 'POINTS_ADMIN_ONLY',
-          message: 'El panel de Puntos Colombia está habilitado solo para administradores.',
+          message: 'Tu usuario no tiene permisos.',
         },
       });
     }
@@ -58,8 +58,7 @@ export class PointsRedemptionsController {
   /** Primer paso del modal: el cliente existe y cuántos puntos tiene. */
   @Post('lookup')
   lookup(@Body() body: unknown, @Req() request: AuthenticatedRequest) {
-    this.user(request);
-    return this.redemptions.lookup(parseInput(pointsAccountLookupSchema, body));
+    return this.redemptions.lookup(parseInput(pointsAccountLookupSchema, body), this.user(request));
   }
 
   /**
@@ -68,8 +67,10 @@ export class PointsRedemptionsController {
    */
   @Post('challenge')
   challenge(@Body() body: unknown, @Req() request: AuthenticatedRequest) {
-    this.user(request);
-    return this.redemptions.requestChallenge(parseInput(pointsAccountLookupSchema, body));
+    return this.redemptions.requestChallenge(
+      parseInput(pointsAccountLookupSchema, body),
+      this.user(request),
+    );
   }
 
   @Post()

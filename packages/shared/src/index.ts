@@ -43,6 +43,12 @@ export {
   shipmentStatuses,
 } from './shipment-status.js';
 export type { ShipmentStatusCode } from './shipment-status.js';
+export {
+  describePointsError,
+  pointsErrorCatalogSize,
+  pointsErrorServices,
+} from './puntos-colombia-errors.js';
+export type { PointsErrorDiagnosis, PointsErrorService } from './puntos-colombia-errors.js';
 export { wooCustomerUsername } from './customer-username.js';
 export type { WooUsernameSource } from './customer-username.js';
 

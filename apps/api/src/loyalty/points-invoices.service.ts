@@ -20,6 +20,7 @@ import type {
   PointsInvoiceSearchInput,
   PointsUatInvoiceInput,
 } from '@sevale/validation';
+import { describePointsError } from '@sevale/shared';
 import { SiigoService, type SiigoInvoice } from '../integrations/siigo/siigo.service.js';
 import {
   IntegrationAuthenticationException,
@@ -43,6 +44,7 @@ import {
 } from './points-invoices.repository.js';
 import { PointsRedemptionsRepository } from './points-redemptions.repository.js';
 import { serializeRedemption } from './points-redemption-view.js';
+import { PointsLocationService } from './points-location.service.js';
 
 /** Regla fija acordada: cada $1.000 de la factura valen un punto, redondeando hacia abajo. */
 export function pointsForTotal(total: Prisma.Decimal | number): number {
@@ -94,6 +96,22 @@ function isAmbiguous(error: unknown): boolean {
   );
 }
 
+/**
+ * Código que dejó el proveedor, para la fila. Es el que permite el diagnóstico y el que sirve para
+ * buscar el caso en su documentación; el código interno (`POINTS_*`) se reserva para responder al
+ * panel, que es quien decide qué hacer con el estado.
+ */
+function providerCodeOf(error: unknown): string | null {
+  if (error instanceof PointsAccrualRejectedError) return error.resultCode;
+  if (error instanceof PointsCancellationRejectedError) return error.resultCode;
+  if (error instanceof IntegrationRequestRejectedException) return error.providerCode;
+  return null;
+}
+
+/**
+ * Motivo tal como lo dio el proveedor, para guardarlo en la fila. El panel no lo muestra al
+ * comercial —ahí va un texto corto— pero sí es lo que alimenta el diagnóstico del administrador.
+ */
 function safeMessage(error: unknown, fallback: string): string {
   if (error instanceof Error && error.message.length <= 300) return error.message;
   return fallback;
@@ -120,7 +138,11 @@ function errorCode(error: unknown, fallback: string): string {
   return fallback;
 }
 
-function serializeInvoice(invoice: PointsInvoiceWithAccrual, sellerName: string | null = null) {
+function serializeInvoice(
+  invoice: PointsInvoiceWithAccrual,
+  sellerName: string | null = null,
+  options: { diagnosis?: boolean } = {},
+) {
   const [accrual] = invoice.accruals;
   return {
     id: invoice.id,
@@ -143,9 +165,57 @@ function serializeInvoice(invoice: PointsInvoiceWithAccrual, sellerName: string 
       ? {
           ...accrual,
           balanceValueInMoney: accrual.balanceValueInMoney?.toFixed(2) ?? null,
+          /**
+           * El mensaje que ve el comercial es corto y depende del estado, no del texto del proveedor:
+           * «valor inferior al monto mínimo permitido» no le dice nada en el mostrador. El detalle
+           * técnico sigue guardado en la fila y es lo que alimenta el diagnóstico del administrador.
+           */
+          errorMessage: options.diagnosis ? accrual.errorMessage : shortAccrualFailure(accrual),
+          revocationErrorMessage: options.diagnosis
+            ? accrual.revocationErrorMessage
+            : shortRevocationFailure(accrual),
+          /**
+           * Traducción del error para quien administra. Solo viaja al administrador: el comercial ve
+           * el mensaje corto, y un `POS_LOCATION_NOT_OF_PARTNER` no le dice nada.
+           */
+          diagnosis: options.diagnosis
+            ? describePointsError({
+                code: accrual.errorCode,
+                message: accrual.errorMessage,
+                service: 'Acumulación',
+              })
+            : null,
+          revocationDiagnosis: options.diagnosis
+            ? describePointsError({
+                code: accrual.revocationErrorCode,
+                message: accrual.revocationErrorMessage,
+                service: 'Acumulación',
+              })
+            : null,
         }
       : null,
   };
+}
+
+/**
+ * Texto corto según el estado de la acumulación. Sin error no hay nada que decir; con uno ambiguo, el
+ * operador necesita saber que no puede reintentar a ciegas.
+ */
+function shortAccrualFailure(accrual: { errorCode: string | null; status: string }): string | null {
+  if (!accrual.errorCode) return null;
+  return accrual.status === 'UNVERIFIED'
+    ? 'No se pudo confirmar la acumulación.'
+    : 'No se pudo acumular los puntos.';
+}
+
+function shortRevocationFailure(accrual: {
+  revocationErrorCode: string | null;
+  revocationStatus: string | null;
+}): string | null {
+  if (!accrual.revocationErrorCode) return null;
+  return accrual.revocationStatus === 'UNVERIFIED'
+    ? 'No se pudo confirmar la anulación.'
+    : 'No se pudo anular los puntos.';
 }
 
 function serializeBalance(balance: PointsBalance) {
@@ -260,9 +330,11 @@ export class PointsInvoicesService {
     private readonly siigo: SiigoService,
     private readonly puntos: PuntosColombiaService,
     private readonly logs: IntegrationLogsService,
+    private readonly location: PointsLocationService,
   ) {}
 
-  async list(query: PointsInvoiceListQuery) {
+  async list(query: PointsInvoiceListQuery, user: SessionUser) {
+    const diagnosis = user.role === 'ADMIN';
     /**
      * El panel muestra dos operaciones distintas. Cada tabla aporta sus filas y se mezclan aquí: la
      * página no se puede pedir a una sola tabla porque una acumulación y una redención del mismo día
@@ -291,12 +363,13 @@ export class PointsInvoicesService {
         payload: serializeInvoice(
           row,
           row.sellerId === null ? null : (names.get(row.sellerId) ?? null),
+          { diagnosis },
         ),
       })),
       ...redemptionRows.map((row) => ({
         at: row.invoiceDate?.getTime() ?? row.createdAt.getTime(),
         kind: 'REDEMPTION' as const,
-        payload: serializeRedemption(row),
+        payload: serializeRedemption(row, { diagnosis }),
       })),
     ].sort((first, second) => second.at - first.at);
 
@@ -315,13 +388,18 @@ export class PointsInvoicesService {
     };
   }
 
-  async detail(id: number) {
+  /**
+   * Una factura con su acumulación. El diagnóstico del error solo viaja al administrador: el
+   * comercial ve el mensaje corto, que es el que entiende.
+   */
+  async detail(id: number, user?: SessionUser) {
     const invoice = await this.invoices.detail(id);
     if (!invoice) throw new NotFoundException('La factura no existe en el panel.');
     const names = await this.sellerNames([invoice.sellerId]);
     return serializeInvoice(
       invoice,
       invoice.sellerId === null ? null : (names.get(invoice.sellerId) ?? null),
+      { diagnosis: user?.role === 'ADMIN' },
     );
   }
 
@@ -426,14 +504,14 @@ export class PointsInvoicesService {
       );
     }
     const existing = await this.invoices.bySiigoId(invoice.id);
-    if (existing) return this.detail(existing.id);
+    if (existing) return this.detail(existing.id, user);
 
     const points = pointsForTotal(invoice.total);
     if (points <= 0) {
       throw businessError(
         BadRequestException,
         'POINTS_INVOICE_TOO_SMALL',
-        'La factura no alcanza el mínimo de $1.000 para generar puntos.',
+        'La factura no alcanza el mínimo de $1.000.',
       );
     }
     const created = await this.invoices.create({
@@ -449,7 +527,7 @@ export class PointsInvoicesService {
       status: 'PENDING',
       createdByUserId: user.id,
     });
-    return this.detail(created.id);
+    return this.detail(created.id, user);
   }
 
   /**
@@ -465,14 +543,14 @@ export class PointsInvoicesService {
       throw businessError(
         BadRequestException,
         'POINTS_INVOICE_TOO_SMALL',
-        'La factura no alcanza el mínimo de $1.000 para generar puntos.',
+        'La factura no alcanza el mínimo de $1.000.',
       );
     }
     if (await this.invoices.byName(input.name)) {
       throw businessError(
         ConflictException,
         'POINTS_INVOICE_DUPLICATE',
-        `Ya existe una factura con el nombre ${input.name} en el panel.`,
+        `La factura ${input.name} ya está en el panel.`,
       );
     }
 
@@ -492,15 +570,21 @@ export class PointsInvoicesService {
       createdByUserId: user.id,
     });
     this.logger.log(`Factura de prueba ${created.name} agregada por ${user.id}.`);
-    return this.detail(created.id);
+    return this.detail(created.id, user);
   }
 
   /**
-   * Consulta de cuenta: valida en Puntos Colombia si el cliente puede acumular.
+   * Consulta de cuenta: valida en Puntos Colombia si el cliente puede acumular. El punto de venta es
+   * el del usuario que opera, así que la consulta no se puede hacer sin uno.
    */
-  async lookupAccount(input: PointsAccountLookupInput) {
+  async lookupAccount(input: PointsAccountLookupInput, user: SessionUser) {
+    const locationCode = await this.location.requireLocationCode(user.id);
     try {
-      const balance = await this.puntos.lookupAccount(input.documentNumber, input.documentType);
+      const balance = await this.puntos.lookupAccount(
+        input.documentNumber,
+        input.documentType,
+        locationCode,
+      );
       return { found: true as const, balance: serializeBalance(balance) };
     } catch (error) {
       if (error instanceof PointsAccountNotFoundError) return { found: false as const };
@@ -526,9 +610,12 @@ export class PointsInvoicesService {
       }
     }
 
+    // El punto de venta es de quien opera: sin él no se acumula, y se valida antes de tocar la factura.
+    const locationCode = await this.location.requireLocationCode(user.id);
+
     // Se revalida la cuenta antes de acumular: el estado del botón no es una garantía.
     const balance = await this.puntos
-      .lookupAccount(input.documentNumber, input.documentType)
+      .lookupAccount(input.documentNumber, input.documentType, locationCode)
       .catch((error) => {
         if (error instanceof PointsAccountNotFoundError) {
           throw businessError(
@@ -543,7 +630,7 @@ export class PointsInvoicesService {
       throw businessError(
         BadRequestException,
         'POINTS_ACCOUNT_NOT_ENABLED',
-        'La cuenta existe, pero no está habilitada para acumular puntos.',
+        'La cuenta no permite acumular puntos.',
       );
     }
 
@@ -553,7 +640,7 @@ export class PointsInvoicesService {
       terminalId: this.terminalId(),
       transactionId: invoice.name,
       cashierId: this.cashierId(),
-      locationCode: this.locationCode(),
+      locationCode,
       transactionDate: puntoColombiaDate(),
       nut: invoice.name,
     };
@@ -576,21 +663,21 @@ export class PointsInvoicesService {
       throw businessError(
         ConflictException,
         'POINTS_ACCRUAL_IN_PROGRESS',
-        'La acumulación de esta factura está en curso.',
+        'La acumulación está en curso.',
       );
     }
     if (claim.outcome === 'UNVERIFIED') {
       throw businessError(
         ConflictException,
         'POINTS_ACCRUAL_UNVERIFIED',
-        'La acumulación anterior quedó por verificar. Concíliala antes de reintentar.',
+        'La acumulación anterior quedó por verificar.',
       );
     }
     if (claim.outcome === 'REVOKED') {
       throw businessError(
         ConflictException,
         'POINTS_INVOICE_REVOKED',
-        'Los puntos de esta factura se revocaron. Una factura revocada no se puede volver a acumular.',
+        'Esta factura ya fue revocada.',
       );
     }
 
@@ -604,7 +691,7 @@ export class PointsInvoicesService {
       await this.invoices.markCompleted(id, claim.accrualId, result);
       // El saldo en pesos se consulta aparte: si falla, la acumulación sigue siendo un éxito.
       const valueInMoney = await this.puntos
-        .lookupAccount(input.documentNumber, input.documentType)
+        .lookupAccount(input.documentNumber, input.documentType, locationCode)
         .then((updated) => updated.pointsValueInMoney)
         .catch(() => null);
       if (valueInMoney !== null) {
@@ -621,7 +708,7 @@ export class PointsInvoicesService {
         referenceId: id,
         userId: user.id,
       });
-      return this.detail(id).then((updated) => ({
+      return this.detail(id, user).then((updated) => ({
         invoice: updated,
         pointsEarned: result.pointsEarned,
         pointsBalance: result.pointsBalance,
@@ -633,12 +720,18 @@ export class PointsInvoicesService {
         error,
         unverified ? 'POINTS_ACCRUAL_UNVERIFIED' : 'POINTS_ACCRUAL_FAILED',
       );
-      const message = safeMessage(error, 'Puntos Colombia no pudo procesar la acumulación.');
-      await this.invoices.markFailed(id, claim.accrualId, code, message, unverified);
+      // La fila guarda el código y el motivo del proveedor: es lo que alimenta su diagnóstico.
+      const storedCode = providerCodeOf(error) ?? code;
+      const storedMessage = safeMessage(error, 'No se pudo acumular los puntos.');
+      // Lo que ve el comercial es corto y depende del estado: el detalle técnico no le dice nada.
+      const clientMessage = unverified
+        ? 'No se pudo confirmar la acumulación.'
+        : 'No se pudo acumular los puntos.';
+      await this.invoices.markFailed(id, claim.accrualId, storedCode, storedMessage, unverified);
       this.logger.warn(`Acumulación de ${invoice.name} falló (${code}).`);
       throw new BadGatewayException({
         success: false,
-        error: { code, message },
+        error: { code, message: clientMessage },
       });
     }
   }
@@ -676,7 +769,7 @@ export class PointsInvoicesService {
       throw businessError(
         ConflictException,
         'POINTS_INVOICE_NOT_DELETABLE',
-        'Solo se puede eliminar una factura que todavía no se haya operado en Puntos Colombia.',
+        'Esta factura ya se operó en Puntos Colombia.',
       );
     }
     this.logger.log(`Factura ${result.name} eliminada del panel por ${user.id}.`);
@@ -707,17 +800,19 @@ export class PointsInvoicesService {
       throw businessError(
         ConflictException,
         'POINTS_INVOICE_NOT_ACCRUED',
-        'Solo se pueden revocar los puntos de una factura ya acumulada.',
+        'La factura no tiene puntos acumulados.',
       );
     }
 
-    // El identificador original se reutiliza tal cual: es el que el proveedor reconoce.
+    // El identificador original se reutiliza tal cual: es el que el proveedor reconoce. El de la
+    // anulación lleva el punto de venta de quien la ejecuta.
+    const locationCode = await this.location.requireLocationCode(user.id);
     const original = accrual.transactionIdentifier as unknown as TransactionIdentifier;
     const cancellation: TransactionIdentifier = {
       terminalId: this.terminalId(),
       transactionId: invoice.name,
       cashierId: this.cashierId(),
-      locationCode: this.locationCode(),
+      locationCode,
       transactionDate: puntoColombiaDate(),
       nut: invoice.name,
     };
@@ -729,28 +824,28 @@ export class PointsInvoicesService {
       throw businessError(
         ConflictException,
         'POINTS_INVOICE_NOT_ACCRUED',
-        'Solo se pueden revocar los puntos de una factura ya acumulada.',
+        'La factura no tiene puntos acumulados.',
       );
     }
     if (claim.outcome === 'ALREADY_REVOKED') {
       throw businessError(
         ConflictException,
         'POINTS_INVOICE_ALREADY_REVOKED',
-        'Los puntos de esta factura ya se revocaron.',
+        'Esta factura ya fue revocada.',
       );
     }
     if (claim.outcome === 'IN_PROGRESS') {
       throw businessError(
         ConflictException,
         'POINTS_REVOCATION_IN_PROGRESS',
-        'La revocación de esta factura está en curso.',
+        'La revocación está en curso.',
       );
     }
     if (claim.outcome === 'UNVERIFIED') {
       throw businessError(
         ConflictException,
         'POINTS_REVOCATION_UNVERIFIED',
-        'La revocación anterior quedó por verificar. Concíliala antes de reintentar.',
+        'La revocación anterior quedó por verificar.',
       );
     }
 
@@ -768,7 +863,7 @@ export class PointsInvoicesService {
         referenceId: id,
         userId: user.id,
       });
-      return this.detail(id);
+      return this.detail(id, user);
     } catch (error) {
       // Un rechazo del proveedor es definitivo: reintentar con los mismos datos daría lo mismo. Un
       // 404 de la anulación también lo es: la operación original no existe en el proveedor.
@@ -782,12 +877,21 @@ export class PointsInvoicesService {
         : unverified
           ? 'POINTS_REVOCATION_UNVERIFIED'
           : 'POINTS_REVOCATION_FAILED';
-      const message = safeMessage(error, 'Puntos Colombia no pudo anular la acumulación.');
-      await this.invoices.markRevocationFailed(id, claim.accrualId, code, message, unverified);
+      const storedMessage = safeMessage(error, 'No se pudo anular los puntos.');
+      const clientMessage = unverified
+        ? 'No se pudo confirmar la anulación.'
+        : 'No se pudo anular los puntos.';
+      await this.invoices.markRevocationFailed(
+        id,
+        claim.accrualId,
+        providerCodeOf(error) ?? code,
+        storedMessage,
+        unverified,
+      );
       this.logger.warn(`Revocación de ${invoice.name} falló (${code}).`);
       throw new BadGatewayException({
         success: false,
-        error: { code, message },
+        error: { code, message: clientMessage },
       });
     }
   }
@@ -805,7 +909,7 @@ export class PointsInvoicesService {
         throw businessError(
           BadRequestException,
           'POINTS_PREFIX_NOT_CONFIGURED',
-          'Ese vendedor no tiene un prefijo de factura configurado.',
+          'Ese vendedor no tiene prefijo de factura.',
         );
       }
       return { prefix: owner.siigoInvoicePrefix, sellerId: owner.sellerId };
@@ -815,7 +919,7 @@ export class PointsInvoicesService {
       throw businessError(
         BadRequestException,
         'POINTS_PREFIX_NOT_CONFIGURED',
-        'Tu usuario no tiene un prefijo de factura configurado. Pídeselo a un administrador.',
+        'Tu usuario no tiene prefijo de factura.',
       );
     }
     return { prefix: own.siigoInvoicePrefix, sellerId: own.sellerId };
@@ -834,10 +938,6 @@ export class PointsInvoicesService {
 
   private cashierId() {
     return puntosColombiaConfig().cashierId;
-  }
-
-  private locationCode() {
-    return puntosColombiaConfig().locationCode;
   }
 }
 

@@ -4,11 +4,13 @@ import { requireIntegrationValue } from '../integration-http.js';
  * Parámetros fijos que Puntos Colombia exige en cada llamada. Se leen del entorno y no del código
  * para poder pasar de UAT a producción sin tocar la lógica de negocio. UAT es el único ambiente
  * habilitado hoy.
+ *
+ * El `LocationCode` **no** está aquí: es el punto de venta de cada usuario, no de la empresa, y se
+ * resuelve en cada petición desde su ficha (`PointsLocationService`).
  */
 export type PuntosColombiaConfig = {
   baseUrl: string;
   partnerCode: string;
-  locationCode: string;
   channel: string;
   remoteIp: string;
   terminalId: string;
@@ -19,7 +21,6 @@ export function puntosColombiaConfig(): PuntosColombiaConfig {
   return {
     baseUrl: requireIntegrationValue('PCO_BASE_URL', 'Puntos Colombia'),
     partnerCode: requireIntegrationValue('PCO_PARTNER_CODE', 'Puntos Colombia'),
-    locationCode: requireIntegrationValue('PCO_LOCATION_CODE', 'Puntos Colombia'),
     channel: process.env.PCO_CA_CHANNEL?.trim() || 'V',
     // La cabecera es informativa para el proveedor: identifica el origen de la petición, no autoriza.
     remoteIp: process.env.PCO_REMOTE_IPV4?.trim() || '0.0.0.0',

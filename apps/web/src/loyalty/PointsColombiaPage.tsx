@@ -50,6 +50,7 @@ import { formattedMoneyWithCode } from '../orders/presentation';
 import { useCurrentUser } from '../users/useCurrentUser';
 import { PointsColombiaLogo } from './PointsColombiaLogo';
 import { PointsFeedback } from './PointsFeedback';
+import { PointsErrorDiagnosisBox } from './PointsErrorDiagnosis';
 import {
   pointsColombiaApi,
   type PointsInvoiceRecord,
@@ -974,6 +975,12 @@ function InvoiceDetailModal({
                   </Alert.Content>
                 </Alert>
               )}
+              <PointsErrorDiagnosisBox
+                label="Diagnóstico de la acumulación"
+                diagnosis={accrual?.diagnosis ?? null}
+                code={accrual?.errorCode}
+                message={accrual?.errorMessage}
+              />
               {/* Un fallo al anular no deshace los puntos: se muestra aparte del de acumulación. */}
               {accrual?.revocationErrorMessage && (
                 <Alert status="danger">
@@ -982,6 +989,12 @@ function InvoiceDetailModal({
                   </Alert.Content>
                 </Alert>
               )}
+              <PointsErrorDiagnosisBox
+                label="Diagnóstico de la anulación"
+                diagnosis={accrual?.revocationDiagnosis ?? null}
+                code={accrual?.revocationErrorCode}
+                message={accrual?.revocationErrorMessage}
+              />
             </Modal.Body>
             <Modal.Footer>
               <Button variant="tertiary" onPress={onClose}>
@@ -1115,6 +1128,12 @@ function RedemptionDetailModal({
                   </Alert.Content>
                 </Alert>
               )}
+              <PointsErrorDiagnosisBox
+                label="Diagnóstico de la redención"
+                diagnosis={redemption.diagnosis}
+                code={redemption.errorCode}
+                message={redemption.errorMessage}
+              />
               {/* Un fallo al anular no deshace la redención: se muestra aparte del de redimir. */}
               {redemption.revocationErrorMessage && (
                 <Alert status="danger">
@@ -1123,6 +1142,12 @@ function RedemptionDetailModal({
                   </Alert.Content>
                 </Alert>
               )}
+              <PointsErrorDiagnosisBox
+                label="Diagnóstico de la anulación"
+                diagnosis={redemption.revocationDiagnosis}
+                code={redemption.revocationErrorCode}
+                message={redemption.revocationErrorMessage}
+              />
             </Modal.Body>
             <Modal.Footer>
               <Button variant="tertiary" onPress={onClose}>
@@ -1729,7 +1754,7 @@ function AccrualModal({
                   >
                     {canSubmit
                       ? 'Cliente registrado en Puntos Colombia.'
-                      : 'Cuenta encontrada, pero no habilitada para acumular puntos.'}
+                      : 'La cuenta no permite acumular puntos.'}
                   </p>
                 )}
               </Modal.Body>
@@ -2323,9 +2348,7 @@ function RedeemModal({
               {lookup && (
                 <>
                   {!lookup.allowRedemption && (
-                    <p className="points-accrual-notice">
-                      Cuenta encontrada, pero no habilitada para redimir puntos.
-                    </p>
+                    <p className="points-accrual-notice">La cuenta no permite redimir puntos.</p>
                   )}
 
                   <div className="points-accrual-amount">

@@ -455,7 +455,19 @@ El panel de Puntos Colombia permite buscar una factura de Siigo por su número, 
 
 Cada usuario comercial configura su prefijo de facturación en Usuarios (`siigo_invoice_prefix`, por ejemplo `FV-1-`). El comercial solo escribe el número; el backend compone el nombre completo (`FV-1-` + `846` = `FV-1-846`) y comprueba que el `seller` que devuelve Siigo sea el suyo. Compartir prefijo no da acceso a las facturas de otro seller.
 
+Además del prefijo, cada usuario lleva su **código de punto de venta** de Puntos Colombia (`pco_location_code`, por ejemplo `PDVBRA0001`). No es un dato de la empresa: cada usuario tiene el suyo y algunos lo comparten, así que vive en la ficha y no en el entorno. Es opcional al crear la cuenta; sin él el usuario no opera el programa y el panel le responde «tu usuario no está autorizado» antes de llamar al proveedor, en lugar de dejar que el proveedor rechace la petición con `POS_LOCATION_NOT_OF_PARTNER`.
+
 Los puntos se calculan sobre el total original de la factura, sin redondear la cifra que se muestra: un peso por cada mil, con piso. `$110.999,99` son 110 puntos y `$999,99` son 0.
+
+### Errores del proveedor
+
+El comercial ve un mensaje corto —«El cliente no está registrado en Puntos Colombia.»— porque es lo que necesita para atender al cliente. Cuando el fallo viene de un rechazo del proveedor, ese mensaje ni siquiera reproduce su texto: se reduce a una frase según el estado —«No se pudo acumular los puntos.», «No se pudo confirmar la redención.»—. El texto técnico del proveedor se sigue guardando en la fila, junto con su `resultCode`, y es lo que alimenta el diagnóstico; sin él, distinguir dos motivos bajo el mismo código sería imposible.
+
+El administrador ve además el **diagnóstico**: servicio, estado HTTP, código del proveedor, causa y acción recomendada.
+
+El catálogo vive en `packages/shared/src/puntos-colombia-errors.ts` y sale del documento de errores del programa; cubre las 55 filas. La traducción no basta por código: `COMMON_BUSINESS_ERROR` agrupa motivos muy distintos —monto mínimo, límite diario, cuenta corporativa, autoacumulación, segmento del cliente—, así que el resolver filtra además por un fragmento del mensaje original. Cuando el código aparece en varios servicios con la misma causa —el error de punto de venta lo documenta la consulta de cuenta y lo termina mostrando la acumulación— se usa esa explicación. Si nada coincide, devuelve `null` y el panel conserva el código crudo: inventar una causa sería peor que mostrarla sin traducir.
+
+El diagnóstico viaja como `diagnosis` en la acumulación y la redención, y como `revocationDiagnosis` en sus anulaciones. El backend solo lo serializa cuando quien consulta es `ADMIN`; para el resto de roles el campo llega en `null`.
 
 ### Variables de entorno
 
@@ -464,7 +476,6 @@ PCO_BASE_URL=https://apinp.puntoscolombia.com
 PCO_CLIENT_ID=
 PCO_CLIENT_SECRET=
 PCO_PARTNER_CODE=901647454
-PCO_LOCATION_CODE=PDVBRA0001
 PCO_CA_CHANNEL=V
 PCO_REMOTE_IPV4=
 PCO_TERMINAL_ID=PCAliados-01
@@ -492,7 +503,8 @@ El seed crea cuatro facturas marcadas `UAT_SEED` y no se ejecuta con `NODE_ENV=p
 | `FV-1-001` | 1011237866 CC | `$110.000`    | 110    |
 | `FV-1-002` | 1011237867 CC | `$110.999,99` | 110    |
 | `FV-1-003` | 1011237868 CE | `$250.000`    | 250    |
-| `FV-1-004` | 101123516 NIT | `$999.000`    | 999    |
+
+Por acuerdo con el programa, la acumulación y la redención solo operan con **cédula de ciudadanía** (`2`) y **cédula de extranjería** (`3`): el NIT (`5`) ya no se ofrece en el selector ni lo acepta el esquema, así que una factura a nombre de una empresa no se puede operar.
 
 Para probar el flujo completo sin consumir una factura real: abrir `FV-1-002`, pulsar **Acumular**, consultar `1011237867` y confirmar. El resultado debe traer puntos acreditados, saldo y equivalente en dinero. Después, **Revocar** sobre esa misma factura devuelve los puntos al programa y deja la fila en `REVOCADO`.
 

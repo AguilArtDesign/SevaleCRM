@@ -1,11 +1,18 @@
+import { describePointsError } from '@sevale/shared';
 import type { PointsRedemptionRecord } from './points-redemptions.repository.js';
 
 /**
  * Cómo se ve una redención en el panel. Vive aparte de los servicios porque los dos la necesitan: el
  * de redenciones para responder a sus propias acciones y el de facturas para armar el listado unido,
  * y hacer que se importen entre sí crearía un ciclo.
+ *
+ * `diagnosis` solo se calcula para el administrador: es la traducción del error del proveedor a causa
+ * y acción, y el comercial no la necesita para hacer su trabajo.
  */
-export function serializeRedemption(redemption: PointsRedemptionRecord) {
+export function serializeRedemption(
+  redemption: PointsRedemptionRecord,
+  options: { diagnosis?: boolean } = {},
+) {
   return {
     id: redemption.id,
     documentNumber: redemption.documentNumber,
@@ -19,7 +26,18 @@ export function serializeRedemption(redemption: PointsRedemptionRecord) {
     validationMethod: redemption.validationMethod,
     status: redemption.status,
     errorCode: redemption.errorCode,
-    errorMessage: redemption.errorMessage,
+    /**
+     * Al comercial le llega un texto corto según el estado; el detalle del proveedor se queda en la
+     * fila y es lo que el administrador ve en el diagnóstico.
+     */
+    errorMessage: options.diagnosis ? redemption.errorMessage : shortRedemptionFailure(redemption),
+    diagnosis: options.diagnosis
+      ? describePointsError({
+          code: redemption.errorCode,
+          message: redemption.errorMessage,
+          service: 'Redención',
+        })
+      : null,
     invoice: redemption.invoiceName
       ? {
           name: redemption.invoiceName,
@@ -33,7 +51,36 @@ export function serializeRedemption(redemption: PointsRedemptionRecord) {
     /** Anulación de la redención. Nula mientras nadie la haya intentado. */
     revocationStatus: redemption.revocationStatus,
     revocationErrorCode: redemption.revocationErrorCode,
-    revocationErrorMessage: redemption.revocationErrorMessage,
+    revocationErrorMessage: options.diagnosis
+      ? redemption.revocationErrorMessage
+      : shortRevocationFailure(redemption),
+    revocationDiagnosis: options.diagnosis
+      ? describePointsError({
+          code: redemption.revocationErrorCode,
+          message: redemption.revocationErrorMessage,
+          service: 'Redención',
+        })
+      : null,
     revokedAt: redemption.revokedAt,
   };
+}
+
+function shortRedemptionFailure(redemption: {
+  errorCode: string | null;
+  status: string;
+}): string | null {
+  if (!redemption.errorCode) return null;
+  return redemption.status === 'UNVERIFIED'
+    ? 'No se pudo confirmar la redención.'
+    : 'No se pudo redimir.';
+}
+
+function shortRevocationFailure(redemption: {
+  revocationErrorCode: string | null;
+  revocationStatus: string | null;
+}): string | null {
+  if (!redemption.revocationErrorCode) return null;
+  return redemption.revocationStatus === 'UNVERIFIED'
+    ? 'No se pudo confirmar la anulación.'
+    : 'No se pudo anular los puntos.';
 }

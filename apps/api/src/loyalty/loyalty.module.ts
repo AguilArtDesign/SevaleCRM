@@ -7,11 +7,13 @@ import { PointsInvoicesService } from './points-invoices.service.js';
 import { PointsRedemptionsController } from './points-redemptions.controller.js';
 import { PointsRedemptionsRepository } from './points-redemptions.repository.js';
 import { PointsRedemptionsService } from './points-redemptions.service.js';
+import { PointsLocationService } from './points-location.service.js';
 
 @Module({
   imports: [IntegrationsModule, LogsModule],
   controllers: [PointsInvoicesController, PointsRedemptionsController],
   providers: [
+    PointsLocationService,
     PointsInvoicesRepository,
     PointsInvoicesService,
     PointsRedemptionsRepository,

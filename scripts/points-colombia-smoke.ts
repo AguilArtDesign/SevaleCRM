@@ -9,8 +9,15 @@ import type { PuntosColombiaTokenService } from '../apps/api/src/integrations/pu
 import type { PointsInvoicesRepository } from '../apps/api/src/loyalty/points-invoices.repository.js';
 import type { PointsRedemptionsRepository } from '../apps/api/src/loyalty/points-redemptions.repository.js';
 import type { IntegrationLogsService } from '../apps/api/src/integration-logs/integration-logs.service.js';
+import type { PrismaService } from '../apps/api/src/database/prisma.service.js';
+import { PointsLocationService } from '../apps/api/src/loyalty/points-location.service.js';
 import type { SiigoService } from '../apps/api/src/integrations/siigo/siigo.service.js';
-import { siigoInvoicePrefixSchema } from '@sevale/validation';
+import {
+  siigoInvoicePrefixSchema,
+  pcoLocationCodeSchema,
+  pointsDocumentTypeSchema,
+} from '@sevale/validation';
+import { describePointsError, pointsErrorCatalogSize } from '@sevale/shared';
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
@@ -133,7 +140,6 @@ if (typeof address === 'string' || address === null)
   throw new Error('Sin puerto para el simulador.');
 process.env.PCO_BASE_URL = `http://127.0.0.1:${address.port}`;
 process.env.PCO_PARTNER_CODE = '901647454';
-process.env.PCO_LOCATION_CODE = 'PDVBRA0001';
 process.env.PCO_TERMINAL_ID = 'PCAliados-01';
 process.env.PCO_CASHIER_ID = 'Yohander-01';
 
@@ -160,9 +166,35 @@ type Row = {
 };
 
 const users = [
-  { id: 'user-admin', name: 'Yohander Aguilar', sellerId: 820, siigoInvoicePrefix: 'FV-1-' },
-  { id: 'user-commercial', name: 'Otro Comercial', sellerId: 821, siigoInvoicePrefix: 'FV-2-' },
-  { id: 'user-sin-prefijo', name: 'Sin Prefijo', sellerId: 822, siigoInvoicePrefix: null },
+  {
+    id: 'user-admin',
+    name: 'Yohander Aguilar',
+    sellerId: 820,
+    siigoInvoicePrefix: 'FV-1-',
+    pcoLocationCode: 'PDVBRA0001',
+  },
+  {
+    id: 'user-commercial',
+    name: 'Otro Comercial',
+    sellerId: 821,
+    siigoInvoicePrefix: 'FV-2-',
+    pcoLocationCode: 'PDVBRA0001',
+  },
+  {
+    id: 'user-sin-prefijo',
+    name: 'Sin Prefijo',
+    sellerId: 822,
+    siigoInvoicePrefix: null,
+    pcoLocationCode: 'PDVBRA0001',
+  },
+  // Usuario sin punto de venta: puede existir en el CRM, pero no opera Puntos Colombia.
+  {
+    id: 'user-sin-punto',
+    name: 'Sin Punto De Venta',
+    sellerId: null,
+    siigoInvoicePrefix: null,
+    pcoLocationCode: null,
+  },
 ];
 
 const invoices = new Map<number, Row>();
@@ -445,17 +477,31 @@ const redemptions = {
     return resolved(0);
   },
 } as unknown as PointsRedemptionsRepository;
+// El punto de venta sale de la ficha del usuario, así que el smoke ejerce el servicio real contra un
+// doble de Prisma en lugar de saltárselo: así se cubre también el caso del usuario sin código.
+const prisma = {
+  user: {
+    findUnique({ where }: { where: { id: string } }) {
+      const found = users.find((user) => user.id === where.id);
+      return resolved(found ? { pcoLocationCode: found.pcoLocationCode } : null);
+    },
+  },
+} as unknown as PrismaService;
+const location = new PointsLocationService(prisma);
+
 const service = new PointsInvoicesService(
   repository as unknown as PointsInvoicesRepository,
   redemptions,
   siigo,
   puntos,
   logs,
+  location,
 );
 
 const admin = { id: 'user-admin', role: 'ADMIN' };
 const commercial = { id: 'user-commercial', role: 'COMMERCIAL' };
 const sinPrefijo = { id: 'user-sin-prefijo', role: 'COMMERCIAL' };
+const sinPunto = { id: 'user-sin-punto', role: 'COMMERCIAL' };
 
 function businessCode(error: unknown): string {
   const response = (error as { getResponse?: () => unknown }).getResponse?.();
@@ -495,28 +541,104 @@ try {
     'Un prefijo vacío debe quedar sin configurar.',
   );
 
+  // Punto de venta: se normaliza a mayúsculas y un valor vacío significa «sin código».
+  assert(
+    pcoLocationCodeSchema.parse(' pdvbra0001 ') === 'PDVBRA0001',
+    'El punto de venta debe normalizarse.',
+  );
+  assert(pcoLocationCodeSchema.parse('') === null, 'Sin punto de venta debe quedar nulo.');
+  assert(
+    pcoLocationCodeSchema.safeParse('PDV BRA').success === false,
+    'El punto de venta no admite espacios.',
+  );
+
+  assert(
+    pointsDocumentTypeSchema.safeParse('5').success === false,
+    'El NIT ya no debe aceptarse: por acuerdo con el programa solo operan las cédulas.',
+  );
+  assert(
+    pointsDocumentTypeSchema.safeParse('2').success &&
+      pointsDocumentTypeSchema.safeParse('3').success,
+    'Cédula de ciudadanía y de extranjería deben seguir disponibles.',
+  );
+
+  // Catálogo de errores: cubre el documento del proveedor y distingue los códigos ambiguos.
+  assert(pointsErrorCatalogSize === 55, 'El catálogo debe cubrir las 55 filas del documento.');
+  const locationDiagnosis = describePointsError({
+    code: 'POS_LOCATION_NOT_OF_PARTNER',
+    service: 'Redención',
+  });
+  assert(
+    locationDiagnosis?.cause.includes('no pertenece al partner') === true,
+    'El error de punto de venta ajeno debe explicarse.',
+  );
+  // El mismo `COMMON_BUSINESS_ERROR` cubre varios motivos: se distinguen por el mensaje.
+  const minimumDiagnosis = describePointsError({
+    code: 'COMMON_BUSINESS_ERROR',
+    message: 'Transaction canceled due to business error: El valor mínimo de redención son 200.',
+    service: 'Redención',
+  });
+  assert(
+    minimumDiagnosis?.cause.includes('mínimo') === true,
+    'El mínimo de redención debe reconocerse por el mensaje.',
+  );
+  const dailyLimit = describePointsError({
+    code: 'COMMON_BUSINESS_ERROR',
+    message: 'excede valor en compra máximo para el día',
+    service: 'Acumulación',
+  });
+  assert(
+    dailyLimit?.cause.includes('valor máximo diario') === true,
+    'El límite diario de compra debe reconocerse por el mensaje.',
+  );
+  assert(
+    describePointsError({ code: 'COMMON_BUSINESS_ERROR', message: 'algo nuevo' }) === null,
+    'Un motivo no documentado no debe inventar una explicación.',
+  );
+  assert(
+    describePointsError({ code: 'NO_EXISTE' }) === null,
+    'Un código desconocido no debe inventar una explicación.',
+  );
+
   // Cuenta inexistente: 404 del proveedor es un resultado de negocio, no un 502.
   assert(
     JSON.stringify(
-      await service.lookupAccount({ documentNumber: '999999999', documentType: '2' }),
+      await service.lookupAccount({ documentNumber: '999999999', documentType: '2' }, admin),
     ) === '{"found":false}',
     'Una cuenta inexistente debe responder found:false.',
   );
-  const encontrada = await service.lookupAccount({
-    documentNumber: '1011237867',
-    documentType: '2',
-  });
+  const encontrada = await service.lookupAccount(
+    {
+      documentNumber: '1011237867',
+      documentType: '2',
+    },
+    admin,
+  );
   assert(
     encontrada.found && encontrada.balance.pointsAmount === 10900,
     'La cuenta UAT debe leerse.',
   );
-  const deshabilitada = await service.lookupAccount({
-    documentNumber: '0000000000',
-    documentType: '2',
-  });
+  const deshabilitada = await service.lookupAccount(
+    {
+      documentNumber: '0000000000',
+      documentType: '2',
+    },
+    admin,
+  );
   assert(
     deshabilitada.found && !deshabilitada.balance.allowAccrual,
     'allowAccrual false debe respetarse.',
+  );
+
+  // Sin punto de venta en la ficha no se llama al proveedor: se responde 403 con un motivo claro.
+  assert(
+    businessCode(
+      await rejects(
+        service.lookupAccount({ documentNumber: '1011237867', documentType: '2' }, sinPunto),
+        'Un usuario sin punto de venta no puede consultar cuentas.',
+      ),
+    ) === 'POINTS_LOCATION_NOT_CONFIGURED',
+    'Sin punto de venta el código debe ser POINTS_LOCATION_NOT_CONFIGURED.',
   );
 
   // Búsqueda: el prefijo lo pone el backend desde el usuario, no el navegador.
@@ -709,6 +831,26 @@ try {
       ?.errorMessage?.toString()
       .includes('does not allow this operation'),
     'El motivo que dio el proveedor debe conservarse.',
+  );
+  // El comercial no ve ese texto técnico: recibe un mensaje corto. El administrador conserva el
+  // detalle y su diagnóstico, que es lo que permite saber qué pasó sin abrir los Logs.
+  const blockedForAdmin = await service.detail(blockedRow.id, admin);
+  const blockedForCommercial = await service.detail(blockedRow.id, commercial);
+  assert(
+    blockedForAdmin.accrual?.errorMessage?.includes('does not allow this operation') === true,
+    'El administrador debe seguir viendo el motivo del proveedor.',
+  );
+  assert(
+    blockedForAdmin.accrual?.diagnosis?.cause.includes('bloqueada') === true,
+    'El administrador debe recibir el diagnóstico traducido.',
+  );
+  assert(
+    blockedForCommercial.accrual?.errorMessage === 'No se pudo acumular los puntos.',
+    `El comercial debe ver un mensaje corto, vio: ${blockedForCommercial.accrual?.errorMessage}`,
+  );
+  assert(
+    blockedForCommercial.accrual?.diagnosis === null,
+    'El diagnóstico no debe viajar a quien no es administrador.',
   );
   const retriedBlocked = await rejects(
     service.accrue(blockedRow.id, { documentNumber: '700700700', documentType: '2' }, admin),
@@ -957,7 +1099,7 @@ try {
 
   // Token rechazado: se renueva una sola vez y la operación continúa.
   const refreshesBefore = tokenRefreshes;
-  const retried = await puntos.lookupAccount('401401401', '2');
+  const retried = await puntos.lookupAccount('401401401', '2', 'PDVBRA0001');
   assert(retried.pointsAmount === 0, 'El reintento con token nuevo debe resolver la consulta.');
   assert(tokenRefreshes === refreshesBefore + 1, 'El 401 debe renovar el token una única vez.');
 

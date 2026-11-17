@@ -22,6 +22,7 @@ import {
 import {
   PointsAccountNotFoundError,
   PointsCancellationRejectedError,
+  PointsRedemptionRejectedError,
   PuntosColombiaService,
   puntoColombiaDate,
   type PointsBalance,
@@ -34,6 +35,7 @@ import { SiigoService } from '../integrations/siigo/siigo.service.js';
 import { PointsRedemptionsRepository } from './points-redemptions.repository.js';
 import { PointsInvoicesService, type SessionUser } from './points-invoices.service.js';
 import { serializeRedemption } from './points-redemption-view.js';
+import { PointsLocationService } from './points-location.service.js';
 
 function businessError(
   type:
@@ -65,6 +67,22 @@ function isAmbiguous(error: unknown): boolean {
   );
 }
 
+/**
+ * Código que dejó el proveedor, para la fila. Es el que permite el diagnóstico y el que sirve para
+ * buscar el caso en su documentación; el código interno (`POINTS_*`) se reserva para responder al
+ * panel, que es quien decide qué hacer con el estado.
+ */
+function providerCodeOf(error: unknown): string | null {
+  if (error instanceof PointsRedemptionRejectedError) return error.resultCode;
+  if (error instanceof PointsCancellationRejectedError) return error.resultCode;
+  if (error instanceof IntegrationRequestRejectedException) return error.providerCode;
+  return null;
+}
+
+/**
+ * Motivo tal como lo dio el proveedor, para guardarlo en la fila. El panel no lo muestra al
+ * comercial —ahí va un texto corto— pero sí es lo que alimenta el diagnóstico del administrador.
+ */
 function safeMessage(error: unknown, fallback: string): string {
   if (error instanceof Error && error.message.length <= 300) return error.message;
   return fallback;
@@ -95,6 +113,7 @@ export class PointsRedemptionsService {
     private readonly siigo: SiigoService,
     private readonly invoices: PointsInvoicesService,
     private readonly logs: IntegrationLogsService,
+    private readonly location: PointsLocationService,
   ) {}
 
   private terminalId(): string {
@@ -105,17 +124,18 @@ export class PointsRedemptionsService {
     return puntosColombiaConfig().cashierId;
   }
 
-  private locationCode(): string {
-    return puntosColombiaConfig().locationCode;
-  }
-
   /**
    * Primer paso del modal: consulta la cuenta y devuelve el saldo, para que el comercial sepa de una
    * vez cuántos puntos tiene el cliente antes de acordar la redención.
    */
-  async lookup(input: PointsAccountLookupInput) {
+  async lookup(input: PointsAccountLookupInput, user: SessionUser) {
+    const locationCode = await this.location.requireLocationCode(user.id);
     try {
-      const balance = await this.puntos.lookupAccount(input.documentNumber, input.documentType);
+      const balance = await this.puntos.lookupAccount(
+        input.documentNumber,
+        input.documentType,
+        locationCode,
+      );
       return { found: true as const, balance: serializeBalance(balance) };
     } catch (error) {
       if (error instanceof PointsAccountNotFoundError) return { found: false as const };
@@ -127,8 +147,15 @@ export class PointsRedemptionsService {
    * Pide el código de un solo uso. No crea ninguna fila: la redención todavía no existe y el cliente
    * puede no autorizarla. El código que el proveedor devuelve en la respuesta se descarta: el cliente
    * lo recibe en su celular o su correo, y guardarlo dejaría la autorización sin valor.
+   *
+   * Se comprueba el punto de venta aunque la solicitud no lo lleve en el cuerpo: el mismo usuario
+   * tendrá que redimir después, y avisarle aquí evita que el cliente gaste un código para nada.
    */
-  requestChallenge(input: PointsAccountLookupInput): Promise<PointsRedemptionChallenge> {
+  async requestChallenge(
+    input: PointsAccountLookupInput,
+    user: SessionUser,
+  ): Promise<PointsRedemptionChallenge> {
+    await this.location.requireLocationCode(user.id);
     return this.puntos
       .requestRedemptionChallenge(input.documentNumber, input.documentType)
       .catch((error) => {
@@ -148,8 +175,9 @@ export class PointsRedemptionsService {
    * pantalla pudo cambiar, y es el proveedor el que decide si alcanza.
    */
   async redeem(input: PointsRedemptionInput, user: SessionUser) {
+    const locationCode = await this.location.requireLocationCode(user.id);
     const balance = await this.puntos
-      .lookupAccount(input.documentNumber, input.documentType)
+      .lookupAccount(input.documentNumber, input.documentType, locationCode)
       .catch((error) => {
         if (error instanceof PointsAccountNotFoundError) {
           throw businessError(
@@ -164,14 +192,14 @@ export class PointsRedemptionsService {
       throw businessError(
         BadRequestException,
         'POINTS_REDEMPTION_NOT_ENABLED',
-        'La cuenta existe, pero no está habilitada para redimir puntos.',
+        'La cuenta no permite redimir puntos.',
       );
     }
     if (balance.pointsAmount < input.points) {
       throw businessError(
         BadRequestException,
         'POINTS_INSUFFICIENT_BALANCE',
-        `El cliente tiene ${balance.pointsAmount} puntos y quiere redimir ${input.points}.`,
+        'Saldo insuficiente para redimir.',
       );
     }
     // El mínimo lo impone el proveedor: avisar antes evita pedir el código para nada.
@@ -179,7 +207,7 @@ export class PointsRedemptionsService {
       throw businessError(
         BadRequestException,
         'POINTS_REDEMPTION_BELOW_MINIMUM',
-        `El mínimo que se puede redimir son ${pointsRedemptionMinimum} puntos.`,
+        `El mínimo para redimir son ${pointsRedemptionMinimum} puntos.`,
       );
     }
 
@@ -191,7 +219,7 @@ export class PointsRedemptionsService {
       terminalId: this.terminalId(),
       transactionId: stamp,
       cashierId: this.cashierId(),
-      locationCode: this.locationCode(),
+      locationCode,
       transactionDate: puntoColombiaDate(now),
       nut: stamp,
     };
@@ -216,7 +244,7 @@ export class PointsRedemptionsService {
         transactionIdentifier,
       });
       const applied = await this.redemptions.markApplied(attempt.id, result);
-      return serializeRedemption(applied);
+      return serializeRedemption(applied, { diagnosis: user.role === 'ADMIN' });
     } catch (error) {
       // Un rechazo es definitivo: nada se quemó, así que la fila queda fallida y se puede repetir.
       if (error instanceof PointsAccountNotFoundError) {
@@ -236,27 +264,23 @@ export class PointsRedemptionsService {
         await this.redemptions.markUnverified(
           attempt.id,
           'POINTS_REDEMPTION_UNVERIFIED',
-          safeMessage(error, 'No se pudo confirmar la redención con Puntos Colombia.'),
+          safeMessage(error, 'No se pudo confirmar la redención.'),
         );
         throw new BadGatewayException({
           success: false,
           error: {
             code: 'POINTS_REDEMPTION_UNVERIFIED',
-            message:
-              'No se pudo confirmar la redención. Consulta el saldo del cliente en Puntos Colombia antes de reintentar.',
+            message: 'No se pudo confirmar la redención.',
           },
         });
       }
+      // La fila conserva el código y el motivo del proveedor; al comercial le llega un texto corto.
       await this.redemptions.markFailed(
         attempt.id,
-        'POINTS_REDEMPTION_REJECTED',
-        safeMessage(error, 'Puntos Colombia rechazó la redención.'),
+        providerCodeOf(error) ?? 'POINTS_REDEMPTION_REJECTED',
+        safeMessage(error, 'No se pudo redimir.'),
       );
-      throw businessError(
-        BadRequestException,
-        'POINTS_REDEMPTION_REJECTED',
-        safeMessage(error, 'Puntos Colombia rechazó la redención.'),
-      );
+      throw businessError(BadRequestException, 'POINTS_REDEMPTION_REJECTED', 'No se pudo redimir.');
     }
   }
 
@@ -277,7 +301,7 @@ export class PointsRedemptionsService {
       throw businessError(
         ConflictException,
         'POINTS_REDEMPTION_NOT_PENDING',
-        'Solo se puede asociar una factura a una redención pendiente de factura.',
+        'Esta redención ya tiene factura.',
       );
     }
 
@@ -305,7 +329,7 @@ export class PointsRedemptionsService {
       invoiceDate: new Date(`${invoice.date}T00:00:00.000Z`),
       invoiceTotal: new Prisma.Decimal(invoice.total.toFixed(2)),
     });
-    return serializeRedemption(updated);
+    return serializeRedemption(updated, { diagnosis: user.role === 'ADMIN' });
   }
 
   /**
@@ -328,7 +352,9 @@ export class PointsRedemptionsService {
     }
 
     // El identificador original se reutiliza tal cual: es el que el proveedor reconoce. El de la
-    // anulación es nuevo y solo se distingue del original por la fecha.
+    // anulación es nuevo, solo se distingue del original por la fecha y lleva el punto de venta de
+    // quien la ejecuta.
+    const locationCode = await this.location.requireLocationCode(user.id);
     const original = redemption.transactionIdentifier as unknown as TransactionIdentifier;
     const now = new Date();
     const stamp = puntoColombiaDate(now).replace(/[-:T]/g, '');
@@ -336,7 +362,7 @@ export class PointsRedemptionsService {
       terminalId: this.terminalId(),
       transactionId: stamp,
       cashierId: this.cashierId(),
-      locationCode: this.locationCode(),
+      locationCode,
       transactionDate: puntoColombiaDate(now),
       nut: stamp,
     };
@@ -353,28 +379,28 @@ export class PointsRedemptionsService {
       throw businessError(
         ConflictException,
         'POINTS_REDEMPTION_NOT_REDEEMED',
-        'Solo se pueden revocar los puntos de una redención ya aplicada.',
+        'La redención no llegó a aplicarse.',
       );
     }
     if (claim.outcome === 'ALREADY_REVOKED') {
       throw businessError(
         ConflictException,
         'POINTS_REDEMPTION_ALREADY_REVOKED',
-        'Los puntos de esta redención ya se revocaron.',
+        'Esta redención ya fue revocada.',
       );
     }
     if (claim.outcome === 'IN_PROGRESS') {
       throw businessError(
         ConflictException,
         'POINTS_REVOCATION_IN_PROGRESS',
-        'La revocación de esta redención está en curso.',
+        'La revocación está en curso.',
       );
     }
     if (claim.outcome === 'UNVERIFIED') {
       throw businessError(
         ConflictException,
         'POINTS_REVOCATION_UNVERIFIED',
-        'La revocación anterior quedó por verificar. Concíliala antes de reintentar.',
+        'La revocación anterior quedó por verificar.',
       );
     }
 
@@ -393,7 +419,7 @@ export class PointsRedemptionsService {
         referenceId: id,
         userId: user.id,
       });
-      return this.detail(id);
+      return this.detail(id, user);
     } catch (error) {
       // Un rechazo del proveedor es definitivo: reintentar con los mismos datos daría lo mismo. Un
       // 404 de la anulación también lo es: la operación original no existe en el proveedor.
@@ -407,24 +433,27 @@ export class PointsRedemptionsService {
         : unverified
           ? 'POINTS_REVOCATION_UNVERIFIED'
           : 'POINTS_REVOCATION_FAILED';
-      const message = safeMessage(error, 'Puntos Colombia no pudo anular la redención.');
+      const storedMessage = safeMessage(error, 'No se pudo anular los puntos.');
+      const clientMessage = unverified
+        ? 'No se pudo confirmar la anulación.'
+        : 'No se pudo anular los puntos.';
       await this.redemptions.markRevocationFailed(
         id,
         claim.previousStatus,
-        code,
-        message,
+        providerCodeOf(error) ?? code,
+        storedMessage,
         unverified,
       );
       this.logger.warn(`Revocación de la redención ${id} falló (${code}).`);
       throw new BadGatewayException({
         success: false,
-        error: { code, message },
+        error: { code, message: clientMessage },
       });
     }
   }
 
   /** La redención tal como la ve el panel, para responder a sus propias acciones. */
-  private async detail(id: number) {
+  private async detail(id: number, user: SessionUser) {
     const redemption = await this.redemptions.find(id);
     if (!redemption) {
       throw businessError(
@@ -433,6 +462,6 @@ export class PointsRedemptionsService {
         'La redención no existe en el panel.',
       );
     }
-    return serializeRedemption(redemption);
+    return serializeRedemption(redemption, { diagnosis: user.role === 'ADMIN' });
   }
 }
