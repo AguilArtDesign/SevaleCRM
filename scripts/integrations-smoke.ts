@@ -61,6 +61,11 @@ const upstream = createServer((request, response) => {
                 code: 'READ-001',
                 name: 'Producto de lectura',
                 available_quantity: 14,
+                warehouses: [
+                  { id: -1, name: 'Sin asignar', quantity: 3 },
+                  { id: 178, name: 'SERATUS', quantity: 11 },
+                  { id: 999, name: 'VACIA', quantity: 0 },
+                ],
                 prices: [
                   {
                     currency_code: 'COP',
@@ -81,7 +86,17 @@ const upstream = createServer((request, response) => {
                 ],
               },
             ]
-          : [],
+          : sku === 'READ-NO-WAREHOUSES'
+            ? [
+                {
+                  id: 'siigo-product-no-warehouses',
+                  code: 'READ-NO-WAREHOUSES',
+                  name: 'Producto sin desglose',
+                  available_quantity: 5,
+                  prices: [],
+                },
+              ]
+            : [],
     });
   } else if (url.pathname === '/seratus/wc/v3/products') {
     result = respond(request, 200, [
@@ -210,6 +225,7 @@ try {
     priceMxn: number | null;
     priceEur: number | null;
     stock: number;
+    warehouses: { id: number; name: string; quantity: number }[] | null;
   };
   if (
     siigo.id !== 'siigo-product-1' ||
@@ -217,9 +233,26 @@ try {
     siigo.priceUsd !== 22.5 ||
     siigo.priceMxn !== 847 ||
     siigo.priceEur !== 45 ||
-    siigo.stock !== 14
+    siigo.stock !== 14 ||
+    siigo.warehouses?.length !== 2 ||
+    siigo.warehouses[0]?.id !== -1 ||
+    siigo.warehouses[0]?.quantity !== 3 ||
+    siigo.warehouses[1]?.id !== 178 ||
+    siigo.warehouses[1]?.quantity !== 11
   ) {
     throw new Error('La normalización de Siigo no devolvió los valores esperados.');
+  }
+
+  const noWarehousesResponse = await api(
+    '/api/integrations/siigo/products?sku=READ-NO-WAREHOUSES',
+    cookie,
+  );
+  expectStatus(noWarehousesResponse, 200, 'Lectura de Siigo sin bodegas');
+  const noWarehouses = (await noWarehousesResponse.json()) as {
+    warehouses: { id: number; name: string; quantity: number }[] | null;
+  };
+  if (noWarehouses.warehouses !== null) {
+    throw new Error('La ausencia de bodegas no se preservó como null.');
   }
 
   const seratusResponse = await api(

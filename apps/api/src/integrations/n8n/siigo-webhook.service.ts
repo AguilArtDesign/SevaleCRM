@@ -1,5 +1,6 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import type { SiigoProductLookupQuery, SiigoProductUpdateInput } from '@sevale/validation';
+import { displayWarehouses, parseWarehouseSnapshot } from '../../common/product-warehouses.js';
 import type { Product, SyncStatus } from '../../generated/prisma/client.js';
 import { SiigoWebhookRepository } from './siigo-webhook.repository.js';
 import { RealtimeGateway } from '../../realtime/realtime.gateway.js';
@@ -120,6 +121,12 @@ export class SiigoWebhookService {
       siigoPriceEur: input.siigo_price_eur,
       siigoStock: input.siigo_stock,
       lastCheckAt: checkedAt,
+      ...(input.siigo_warehouses !== undefined
+        ? {
+            siigoWarehouses: parseWarehouseSnapshot(input.siigo_warehouses) ?? [],
+            siigoWarehousesUpdatedAt: checkedAt,
+          }
+        : {}),
       ...(input.woo_sync?.success
         ? {
             wooPriceCop: input.woo_sync.price_cop,
@@ -162,6 +169,8 @@ export class SiigoWebhookService {
         siigoPriceMxn: decimalOrNull(updated.siigoPriceMxn),
         siigoPriceEur: decimalOrNull(updated.siigoPriceEur),
         siigoStock: updated.siigoStock,
+        siigoWarehouses: displayWarehouses(parseWarehouseSnapshot(updated.siigoWarehouses)),
+        siigoWarehousesUpdatedAt: updated.siigoWarehousesUpdatedAt,
         lastCheckAt: updated.lastCheckAt,
         lastSyncAt: updated.lastSyncAt,
         syncStatus: updated.syncStatus,

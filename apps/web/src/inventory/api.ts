@@ -5,6 +5,12 @@ export type ProductSyncStatus = 'PENDING' | 'SYNCED' | 'OUT_OF_SYNC' | 'ERROR';
 export type ProductStatusFilter = ProductSyncStatus | 'OUT_OF_STOCK';
 export type ProductStockSort = 'asc' | 'desc';
 
+export type ProductWarehouseStock = {
+  id: number;
+  name: string;
+  quantity: number;
+};
+
 export type ProductRecord = {
   id: number;
   siigoId: string;
@@ -14,6 +20,9 @@ export type ProductRecord = {
   siigoPriceMxn: number | null;
   siigoPriceEur: number | null;
   siigoStock: number;
+  /** Snapshot informativo: solo bodegas con unidades; null si nunca se consultó. */
+  siigoWarehouses: ProductWarehouseStock[] | null;
+  siigoWarehousesUpdatedAt: string | null;
   store: ProductStore;
   wooParentId: string | null;
   wooVariationId: string | null;
@@ -44,6 +53,13 @@ export type ProductFilters = {
 export type ProductsResponse = {
   data: ProductRecord[];
   pagination: { page: number; pageSize: number; total: number; totalPages: number };
+};
+
+export type ProductWarehousesResponse = {
+  success: true;
+  productId: number;
+  warehouses: ProductWarehouseStock[];
+  updatedAt: string;
 };
 
 export type ProductSyncJob = {
@@ -202,6 +218,10 @@ export const inventoryApi = {
     }),
   sync: (id: number) =>
     request<ProductRecord>(`/api/products/${id}/sync`, {
+      method: 'POST',
+    }),
+  refreshWarehouses: (id: number) =>
+    request<ProductWarehousesResponse>(`/api/products/${id}/warehouses/refresh`, {
       method: 'POST',
     }),
   createSyncJob: (ids: number[]) =>

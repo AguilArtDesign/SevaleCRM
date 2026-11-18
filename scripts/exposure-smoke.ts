@@ -28,6 +28,7 @@ const protectedRoutes = [
   { method: 'GET', url: '/api/products' },
   { method: 'GET', url: '/api/products/link-preview?sku=TEST' },
   { method: 'POST', url: '/api/products', payload: {} },
+  { method: 'POST', url: '/api/products/1/warehouses/refresh' },
   { method: 'GET', url: '/api/products/1' },
   { method: 'GET', url: '/api/notifications' },
   { method: 'PATCH', url: '/api/notifications/read-all', payload: {} },

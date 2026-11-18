@@ -8,6 +8,10 @@ import {
   invalidIntegrationResponse,
   requireIntegrationValue,
 } from '../integration-http.js';
+import {
+  parseWarehouseSnapshot,
+  type ProductWarehouseStock,
+} from '../../common/product-warehouses.js';
 import { SiigoTokenService } from './siigo-token.service.js';
 
 type UnknownRecord = Record<string, unknown>;
@@ -29,6 +33,8 @@ export type SiigoProduct = {
   priceMxn: number | null;
   priceEur: number | null;
   stock: number;
+  /** Bodegas con existencias; null si Siigo no envió la lista. */
+  warehouses: ProductWarehouseStock[] | null;
 };
 
 export type SiigoQuotationCreateInput = {
@@ -195,6 +201,7 @@ function normalizeProduct(value: unknown, requestedSku: string): SiigoProduct | 
     priceMxn: priceOf(prices, 'MXN'),
     priceEur: priceOf(prices, 'EUR'),
     stock,
+    warehouses: parseWarehouseSnapshot(value.warehouses),
   };
 }
 

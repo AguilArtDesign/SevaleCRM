@@ -1002,6 +1002,17 @@ export const siigoProductLookupQuerySchema = z.object({
   siigo_id: z.string().trim().min(1).max(191),
 });
 
+const siigoWarehouseSchema = z
+  .object({
+    // -1 es válido: Siigo usa «Sin asignar» como bodega.
+    id: z.number().int(),
+    // Opcional: el nombre visible sale del glosario del CRM. Solo se usa como respaldo si el id
+    // todavía no está en el glosario.
+    name: z.string().trim().min(1).max(191).optional(),
+    quantity: z.number().int().nonnegative(),
+  })
+  .strict();
+
 const wooSyncResultSchema = z.discriminatedUnion('success', [
   z
     .object({
@@ -1036,6 +1047,8 @@ export const siigoProductUpdateSchema = z
     siigo_price_mxn: z.number().finite().nonnegative().optional(),
     siigo_price_eur: z.number().finite().nonnegative().optional(),
     siigo_stock: z.number().int().nonnegative(),
+    // Opcional para que un n8n sin desplegar siga funcionando; si se omite, el snapshot se conserva.
+    siigo_warehouses: z.array(siigoWarehouseSchema).max(100).optional(),
     woo_sync: wooSyncResultSchema.optional(),
   })
   .strict();

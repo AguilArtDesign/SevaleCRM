@@ -66,9 +66,29 @@ try {
   });
 
   const fixtures = [
-    { store: Store.SERATUS, syncStatus: SyncStatus.SYNCED, name: 'Producto Alfa' },
-    { store: Store.PALI, syncStatus: SyncStatus.PENDING, name: 'Producto Beta', stock: 0 },
-    { store: Store.SERATUS, syncStatus: SyncStatus.ERROR, name: 'Producto Gamma' },
+    {
+      store: Store.SERATUS,
+      syncStatus: SyncStatus.SYNCED,
+      name: 'Producto Alfa',
+      warehouses: [
+        { id: 178, name: 'SERATUS', quantity: 5 },
+        { id: -1, name: 'Sin asignar', quantity: 2 },
+        { id: 999, name: 'VACIA', quantity: 0 },
+      ],
+    },
+    {
+      store: Store.PALI,
+      syncStatus: SyncStatus.PENDING,
+      name: 'Producto Beta',
+      stock: 0,
+      warehouses: undefined,
+    },
+    {
+      store: Store.SERATUS,
+      syncStatus: SyncStatus.ERROR,
+      name: 'Producto Gamma',
+      warehouses: undefined,
+    },
   ];
   for (const [index, fixture] of fixtures.entries()) {
     const product = await prisma.product.create({
@@ -90,6 +110,12 @@ try {
         syncStatus: fixture.syncStatus,
         lastCheckAt: new Date(),
         lastSyncAt: fixture.syncStatus === SyncStatus.SYNCED ? new Date() : null,
+        ...(fixture.warehouses
+          ? {
+              siigoWarehouses: fixture.warehouses,
+              siigoWarehousesUpdatedAt: new Date(),
+            }
+          : {}),
         productName: `${fixture.name} ${runId}`,
       },
     });
@@ -118,10 +144,26 @@ try {
   );
   expectStatus(searchResponse, 200, 'Búsqueda de producto');
   const searchBody = (await searchResponse.json()) as {
-    data: Array<{ id: number; productName: string }>;
+    data: Array<{
+      id: number;
+      productName: string;
+      siigoWarehouses: { id: number; name: string; quantity: number }[] | null;
+      siigoWarehousesUpdatedAt: string | null;
+    }>;
     pagination: { total: number };
   };
-  if (searchBody.pagination.total !== 1 || searchBody.data[0]?.id !== productIds[0]) {
+  if (
+    searchBody.pagination.total !== 1 ||
+    searchBody.data[0]?.id !== productIds[0] ||
+    searchBody.data[0]?.siigoWarehouses?.length !== 2 ||
+    searchBody.data[0]?.siigoWarehouses[0]?.id !== 178 ||
+    searchBody.data[0]?.siigoWarehouses[0]?.name !== 'Seratus' ||
+    searchBody.data[0]?.siigoWarehouses[0]?.quantity !== 5 ||
+    searchBody.data[0]?.siigoWarehouses[1]?.id !== -1 ||
+    searchBody.data[0]?.siigoWarehouses[1]?.name !== 'Sin asignar' ||
+    searchBody.data[0]?.siigoWarehouses[1]?.quantity !== 2 ||
+    !searchBody.data[0]?.siigoWarehousesUpdatedAt
+  ) {
     throw new Error('La búsqueda no devolvió el producto esperado.');
   }
 
@@ -130,8 +172,14 @@ try {
     cookie,
   );
   expectStatus(filteredResponse, 200, 'Filtros por tienda y estado');
-  const filteredBody = (await filteredResponse.json()) as { data: Array<{ id: number }> };
-  if (filteredBody.data.length !== 1 || filteredBody.data[0]?.id !== productIds[2]) {
+  const filteredBody = (await filteredResponse.json()) as {
+    data: Array<{ id: number; siigoWarehouses: { id: number }[] | null }>;
+  };
+  if (
+    filteredBody.data.length !== 1 ||
+    filteredBody.data[0]?.id !== productIds[2] ||
+    filteredBody.data[0]?.siigoWarehouses !== null
+  ) {
     throw new Error('Los filtros no devolvieron el producto esperado.');
   }
 
@@ -205,6 +253,8 @@ try {
     siigoPriceCop: number;
     siigoPriceMxn: number | null;
     wooPriceEur: number | null;
+    siigoWarehouses: { id: number; name: string; quantity: number }[] | null;
+    siigoWarehousesUpdatedAt: string | null;
   };
   if (
     detail.id !== productIds[0] ||
@@ -212,7 +262,13 @@ try {
     typeof detail.siigoPriceCop !== 'number' ||
     // Las monedas nuevas se serializan como número o nulo, nunca como texto de `Decimal`.
     detail.siigoPriceMxn !== 800 ||
-    detail.wooPriceEur !== null
+    detail.wooPriceEur !== null ||
+    detail.siigoWarehouses?.length !== 2 ||
+    detail.siigoWarehouses[0]?.id !== 178 ||
+    detail.siigoWarehouses[0]?.name !== 'Seratus' ||
+    detail.siigoWarehouses[1]?.id !== -1 ||
+    detail.siigoWarehouses[1]?.name !== 'Sin asignar' ||
+    !detail.siigoWarehousesUpdatedAt
   ) {
     throw new Error('El detalle no serializó correctamente el producto.');
   }

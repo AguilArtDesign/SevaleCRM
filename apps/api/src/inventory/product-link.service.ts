@@ -187,6 +187,7 @@ export class ProductLinkService {
       throw new UnprocessableEntityException('Los datos externos están incompletos.');
     }
 
+    const checkedAt = new Date();
     try {
       const product = await this.products.create({
         siigoId: siigo.id,
@@ -206,7 +207,13 @@ export class ProductLinkService {
         wooPriceEur: store.priceEur,
         wooStock: store.stock,
         syncStatus: preview.syncStatus,
-        lastCheckAt: new Date(),
+        lastCheckAt: checkedAt,
+        ...(siigo.warehouses !== null
+          ? {
+              siigoWarehouses: siigo.warehouses,
+              siigoWarehousesUpdatedAt: checkedAt,
+            }
+          : {}),
         productName: store.productName,
         imageUrl: store.imageUrl,
       });
@@ -259,6 +266,7 @@ export class ProductLinkService {
       throw new UnprocessableEntityException('Los datos externos están incompletos.');
     }
 
+    const checkedAt = new Date();
     const updated = await this.products.update(existingProduct.id, {
       siigoId: siigo.id,
       sku: siigo.sku,
@@ -277,7 +285,13 @@ export class ProductLinkService {
       wooPriceEur: store.priceEur,
       wooStock: store.stock,
       syncStatus: preview.syncStatus,
-      lastCheckAt: new Date(),
+      lastCheckAt: checkedAt,
+      ...(siigo.warehouses !== null
+        ? {
+            siigoWarehouses: siigo.warehouses,
+            siigoWarehousesUpdatedAt: checkedAt,
+          }
+        : {}),
       productName: store.productName,
       imageUrl: store.imageUrl,
     });

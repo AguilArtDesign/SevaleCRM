@@ -114,6 +114,15 @@ export class ProductsController {
     return this.productsService.sync(parseInput(productIdSchema, id));
   }
 
+  // Es un refresco informativo del snapshot de bodegas, no una mutación de negocio: por eso
+  // alcanza con `inventory.read` y lo pueden usar los roles que ya ven el inventario.
+  @Post(':id/warehouses/refresh')
+  @HttpCode(HttpStatus.OK)
+  @RequirePermissions('inventory.read')
+  refreshWarehouses(@Param('id') id: string) {
+    return this.productsService.refreshWarehouses(parseInput(productIdSchema, id));
+  }
+
   @Post('sync-jobs')
   @HttpCode(HttpStatus.ACCEPTED)
   @RequirePermissions('inventory.update')

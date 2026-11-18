@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import type { ProductListQuery } from '@sevale/validation';
+import type { ProductWarehouseStock } from '../common/product-warehouses.js';
 import { PrismaService } from '../database/prisma.service.js';
 import type { Prisma } from '../generated/prisma/client.js';
 
@@ -56,6 +57,23 @@ export class ProductsRepository {
 
   update(id: number, data: Prisma.ProductUncheckedUpdateInput) {
     return this.prisma.product.update({ where: { id }, data });
+  }
+
+  saveWarehouseSnapshot(
+    id: number,
+    warehouses: ProductWarehouseStock[],
+    capturedAt: Date,
+    previousUpdatedAt: Date,
+  ) {
+    return this.prisma.product.update({
+      where: { id },
+      data: {
+        siigoWarehouses: warehouses,
+        siigoWarehousesUpdatedAt: capturedAt,
+        // Consulta informativa: conservar updatedAt evita que la fila salte en el listado.
+        updatedAt: previousUpdatedAt,
+      },
+    });
   }
 
   delete(id: number) {

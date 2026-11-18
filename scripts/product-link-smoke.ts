@@ -18,6 +18,24 @@ function recordRequest(sku: string | null) {
   if (sku) externalRequests.set(sku, (externalRequests.get(sku) ?? 0) + 1);
 }
 
+let warehouseVersion = 0;
+
+/** Cambia la distribución entre la creación y el refresco para probar que se consulta Siigo. */
+function siigoWarehouses() {
+  return warehouseVersion === 0
+    ? [
+        { id: -1, name: 'Sin asignar', quantity: 2 },
+        { id: 178, name: 'SERATUS', quantity: 7 },
+        { id: 185, name: 'SERATUS BOGOTA PORTAL 80', quantity: 3 },
+        { id: 999, name: 'VACIA', quantity: 0 },
+      ]
+    : [
+        { id: -1, name: 'Sin asignar', quantity: 1 },
+        { id: 178, name: 'SERATUS', quantity: 8 },
+        { id: 185, name: 'SERATUS BOGOTA PORTAL 80', quantity: 3 },
+      ];
+}
+
 function siigoProduct(sku: string) {
   // Un proveedor puede separar un grupo por moneda en lugar de mezclar las listas en el de pesos:
   // el segundo formato cubre ese caso, sin nombres ISO en las listas.
@@ -27,6 +45,7 @@ function siigoProduct(sku: string) {
     code: sku,
     name: `Producto ${sku}`,
     available_quantity: 12,
+    warehouses: siigoWarehouses(),
     // Forma real de Siigo: todas las listas conviven en el grupo de pesos y cada una se llama por
     // su código ISO o por un nombre propio. Era el caso que dejaba MXN y EUR en «sin dato».
     prices: separated
@@ -281,13 +300,24 @@ try {
     siigoPriceCop: number;
     wooVariationId: string;
     syncStatus: string;
+    siigoWarehouses: { id: number; name: string; quantity: number }[] | null;
+    siigoWarehousesUpdatedAt: string | null;
   };
   if (
     updatedExisting.id !== duplicate.id ||
     updatedExisting.sku !== duplicateSku ||
     updatedExisting.siigoPriceCop !== 87500 ||
     updatedExisting.wooVariationId !== '9102' ||
-    updatedExisting.syncStatus !== 'OUT_OF_SYNC'
+    updatedExisting.syncStatus !== 'OUT_OF_SYNC' ||
+    updatedExisting.siigoWarehouses?.length !== 3 ||
+    updatedExisting.siigoWarehouses[0]?.id !== -1 ||
+    updatedExisting.siigoWarehouses[0]?.name !== 'Sin asignar' ||
+    updatedExisting.siigoWarehouses[0]?.quantity !== 2 ||
+    updatedExisting.siigoWarehouses[1]?.id !== 178 ||
+    updatedExisting.siigoWarehouses[1]?.name !== 'Seratus' ||
+    updatedExisting.siigoWarehouses[2]?.id !== 185 ||
+    updatedExisting.siigoWarehouses[2]?.name !== 'Portal 80' ||
+    !updatedExisting.siigoWarehousesUpdatedAt
   ) {
     throw new Error('La actualización no reemplazó los datos del enlace existente.');
   }
@@ -359,6 +389,7 @@ try {
     store: { store: string; variationId: string };
     syncStatus: string;
     canLink: boolean;
+    siigo: { warehouses: { id: number; name: string; quantity: number }[] | null };
   };
   if (
     preview.sku !== 'LINK-OK' ||
@@ -366,7 +397,13 @@ try {
     preview.store.store !== 'PALI' ||
     preview.store.variationId !== '9102' ||
     preview.syncStatus !== 'SYNCED' ||
-    !preview.canLink
+    !preview.canLink ||
+    preview.siigo.warehouses?.length !== 3 ||
+    preview.siigo.warehouses[0]?.id !== -1 ||
+    preview.siigo.warehouses[0]?.quantity !== 2 ||
+    preview.siigo.warehouses[1]?.id !== 178 ||
+    preview.siigo.warehouses[1]?.quantity !== 7 ||
+    preview.siigo.warehouses[2]?.id !== 185
   ) {
     throw new Error('La vista previa normalizada no contiene los valores esperados.');
   }
@@ -421,6 +458,8 @@ try {
     wooParentId: string;
     wooVariationId: string;
     lastSyncAt: null;
+    siigoWarehouses: { id: number; name: string; quantity: number }[] | null;
+    siigoWarehousesUpdatedAt: string | null;
   };
   createdProductIds.push(created.id);
   if ((await prisma.notification.count({ where: { productId: created.id } })) !== 1) {
@@ -431,7 +470,16 @@ try {
     created.store !== 'PALI' ||
     created.wooParentId !== '9100' ||
     created.wooVariationId !== '9102' ||
-    created.lastSyncAt !== null
+    created.lastSyncAt !== null ||
+    created.siigoWarehouses?.length !== 3 ||
+    created.siigoWarehouses[0]?.id !== -1 ||
+    created.siigoWarehouses[0]?.name !== 'Sin asignar' ||
+    created.siigoWarehouses[0]?.quantity !== 2 ||
+    created.siigoWarehouses[1]?.id !== 178 ||
+    created.siigoWarehouses[1]?.name !== 'Seratus' ||
+    created.siigoWarehouses[2]?.id !== 185 ||
+    created.siigoWarehouses[2]?.name !== 'Portal 80' ||
+    !created.siigoWarehousesUpdatedAt
   ) {
     throw new Error('El producto vinculado no se guardó con datos normalizados.');
   }
@@ -447,6 +495,169 @@ try {
     Number(stored.wooPriceEur) !== 45
   ) {
     throw new Error('El enlace no guardó los precios MXN y EUR de Siigo y WooCommerce.');
+  }
+  const storedWarehouses = stored.siigoWarehouses as
+    | {
+        id: number;
+        name: string;
+        quantity: number;
+      }[]
+    | null;
+  if (
+    !Array.isArray(storedWarehouses) ||
+    storedWarehouses.length !== 3 ||
+    storedWarehouses[0]?.id !== -1 ||
+    storedWarehouses[0]?.quantity !== 2 ||
+    storedWarehouses[1]?.id !== 178 ||
+    storedWarehouses[2]?.id !== 185 ||
+    !stored.siigoWarehousesUpdatedAt
+  ) {
+    throw new Error('El enlace no guardó el snapshot de bodegas.');
+  }
+
+  const beforeCached = await prisma.product.findUniqueOrThrow({ where: { id: created.id } });
+  expectStatus(
+    await api(`/api/products/${created.id}/warehouses/refresh`, undefined, { method: 'POST' }),
+    401,
+    'Carga de bodegas anónima',
+  );
+  warehouseVersion = 1;
+  const requestsBeforeCached = externalRequests.get('LINK-OK') ?? 0;
+  const cachedResponse = await api(
+    `/api/products/${created.id}/warehouses/refresh`,
+    commercialCookie,
+    { method: 'POST' },
+  );
+  expectStatus(cachedResponse, 200, 'Carga de bodegas con snapshot existente');
+  const cached = (await cachedResponse.json()) as {
+    success: boolean;
+    productId: number;
+    warehouses: { id: number; name: string; quantity: number }[];
+    updatedAt: string;
+  };
+  if (
+    !cached.success ||
+    cached.productId !== created.id ||
+    cached.warehouses.length !== 3 ||
+    cached.warehouses[0]?.quantity !== 2 ||
+    cached.warehouses[1]?.quantity !== 7 ||
+    cached.warehouses[2]?.quantity !== 3 ||
+    !cached.updatedAt
+  ) {
+    throw new Error('La carga no devolvió el snapshot guardado del producto.');
+  }
+  if ((externalRequests.get('LINK-OK') ?? 0) !== requestsBeforeCached) {
+    throw new Error('Se consultó Siigo aunque el producto ya tenía el snapshot guardado.');
+  }
+  const afterCached = await prisma.product.findUniqueOrThrow({ where: { id: created.id } });
+  if (afterCached.updatedAt.getTime() !== beforeCached.updatedAt.getTime()) {
+    throw new Error('Consultar el snapshot guardado modificó updatedAt.');
+  }
+
+  // Un producto que nunca cargó bodegas: la primera consulta va a Siigo y queda persistida.
+  const firstLoadSku = `LINK-FIRST-${runId}`;
+  const firstLoadProduct = await prisma.product.create({
+    data: {
+      siigoId: `siigo-${firstLoadSku}`,
+      sku: firstLoadSku,
+      siigoPriceCop: 87500,
+      siigoPriceUsd: 21.75,
+      siigoStock: 12,
+      store: Store.PALI,
+      wooParentId: 9100n,
+      wooVariationId: 9102n,
+      wooSku: firstLoadSku,
+      wooPriceCop: 87500,
+      wooPriceUsd: 21.75,
+      wooStock: 12,
+      syncStatus: SyncStatus.SYNCED,
+      productName: `Producto ${firstLoadSku}`,
+    },
+  });
+  createdProductIds.push(firstLoadProduct.id);
+
+  const beforeFirstLoad = await prisma.product.findUniqueOrThrow({
+    where: { id: firstLoadProduct.id },
+  });
+  const requestsBeforeFirstLoad = externalRequests.get(firstLoadSku) ?? 0;
+  const firstLoadResponse = await api(
+    `/api/products/${firstLoadProduct.id}/warehouses/refresh`,
+    commercialCookie,
+    { method: 'POST' },
+  );
+  expectStatus(firstLoadResponse, 200, 'Primera carga de bodegas');
+  const firstLoad = (await firstLoadResponse.json()) as {
+    success: boolean;
+    productId: number;
+    warehouses: { id: number; name: string; quantity: number }[];
+    updatedAt: string;
+  };
+  if (
+    !firstLoad.success ||
+    firstLoad.productId !== firstLoadProduct.id ||
+    firstLoad.warehouses.length !== 3 ||
+    firstLoad.warehouses[0]?.id !== -1 ||
+    firstLoad.warehouses[0]?.name !== 'Sin asignar' ||
+    firstLoad.warehouses[0]?.quantity !== 1 ||
+    firstLoad.warehouses[1]?.id !== 178 ||
+    firstLoad.warehouses[1]?.name !== 'Seratus' ||
+    firstLoad.warehouses[1]?.quantity !== 8 ||
+    firstLoad.warehouses[2]?.id !== 185 ||
+    firstLoad.warehouses[2]?.name !== 'Portal 80' ||
+    !firstLoad.updatedAt
+  ) {
+    throw new Error('La primera carga no devolvió el desglose de Siigo.');
+  }
+  if ((externalRequests.get(firstLoadSku) ?? 0) <= requestsBeforeFirstLoad) {
+    throw new Error('La primera carga de bodegas no consultó Siigo.');
+  }
+  const afterFirstLoad = await prisma.product.findUniqueOrThrow({
+    where: { id: firstLoadProduct.id },
+  });
+  const afterFirstLoadWarehouses = afterFirstLoad.siigoWarehouses as
+    | {
+        id: number;
+        quantity: number;
+      }[]
+    | null;
+  if (
+    !Array.isArray(afterFirstLoadWarehouses) ||
+    afterFirstLoadWarehouses.length !== 3 ||
+    afterFirstLoadWarehouses[0]?.quantity !== 1 ||
+    afterFirstLoadWarehouses[1]?.quantity !== 8 ||
+    afterFirstLoad.siigoStock !== beforeFirstLoad.siigoStock ||
+    afterFirstLoad.syncStatus !== beforeFirstLoad.syncStatus ||
+    afterFirstLoad.lastCheckAt?.getTime() !== beforeFirstLoad.lastCheckAt?.getTime() ||
+    afterFirstLoad.lastSyncAt?.getTime() !== beforeFirstLoad.lastSyncAt?.getTime() ||
+    afterFirstLoad.updatedAt.getTime() !== beforeFirstLoad.updatedAt.getTime() ||
+    !afterFirstLoad.siigoWarehousesUpdatedAt
+  ) {
+    throw new Error('La primera carga alteró datos fuera del snapshot de bodegas.');
+  }
+
+  // Ya persistido: una segunda apertura no debe volver a Siigo, aunque el proveedor cambie.
+  warehouseVersion = 0;
+  const requestsBeforeSecondLoad = externalRequests.get(firstLoadSku) ?? 0;
+  const secondLoadResponse = await api(
+    `/api/products/${firstLoadProduct.id}/warehouses/refresh`,
+    commercialCookie,
+    { method: 'POST' },
+  );
+  expectStatus(secondLoadResponse, 200, 'Segunda carga de bodegas');
+  const secondLoad = (await secondLoadResponse.json()) as {
+    productId: number;
+    warehouses: { id: number; quantity: number }[];
+  };
+  if (
+    secondLoad.productId !== firstLoadProduct.id ||
+    secondLoad.warehouses.length !== 3 ||
+    secondLoad.warehouses[0]?.quantity !== 1 ||
+    secondLoad.warehouses[1]?.quantity !== 8
+  ) {
+    throw new Error('La segunda carga no devolvió el snapshot persistido.');
+  }
+  if ((externalRequests.get(firstLoadSku) ?? 0) !== requestsBeforeSecondLoad) {
+    throw new Error('La segunda carga volvió a consultar Siigo.');
   }
 
   // El otro formato de Siigo: un grupo de precio por moneda, con nombres que no son el código ISO.

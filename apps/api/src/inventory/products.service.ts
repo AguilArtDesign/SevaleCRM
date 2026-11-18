@@ -1,6 +1,13 @@
-import { Injectable, NotFoundException, UnprocessableEntityException } from '@nestjs/common';
+import {
+  BadGatewayException,
+  Injectable,
+  NotFoundException,
+  UnprocessableEntityException,
+} from '@nestjs/common';
 import type { ProductListQuery } from '@sevale/validation';
+import { displayWarehouses, parseWarehouseSnapshot } from '../common/product-warehouses.js';
 import { SyncStatus, type Product } from '../generated/prisma/client.js';
+import { SiigoService } from '../integrations/siigo/siigo.service.js';
 import { WooCommerceService } from '../integrations/woocommerce/woocommerce.service.js';
 import { RealtimeGateway } from '../realtime/realtime.gateway.js';
 import { ProductsRepository } from './products.repository.js';
@@ -20,6 +27,8 @@ export function serializeProduct(product: Product) {
     wooPriceEur: decimalOrNull(product.wooPriceEur),
     wooParentId: product.wooParentId?.toString() ?? null,
     wooVariationId: product.wooVariationId?.toString() ?? null,
+    siigoWarehouses: displayWarehouses(parseWarehouseSnapshot(product.siigoWarehouses)),
+    siigoWarehousesUpdatedAt: product.siigoWarehousesUpdatedAt,
   };
 }
 
@@ -29,6 +38,7 @@ export class ProductsService {
     private readonly productsRepository: ProductsRepository,
     private readonly realtime: RealtimeGateway,
     private readonly wooCommerce: WooCommerceService,
+    private readonly siigo: SiigoService,
   ) {}
 
   async list(query: ProductListQuery) {
@@ -53,6 +63,65 @@ export class ProductsService {
       });
     }
     return serializeProduct(product);
+  }
+
+  /**
+   * Carga el snapshot informativo de bodegas. Si el producto ya lo tiene, responde con lo
+   * guardado en la base y no vuelve a consultar Siigo: la primera lectura se persiste y las
+   * siguientes se resuelven localmente. n8n es quien refresca el snapshot en las actualizaciones
+   * de producto. No toca stock, precios ni estado de sincronización.
+   */
+  async refreshWarehouses(id: number) {
+    const product = await this.productsRepository.findById(id);
+    if (!product) {
+      throw new NotFoundException({
+        success: false,
+        error: { code: 'PRODUCT_NOT_FOUND', message: 'El producto no existe.' },
+      });
+    }
+
+    if (product.siigoWarehouses !== null) {
+      return {
+        success: true as const,
+        productId: product.id,
+        warehouses: displayWarehouses(parseWarehouseSnapshot(product.siigoWarehouses)) ?? [],
+        updatedAt: product.siigoWarehousesUpdatedAt?.toISOString() ?? '',
+      };
+    }
+
+    const siigo = await this.siigo.searchProductBySku(product.sku);
+    if (!siigo) {
+      throw new NotFoundException({
+        success: false,
+        error: {
+          code: 'PRODUCT_NOT_FOUND_IN_SIIGO',
+          message: 'El producto ya no existe en Siigo.',
+        },
+      });
+    }
+    if (siigo.warehouses === null) {
+      throw new BadGatewayException({
+        success: false,
+        error: {
+          code: 'SIIGO_WAREHOUSES_UNAVAILABLE',
+          message: 'Siigo no devolvió el desglose de bodegas del producto.',
+        },
+      });
+    }
+
+    const capturedAt = new Date();
+    await this.productsRepository.saveWarehouseSnapshot(
+      product.id,
+      siigo.warehouses,
+      capturedAt,
+      product.updatedAt,
+    );
+    return {
+      success: true as const,
+      productId: product.id,
+      warehouses: displayWarehouses(siigo.warehouses) ?? [],
+      updatedAt: capturedAt.toISOString(),
+    };
   }
 
   async export(ids: number[]) {

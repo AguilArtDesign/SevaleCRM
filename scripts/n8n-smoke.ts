@@ -368,6 +368,161 @@ try {
     throw new Error('El fallo WooCommerce alteró datos confirmados o la última sincronización.');
   }
 
+  // Bodegas: opcionales, informativas y sin efecto en el estado de sincronización ni en el stock.
+  const warehouseBase = {
+    siigo_id: matchingPayload.siigo_id,
+    sku: matchingPayload.sku,
+    siigo_price_cop: matchingPayload.siigo_price_cop,
+    siigo_price_usd: matchingPayload.siigo_price_usd,
+    siigo_stock: matchingPayload.siigo_stock,
+  };
+
+  expectStatus(
+    await post(matchingPayload, `Bearer ${apiKey}`),
+    200,
+    'Restauración antes de bodegas',
+  );
+  const notificationsBeforeWarehouse = await prisma.notification.count({
+    where: { productId: product.id },
+  });
+
+  // n8n puede omitir `name`: el nombre visible se resuelve con el glosario del CRM.
+  const warehousesA = [
+    { id: -1, quantity: 2 },
+    { id: 178, quantity: 5 },
+    { id: 185, quantity: 1 },
+    { id: 999, quantity: 1 },
+    { id: 1000, quantity: 0 },
+  ];
+  const warehouseResponse = await post(
+    { ...warehouseBase, siigo_warehouses: warehousesA },
+    `Bearer ${apiKey}`,
+  );
+  expectStatus(warehouseResponse, 200, 'Actualización de bodegas');
+  const warehouseUpdate = (await warehouseResponse.json()) as {
+    product: {
+      siigoStock: number;
+      syncStatus: string;
+      siigoWarehouses: { id: number; name: string; quantity: number }[] | null;
+      siigoWarehousesUpdatedAt: string | null;
+    };
+    changes: Record<string, unknown>;
+  };
+  if (
+    warehouseUpdate.product.siigoStock !== 8 ||
+    warehouseUpdate.product.syncStatus !== 'SYNCED' ||
+    warehouseUpdate.product.siigoWarehouses?.length !== 4 ||
+    warehouseUpdate.product.siigoWarehouses[0]?.id !== -1 ||
+    warehouseUpdate.product.siigoWarehouses[0]?.name !== 'Sin asignar' ||
+    warehouseUpdate.product.siigoWarehouses[0]?.quantity !== 2 ||
+    warehouseUpdate.product.siigoWarehouses[1]?.id !== 178 ||
+    warehouseUpdate.product.siigoWarehouses[1]?.name !== 'Seratus' ||
+    warehouseUpdate.product.siigoWarehouses[1]?.quantity !== 5 ||
+    warehouseUpdate.product.siigoWarehouses[2]?.id !== 185 ||
+    warehouseUpdate.product.siigoWarehouses[2]?.name !== 'Portal 80' ||
+    warehouseUpdate.product.siigoWarehouses[2]?.quantity !== 1 ||
+    warehouseUpdate.product.siigoWarehouses[3]?.id !== 999 ||
+    warehouseUpdate.product.siigoWarehouses[3]?.name !== 'Bodega 999' ||
+    warehouseUpdate.product.siigoWarehouses[3]?.quantity !== 1 ||
+    !warehouseUpdate.product.siigoWarehousesUpdatedAt ||
+    Object.values(warehouseUpdate.changes).some((change) => change !== null)
+  ) {
+    throw new Error('La actualización de bodegas devolvió un resultado inesperado.');
+  }
+  if (
+    (await prisma.notification.count({ where: { productId: product.id } })) !==
+    notificationsBeforeWarehouse
+  ) {
+    throw new Error('Una actualización solo de bodegas creó una notificación.');
+  }
+
+  const storedWarehouseProduct = await prisma.product.findUniqueOrThrow({
+    where: { id: product.id },
+  });
+  const storedWarehouses = storedWarehouseProduct.siigoWarehouses as
+    | {
+        id: number;
+        name: string;
+        quantity: number;
+      }[]
+    | null;
+  if (
+    !Array.isArray(storedWarehouses) ||
+    storedWarehouses.length !== 4 ||
+    storedWarehouses[0]?.id !== -1 ||
+    storedWarehouses[0]?.name !== '' ||
+    storedWarehouses[1]?.id !== 178 ||
+    storedWarehouses[1]?.name !== '' ||
+    storedWarehouses[2]?.id !== 185 ||
+    storedWarehouses[2]?.name !== '' ||
+    storedWarehouses[3]?.id !== 999 ||
+    !storedWarehouseProduct.siigoWarehousesUpdatedAt
+  ) {
+    throw new Error('La base de datos no guardó el snapshot filtrado de bodegas.');
+  }
+
+  const preservedResponse = await post(warehouseBase, `Bearer ${apiKey}`);
+  expectStatus(preservedResponse, 200, 'Actualización sin bodegas');
+  const preservedProduct = await prisma.product.findUniqueOrThrow({ where: { id: product.id } });
+  const preservedWarehouses = preservedProduct.siigoWarehouses as
+    | {
+        id: number;
+        quantity: number;
+      }[]
+    | null;
+  if (
+    !Array.isArray(preservedWarehouses) ||
+    preservedWarehouses.length !== 4 ||
+    preservedWarehouses[0]?.id !== -1 ||
+    preservedWarehouses[1]?.id !== 178 ||
+    preservedWarehouses[2]?.id !== 185 ||
+    preservedWarehouses[3]?.id !== 999
+  ) {
+    throw new Error('Omitir siigo_warehouses borró el snapshot anterior.');
+  }
+
+  const clearedResponse = await post(
+    { ...warehouseBase, siigo_warehouses: [] },
+    `Bearer ${apiKey}`,
+  );
+  expectStatus(clearedResponse, 200, 'Bodegas vacías');
+  const cleared = (await clearedResponse.json()) as {
+    product: { siigoWarehouses: { id: number; quantity: number }[] | null };
+  };
+  if (
+    !Array.isArray(cleared.product.siigoWarehouses) ||
+    cleared.product.siigoWarehouses.length !== 0
+  ) {
+    throw new Error('Una lista vacía de bodegas no limpió el snapshot.');
+  }
+  const clearedProduct = await prisma.product.findUniqueOrThrow({ where: { id: product.id } });
+  if (
+    !Array.isArray(clearedProduct.siigoWarehouses) ||
+    clearedProduct.siigoWarehouses.length !== 0
+  ) {
+    throw new Error('La base de datos no guardó la lista vacía de bodegas.');
+  }
+
+  const invalidWarehouses: { value: unknown; context: string }[] = [
+    { value: {}, context: 'Bodegas no es un arreglo' },
+    { value: [{ id: 178, name: 'SERATUS', quantity: -1 }], context: 'Cantidad negativa' },
+    { value: [{ id: 178, name: 'SERATUS', quantity: 1.5 }], context: 'Cantidad decimal' },
+    { value: [{ id: 1.5, name: 'SERATUS', quantity: 1 }], context: 'Id decimal' },
+    { value: [{ id: 178, name: '', quantity: 1 }], context: 'Nombre vacío' },
+    { value: [{ id: 178, name: 'SERATUS', quantity: 1, extra: true }], context: 'Clave extra' },
+  ];
+  for (const invalid of invalidWarehouses) {
+    expectStatus(
+      await post({ ...warehouseBase, siigo_warehouses: invalid.value }, `Bearer ${apiKey}`),
+      400,
+      invalid.context,
+    );
+  }
+  const afterInvalid = await prisma.product.findUniqueOrThrow({ where: { id: product.id } });
+  if (!Array.isArray(afterInvalid.siigoWarehouses) || afterInvalid.siigoWarehouses.length !== 0) {
+    throw new Error('Un payload inválido de bodegas modificó el snapshot.');
+  }
+
   process.stdout.write(
     'n8n smoke: API key, strict validation, lookup by Siigo ID, change detection, local update, sync status and Woo preservation checks passed.\n',
   );

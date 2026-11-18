@@ -55,6 +55,7 @@ import {
   type InventoryPriceKey,
 } from './presentation';
 import { StockChip } from './StockChip';
+import { WarehouseStockPopover } from './WarehouseStockPopover';
 import { useCurrentUser } from '../users/useCurrentUser';
 
 const tableFeatureSet = tableFeatures({});
@@ -349,9 +350,16 @@ export function InventoryPage() {
         id: 'stock',
         header: 'Stock',
         cell: ({ row }) => (
-          <span className={row.original.siigoStock <= 0 ? 'stock-zero' : undefined}>
-            {row.original.siigoStock} {row.original.siigoStock === 1 ? 'unidad' : 'unidades'}
-          </span>
+          <div className="inventory-stock-cell">
+            <span className={row.original.siigoStock <= 0 ? 'stock-zero' : undefined}>
+              {row.original.siigoStock} {row.original.siigoStock === 1 ? 'unidad' : 'unidades'}
+            </span>
+            <WarehouseStockPopover
+              productId={row.original.id}
+              productName={row.original.productName}
+              storedWarehouses={row.original.siigoWarehouses}
+            />
+          </div>
         ),
       },
       {

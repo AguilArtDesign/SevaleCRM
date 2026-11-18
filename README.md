@@ -76,9 +76,9 @@ Después de iniciar sesión, el CRM abre `/inventory` dentro del shell administr
 
 ## Inventario local
 
-La ruta `/inventory` consulta los productos almacenados en la base de datos local mediante `GET /api/products`. Incluye búsqueda por nombre, SKU Siigo o SKU WooCommerce; filtros por tienda y estado; paginación; tabla responsive y detalle comparativo entre los datos de Siigo y WooCommerce. La interfaz contempla estados de carga, error y ausencia de resultados.
+La ruta `/inventory` consulta los productos almacenados en la base de datos local mediante `GET /api/products`. Incluye búsqueda por nombre, SKU Siigo o SKU WooCommerce; filtros por tienda y estado; paginación; tabla responsive y detalle comparativo entre los datos de Siigo y WooCommerce. La interfaz contempla estados de carga, error y ausencia de resultados. En la columna Stock, un icono junto a las unidades abre el desglose por bodega (ver «Bodegas del stock»).
 
-El listado y el detalle siempre leen la tabla local. Las conexiones externas se activan únicamente cuando un administrador abre el flujo de vinculación y busca un SKU.
+El listado y el detalle leen la tabla local. Las conexiones externas se activan al abrir el flujo de vinculación y al abrir el desglose de bodegas de una fila; esa consulta está disponible para cualquier usuario con `inventory.read`. El valor entero de la columna Stock no depende de ella.
 
 ## Monedas del producto
 
@@ -95,6 +95,16 @@ El estado de sincronización compara **las cuatro monedas y el stock**: coincide
 ```
 
 Mientras una moneda no exista, su clave se omite en lugar de enviarse vacía.
+
+### Bodegas del stock
+
+La columna Stock sigue mostrando el entero de `siigoStock`. Junto a él, un icono de cubos abre un popover con el desglose por bodega que devuelve Siigo en `warehouses`. Solo se listan bodegas con `quantity > 0`; la bodega `-1` se muestra como **Sin asignar**. El popover lee el snapshot guardado en `products.siigo_warehouses` y su fecha en `siigo_warehouses_updated_at`. Solo si el producto todavía no tiene desglose (`null`) se consulta Siigo la primera vez mediante `POST /api/products/:id/warehouses/refresh`, que lo persiste; las lecturas siguientes salen de la base. n8n actualiza el snapshot en cada actualización de producto. La consulta inicial no modifica `siigo_stock`, `sync_status`, `last_check_at`, `last_sync_at` ni los precios, y conserva `updated_at` para no reordenar la tabla.
+
+Los nombres visibles salen del glosario `apps/api/src/common/warehouse-catalog.ts`, que mapea el id de Siigo a un nombre comercial: por ejemplo, `185` (`SERATUS BOGOTA PORTAL 80`) se muestra como **Portal 80**. El snapshot guarda el id y, si viene, el nombre crudo; la API resuelve el nombre visible al serializar, así que cambiar un `displayName` no obliga a volver a consultar Siigo. Para un id que todavía no esté en el glosario se usa el nombre recibido o, si tampoco vino, `Bodega {id}`.
+
+El JSON guarda únicamente `{ id, name, quantity }` con `quantity > 0`. `null` significa que nunca se consultó o que Siigo no envió una lista reconocible; `[]` significa que Siigo respondió una lista válida sin existencias. Esa distinción evita borrar un snapshot útil cuando el proveedor omite el campo. El endpoint responde `502 SIIGO_WAREHOUSES_UNAVAILABLE` en ese caso; si el producto ya no existe en Siigo, `404 PRODUCT_NOT_FOUND_IN_SIIGO`.
+
+El snapshot también se actualiza al vincular/actualizar un producto desde Siigo y desde el webhook de n8n. Es informativo: no participa del estado de sincronización, no se envía a WooCommerce, no afecta Pedidos y no se exporta.
 
 ## Vinculación de productos
 
@@ -242,6 +252,10 @@ El payload aceptado es estricto y normalizado:
   "siigo_price_mxn": 847,
   "siigo_price_eur": 45,
   "siigo_stock": 116,
+  "siigo_warehouses": [
+    { "id": -1, "quantity": 2 },
+    { "id": 178, "quantity": 114 }
+  ],
   "woo_sync": {
     "success": true,
     "store": "SERATUS",
@@ -254,9 +268,11 @@ El payload aceptado es estricto y normalizado:
 }
 ```
 
-`siigo_price_mxn`, `siigo_price_eur`, `price_mxn` y `price_eur` son **opcionales**: un n8n que todavía no los envía sigue funcionando y el producto conserva lo que ya tenía guardado en esas columnas. El resto del contrato es estricto y una clave desconocida devuelve `400`.
+`siigo_price_mxn`, `siigo_price_eur`, `price_mxn`, `price_eur` y `siigo_warehouses` son **opcionales**: un n8n que todavía no los envía sigue funcionando y el producto conserva lo que ya tenía guardado en esas columnas. El resto del contrato es estricto y una clave desconocida devuelve `400`.
 
-La API busca el enlace por `siigo_id`, comprueba que el SKU coincida, actualiza los precios de Siigo y el stock, registra `last_check_at` y recalcula `sync_status` comparando las cuatro monedas y el stock contra los valores WooCommerce almacenados. La respuesta incluye únicamente el producto normalizado y los cambios reales detectados. No se modifican las tiendas externas.
+`siigo_warehouses` acepta `id` y `quantity` por bodega; `name` es **opcional** y solo se usa como respaldo si el id todavía no está en el glosario del CRM. `id: -1` es válido para «Sin asignar», `quantity` debe ser un entero no negativo y los ceros se descartan al guardar. Si el campo se omite, el snapshot anterior se conserva; si se envía `[]`, se limpia. El flujo de n8n vive fuera de este repositorio y debe reenviar `products[].warehouses` de Siigo con esos ids y cantidades.
+
+La API busca el enlace por `siigo_id`, comprueba que el SKU coincida, actualiza los precios de Siigo y el stock, registra `last_check_at` y recalcula `sync_status` comparando las cuatro monedas y el stock contra los valores WooCommerce almacenados. Si el payload trae `siigo_warehouses`, también actualiza el snapshot; un cambio solo de bodegas no altera `sync_status`, no crea notificaciones y no toca WooCommerce. La respuesta incluye el producto normalizado (con `siigoWarehouses` usando los nombres visibles del glosario y `siigoWarehousesUpdatedAt`) y los cambios reales detectados. No se modifican las tiendas externas.
 
 `N8N_API_KEY` debe existir solo en el entorno del backend y en la credencial correspondiente de n8n. Este endpoint no utiliza sesiones de usuario.
 
