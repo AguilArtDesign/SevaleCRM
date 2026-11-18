@@ -114,6 +114,13 @@ export class ProductsController {
     return this.productsService.sync(parseInput(productIdSchema, id));
   }
 
+  @Post(':id/refresh-from-siigo')
+  @HttpCode(HttpStatus.OK)
+  @RequirePermissions('inventory.update')
+  refreshFromSiigo(@Param('id') id: string) {
+    return this.productsService.refreshFromSiigo(parseInput(productIdSchema, id));
+  }
+
   // Es un refresco informativo del snapshot de bodegas, no una mutación de negocio: por eso
   // alcanza con `inventory.read` y lo pueden usar los roles que ya ven el inventario.
   @Post(':id/warehouses/refresh')

@@ -78,7 +78,7 @@ Después de iniciar sesión, el CRM abre `/inventory` dentro del shell administr
 
 La ruta `/inventory` consulta los productos almacenados en la base de datos local mediante `GET /api/products`. Incluye búsqueda por nombre, SKU Siigo o SKU WooCommerce; filtros por tienda y estado; paginación; tabla responsive y detalle comparativo entre los datos de Siigo y WooCommerce. La interfaz contempla estados de carga, error y ausencia de resultados. En la columna Stock, un icono junto a las unidades abre el desglose por bodega (ver «Bodegas del stock»).
 
-El listado y el detalle leen la tabla local. Las conexiones externas se activan al abrir el flujo de vinculación y al abrir el desglose de bodegas de una fila; esa consulta está disponible para cualquier usuario con `inventory.read`. El valor entero de la columna Stock no depende de ella.
+El listado y el detalle leen la tabla local. Las conexiones externas se activan al abrir el flujo de vinculación, al abrir el desglose de bodegas de una fila y al usar **Actualizar desde Siigo** (solo ADMIN); la consulta de bodegas está disponible para cualquier usuario con `inventory.read`. El valor entero de la columna Stock no depende de ellas.
 
 ## Monedas del producto
 
@@ -104,7 +104,11 @@ Los nombres visibles salen del glosario `apps/api/src/common/warehouse-catalog.t
 
 El JSON guarda únicamente `{ id, name, quantity }` con `quantity > 0`. `null` significa que nunca se consultó o que Siigo no envió una lista reconocible; `[]` significa que Siigo respondió una lista válida sin existencias. Esa distinción evita borrar un snapshot útil cuando el proveedor omite el campo. El endpoint responde `502 SIIGO_WAREHOUSES_UNAVAILABLE` en ese caso; si el producto ya no existe en Siigo, `404 PRODUCT_NOT_FOUND_IN_SIIGO`.
 
-El snapshot también se actualiza al vincular/actualizar un producto desde Siigo y desde el webhook de n8n. Es informativo: no participa del estado de sincronización, no se envía a WooCommerce, no afecta Pedidos y no se exporta.
+El snapshot también se actualiza al vincular/actualizar un producto desde Siigo, al usar **Actualizar desde Siigo** y desde el webhook de n8n. Es informativo: no participa del estado de sincronización, no se envía a WooCommerce, no afecta Pedidos y no se exporta.
+
+### Actualizar desde Siigo
+
+La acción **Actualizar** del menú de acciones de cada fila está disponible solo para ADMIN (permiso `inventory.update`). Su icono ejecuta `POST /api/products/:id/refresh-from-siigo`; el backend consulta Siigo por el SKU, actualiza los precios Siigo COP/USD/MXN/EUR, el stock, el snapshot de bodegas y `last_check_at`, y recalcula `sync_status` comparando esos valores con los precios y el stock WooCommerce ya almacenados del producto. Si las cuatro monedas o el stock no coinciden, la fila queda **Desactualizado**. No se envía nada a WooCommerce ni se crea una notificación; la acción solo actualiza el CRM y emite un evento realtime. El administrador puede revisar los productos desactualizados y luego usar **Sincronizar** o la sincronización masiva para empujarlos a la tienda. COP y USD son obligatorios: si Siigo no los devuelve, la API rechaza la actualización sin tocar el producto. Las bodegas se conservan si Siigo no envía la lista y se vacían si devuelve una lista válida sin existencias.
 
 ## Vinculación de productos
 
@@ -597,6 +601,7 @@ npm run test:products
 npm run test:integrations
 npm run test:siigo-token
 npm run test:product-link
+npm run test:product-refresh
 npm run test:product-import
 npm run test:prospects:import
 npm run test:n8n

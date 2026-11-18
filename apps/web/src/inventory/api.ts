@@ -220,6 +220,10 @@ export const inventoryApi = {
     request<ProductRecord>(`/api/products/${id}/sync`, {
       method: 'POST',
     }),
+  refreshFromSiigo: (id: number) =>
+    request<ProductRecord>(`/api/products/${id}/refresh-from-siigo`, {
+      method: 'POST',
+    }),
   refreshWarehouses: (id: number) =>
     request<ProductWarehousesResponse>(`/api/products/${id}/warehouses/refresh`, {
       method: 'POST',

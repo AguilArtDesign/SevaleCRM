@@ -13,7 +13,7 @@ import {
 } from '../integrations/woocommerce/woocommerce.service.js';
 import { ProductsRepository } from './products.repository.js';
 import { serializeProduct } from './products.service.js';
-import { decimalOrNull, pricesAndStockMatch } from './product-prices.js';
+import { decimalOrNull, numericChange, pricesAndStockMatch } from './product-prices.js';
 import { RealtimeGateway } from '../realtime/realtime.gateway.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
 
@@ -65,18 +65,6 @@ function isUniqueConstraintError(error: unknown): boolean {
     'code' in error &&
     (error as { code?: unknown }).code === 'P2002'
   );
-}
-
-function numericChange(
-  previous: number,
-  current: number,
-): { previous: number; current: number } | null;
-function numericChange(
-  previous: number | null,
-  current: number | null,
-): { previous: number | null; current: number | null } | null;
-function numericChange(previous: number | null, current: number | null) {
-  return previous === current ? null : { previous, current };
 }
 
 function productChanges(previous: Product, preview: ProductLinkPreview) {

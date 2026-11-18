@@ -16,6 +16,19 @@ export function samePrice(left: number | null, right: number | null): boolean {
   return left === right;
 }
 
+/** Cambio entre dos valores, o null cuando son iguales. Se usa para los eventos de realtime. */
+export function numericChange(
+  previous: number,
+  current: number,
+): { previous: number; current: number } | null;
+export function numericChange(
+  previous: number | null,
+  current: number | null,
+): { previous: number | null; current: number | null } | null;
+export function numericChange(previous: number | null, current: number | null) {
+  return previous === current ? null : { previous, current };
+}
+
 export type ProductPriceSet = {
   priceCop: number | null;
   priceUsd: number | null;

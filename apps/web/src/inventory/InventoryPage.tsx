@@ -26,6 +26,7 @@ import {
   ArrowUpFromLine,
   ArrowRotateLeft,
   ArrowRotateRight,
+  ArrowsRotateRight,
   Boxes3,
   CircleDollar,
   EllipsisVertical,
@@ -241,6 +242,24 @@ export function InventoryPage() {
     mutationFn: (product: ProductRecord) => inventoryApi.sync(product.id),
     onSettled: async () => queryClient.invalidateQueries({ queryKey: ['products'] }),
   });
+  const refreshFromSiigo = useMutation({
+    mutationFn: (product: ProductRecord) => inventoryApi.refreshFromSiigo(product.id),
+    onSuccess: (updated) => {
+      void queryClient.invalidateQueries({ queryKey: ['products'] });
+      if (updated.syncStatus === 'SYNCED') {
+        toast.success('Producto actualizado desde Siigo', {
+          description: 'Los precios y el stock coinciden con la tienda.',
+        });
+        return;
+      }
+      toast.warning('Producto actualizado desde Siigo', {
+        description: 'Quedó desactualizado: hay diferencias con la tienda.',
+      });
+    },
+    onError: (error) => {
+      toast.danger('No pudimos actualizar desde Siigo', { description: error.message });
+    },
+  });
   const synchronizeSelectedProducts = useMutation({
     mutationFn: async (ids: number[]) => waitForSyncJob(await inventoryApi.createSyncJob(ids)),
     onSuccess: async (job) => {
@@ -410,6 +429,19 @@ export function InventoryPage() {
                         ),
                       });
                     }
+                    if (String(key) === 'refresh' && !refreshFromSiigo.isPending) {
+                      const loadingId = toast(
+                        syncToastContent(
+                          'Actualizando',
+                          `Consultando Siigo para ${row.original.productName}.`,
+                          'default',
+                        ),
+                        { isLoading: true, timeout: 0 },
+                      );
+                      refreshFromSiigo.mutate(row.original, {
+                        onSettled: () => toast.close(loadingId),
+                      });
+                    }
                     if (String(key) === 'delete') setDeleteTarget(row.original);
                   }}
                 >
@@ -424,7 +456,7 @@ export function InventoryPage() {
                         textValue="Sincronizar producto"
                         isDisabled={synchronizeProduct.isPending}
                       >
-                        <ArrowRotateRight
+                        <ArrowsRotateRight
                           className="size-4 shrink-0 text-muted"
                           aria-hidden="true"
                         />
@@ -435,6 +467,17 @@ export function InventoryPage() {
                   {isAdmin && <Separator />}
                   {isAdmin && (
                     <Dropdown.Section>
+                      <Dropdown.Item
+                        id="refresh"
+                        textValue="Actualizar desde Siigo"
+                        isDisabled={refreshFromSiigo.isPending}
+                      >
+                        <ArrowRotateRight
+                          className="size-4 shrink-0 text-muted"
+                          aria-hidden="true"
+                        />
+                        <Label>Actualizar</Label>
+                      </Dropdown.Item>
                       <Dropdown.Item id="delete" textValue="Eliminar producto" variant="danger">
                         <TrashBin className="size-4 shrink-0 text-danger" aria-hidden="true" />
                         <Label>Eliminar</Label>
@@ -448,7 +491,7 @@ export function InventoryPage() {
         ),
       },
     ],
-    [isAdmin, synchronizeProduct],
+    [isAdmin, refreshFromSiigo, synchronizeProduct],
   );
 
   const table = useTable({

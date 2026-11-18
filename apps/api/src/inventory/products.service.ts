@@ -12,7 +12,7 @@ import { WooCommerceService } from '../integrations/woocommerce/woocommerce.serv
 import { RealtimeGateway } from '../realtime/realtime.gateway.js';
 import { ProductsRepository } from './products.repository.js';
 import { createInventoryWorkbook } from './product-export.js';
-import { decimalOrNull } from './product-prices.js';
+import { decimalOrNull, numericChange, pricesAndStockMatch } from './product-prices.js';
 
 export function serializeProduct(product: Product) {
   return {
@@ -122,6 +122,99 @@ export class ProductsService {
       warehouses: displayWarehouses(siigo.warehouses) ?? [],
       updatedAt: capturedAt.toISOString(),
     };
+  }
+
+  /**
+   * Trae de nuevo los datos de Siigo para un producto y recalcula el estado contra el espejo
+   * de WooCommerce. No envía nada a la tienda: el administrador puede usar Sincronizar después.
+   */
+  async refreshFromSiigo(id: number) {
+    const product = await this.productsRepository.findById(id);
+    if (!product) {
+      throw new NotFoundException({
+        success: false,
+        error: { code: 'PRODUCT_NOT_FOUND', message: 'El producto no existe.' },
+      });
+    }
+
+    const siigo = await this.siigo.searchProductBySku(product.sku);
+    if (!siigo) {
+      throw new NotFoundException({
+        success: false,
+        error: {
+          code: 'PRODUCT_NOT_FOUND_IN_SIIGO',
+          message: 'El producto ya no existe en Siigo.',
+        },
+      });
+    }
+    if (siigo.priceCop === null || siigo.priceUsd === null) {
+      throw new UnprocessableEntityException({
+        success: false,
+        error: {
+          code: 'SIIGO_PRICES_INCOMPLETE',
+          message: 'Siigo no devolvió los precios COP y USD.',
+        },
+      });
+    }
+    if (!Number.isSafeInteger(siigo.stock) || siigo.stock < 0) {
+      throw new UnprocessableEntityException({
+        success: false,
+        error: {
+          code: 'SIIGO_STOCK_INVALID',
+          message: 'Siigo devolvió un stock que no es un entero no negativo.',
+        },
+      });
+    }
+
+    const syncStatus = pricesAndStockMatch(
+      {
+        priceCop: siigo.priceCop,
+        priceUsd: siigo.priceUsd,
+        priceMxn: siigo.priceMxn,
+        priceEur: siigo.priceEur,
+      },
+      {
+        priceCop: decimalOrNull(product.wooPriceCop),
+        priceUsd: decimalOrNull(product.wooPriceUsd),
+        priceMxn: decimalOrNull(product.wooPriceMxn),
+        priceEur: decimalOrNull(product.wooPriceEur),
+      },
+      siigo.stock,
+      product.wooStock,
+    )
+      ? SyncStatus.SYNCED
+      : SyncStatus.OUT_OF_SYNC;
+
+    const checkedAt = new Date();
+    const updated = await this.productsRepository.update(product.id, {
+      siigoPriceCop: siigo.priceCop,
+      siigoPriceUsd: siigo.priceUsd,
+      siigoPriceMxn: siigo.priceMxn,
+      siigoPriceEur: siigo.priceEur,
+      siigoStock: siigo.stock,
+      ...(siigo.warehouses !== null
+        ? {
+            siigoWarehouses: siigo.warehouses,
+            siigoWarehousesUpdatedAt: checkedAt,
+          }
+        : {}),
+      syncStatus,
+      lastCheckAt: checkedAt,
+    });
+
+    this.realtime.emitProductUpdated(updated, {
+      priceCop: numericChange(decimalOrNull(product.siigoPriceCop), siigo.priceCop),
+      priceUsd: numericChange(decimalOrNull(product.siigoPriceUsd), siigo.priceUsd),
+      priceMxn: numericChange(decimalOrNull(product.siigoPriceMxn), siigo.priceMxn),
+      priceEur: numericChange(decimalOrNull(product.siigoPriceEur), siigo.priceEur),
+      stock: numericChange(product.siigoStock, siigo.stock),
+      syncStatus:
+        product.syncStatus === syncStatus
+          ? null
+          : { previous: product.syncStatus, current: syncStatus },
+    });
+
+    return serializeProduct(updated);
   }
 
   async export(ids: number[]) {
