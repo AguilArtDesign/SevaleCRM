@@ -390,6 +390,7 @@ try {
   const warehousesA = [
     { id: -1, quantity: 2 },
     { id: 178, quantity: 5 },
+    { id: 177, quantity: 4 },
     { id: 185, quantity: 1 },
     { id: 999, quantity: 1 },
     { id: 1000, quantity: 0 },
@@ -416,8 +417,8 @@ try {
     warehouseUpdate.product.siigoWarehouses[0]?.name !== 'Sin asignar' ||
     warehouseUpdate.product.siigoWarehouses[0]?.quantity !== 2 ||
     warehouseUpdate.product.siigoWarehouses[1]?.id !== 178 ||
-    warehouseUpdate.product.siigoWarehouses[1]?.name !== 'Seratus' ||
-    warehouseUpdate.product.siigoWarehouses[1]?.quantity !== 5 ||
+    warehouseUpdate.product.siigoWarehouses[1]?.name !== 'Bodega' ||
+    warehouseUpdate.product.siigoWarehouses[1]?.quantity !== 9 ||
     warehouseUpdate.product.siigoWarehouses[2]?.id !== 185 ||
     warehouseUpdate.product.siigoWarehouses[2]?.name !== 'Portal 80' ||
     warehouseUpdate.product.siigoWarehouses[2]?.quantity !== 1 ||
@@ -448,14 +449,16 @@ try {
     | null;
   if (
     !Array.isArray(storedWarehouses) ||
-    storedWarehouses.length !== 4 ||
+    storedWarehouses.length !== 5 ||
     storedWarehouses[0]?.id !== -1 ||
     storedWarehouses[0]?.name !== '' ||
     storedWarehouses[1]?.id !== 178 ||
     storedWarehouses[1]?.name !== '' ||
-    storedWarehouses[2]?.id !== 185 ||
+    storedWarehouses[2]?.id !== 177 ||
     storedWarehouses[2]?.name !== '' ||
-    storedWarehouses[3]?.id !== 999 ||
+    storedWarehouses[3]?.id !== 185 ||
+    storedWarehouses[3]?.name !== '' ||
+    storedWarehouses[4]?.id !== 999 ||
     !storedWarehouseProduct.siigoWarehousesUpdatedAt
   ) {
     throw new Error('La base de datos no guardó el snapshot filtrado de bodegas.');
@@ -472,11 +475,12 @@ try {
     | null;
   if (
     !Array.isArray(preservedWarehouses) ||
-    preservedWarehouses.length !== 4 ||
+    preservedWarehouses.length !== 5 ||
     preservedWarehouses[0]?.id !== -1 ||
     preservedWarehouses[1]?.id !== 178 ||
-    preservedWarehouses[2]?.id !== 185 ||
-    preservedWarehouses[3]?.id !== 999
+    preservedWarehouses[2]?.id !== 177 ||
+    preservedWarehouses[3]?.id !== 185 ||
+    preservedWarehouses[4]?.id !== 999
   ) {
     throw new Error('Omitir siigo_warehouses borró el snapshot anterior.');
   }

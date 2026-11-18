@@ -1,4 +1,4 @@
-import { warehouseDisplayName } from './warehouse-catalog.js';
+import { warehouseDisplayGroupId, warehouseDisplayName } from './warehouse-catalog.js';
 
 export type ProductWarehouseStock = {
   id: number;
@@ -52,15 +52,27 @@ export function parseWarehouseSnapshot(value: unknown): ProductWarehouseStock[] 
 
 /**
  * Convierte el snapshot almacenado en la forma que consume el panel. El nombre visible sale
- * siempre del glosario; el nombre del proveedor solo se usa para ids desconocidos.
+ * siempre del glosario; el nombre del proveedor solo se usa para ids desconocidos. Las bodegas
+ * principales (PALI y SERATUS) se agrupan en una sola fila y sus unidades se suman.
  */
 export function displayWarehouses(
   warehouses: ProductWarehouseStock[] | null,
 ): ProductWarehouseStock[] | null {
-  return (
-    warehouses?.map((warehouse) => ({
+  if (!warehouses) return null;
+
+  const merged = new Map<number, ProductWarehouseStock>();
+  for (const warehouse of warehouses) {
+    const groupId = warehouseDisplayGroupId(warehouse.id);
+    const existing = merged.get(groupId);
+    if (existing) {
+      existing.quantity += warehouse.quantity;
+      continue;
+    }
+    merged.set(groupId, {
       ...warehouse,
+      id: groupId,
       name: warehouseDisplayName(warehouse.id, warehouse.name),
-    })) ?? null
-  );
+    });
+  }
+  return [...merged.values()];
 }

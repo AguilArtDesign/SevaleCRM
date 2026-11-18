@@ -13,6 +13,9 @@ export type WarehouseCatalogEntry = {
  * Glosario de bodegas del CRM. El panel muestra `displayName`, no el nombre crudo de Siigo:
  * por ejemplo, `185 / SERATUS BOGOTA PORTAL 80` se muestra como «Portal 80».
  *
+ * PALI (177) y SERATUS (178) son la bodega principal: comparten el nombre visible «Bodega» y
+ * se suman en una sola fila del popover. El resto de bodegas se muestra por separado.
+ *
  * Es la única fuente de los nombres visibles. Si Siigo agrega una bodega que no está aquí, se
  * usa el nombre recibido (o «Bodega {id}» si tampoco vino) para no ocultar el dato.
  */
@@ -24,8 +27,8 @@ export const warehouseCatalog: readonly WarehouseCatalogEntry[] = [
     active: true,
     hasMovements: true,
   },
-  { id: 177, siigoName: 'PALI', displayName: 'Pali', active: true, hasMovements: true },
-  { id: 178, siigoName: 'SERATUS', displayName: 'Seratus', active: true, hasMovements: true },
+  { id: 177, siigoName: 'PALI', displayName: 'Bodega', active: true, hasMovements: true },
+  { id: 178, siigoName: 'SERATUS', displayName: 'Bodega', active: true, hasMovements: true },
   { id: 179, siigoName: 'MAYORCA', displayName: 'Mayorca', active: false, hasMovements: true },
   { id: 180, siigoName: 'BOGOTA', displayName: 'Bogotá', active: false, hasMovements: true },
   {
@@ -61,6 +64,15 @@ export const warehouseCatalog: readonly WarehouseCatalogEntry[] = [
 ];
 
 const warehouseById = new Map(warehouseCatalog.map((warehouse) => [warehouse.id, warehouse]));
+
+/** PALI y SERATUS representan la bodega principal y se agrupan bajo un solo id visible. */
+const PRINCIPAL_WAREHOUSE_IDS = new Set([177, 178]);
+export const PRINCIPAL_WAREHOUSE_ID = 178;
+
+/** Id de la fila donde se agrupa una bodega; las bodegas principales comparten el mismo. */
+export function warehouseDisplayGroupId(id: number): number {
+  return PRINCIPAL_WAREHOUSE_IDS.has(id) ? PRINCIPAL_WAREHOUSE_ID : id;
+}
 
 /** Nombre visible para una bodega; usa el nombre recibido solo si el id no está en el glosario. */
 export function warehouseDisplayName(id: number, fallbackName?: string | null): string {

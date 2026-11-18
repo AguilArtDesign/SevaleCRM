@@ -25,13 +25,15 @@ function siigoWarehouses() {
   return warehouseVersion === 0
     ? [
         { id: -1, name: 'Sin asignar', quantity: 2 },
-        { id: 178, name: 'SERATUS', quantity: 7 },
+        { id: 177, name: 'PALI', quantity: 2 },
+        { id: 178, name: 'SERATUS', quantity: 5 },
         { id: 185, name: 'SERATUS BOGOTA PORTAL 80', quantity: 3 },
         { id: 999, name: 'VACIA', quantity: 0 },
       ]
     : [
         { id: -1, name: 'Sin asignar', quantity: 1 },
-        { id: 178, name: 'SERATUS', quantity: 8 },
+        { id: 177, name: 'PALI', quantity: 1 },
+        { id: 178, name: 'SERATUS', quantity: 7 },
         { id: 185, name: 'SERATUS BOGOTA PORTAL 80', quantity: 3 },
       ];
 }
@@ -314,7 +316,8 @@ try {
     updatedExisting.siigoWarehouses[0]?.name !== 'Sin asignar' ||
     updatedExisting.siigoWarehouses[0]?.quantity !== 2 ||
     updatedExisting.siigoWarehouses[1]?.id !== 178 ||
-    updatedExisting.siigoWarehouses[1]?.name !== 'Seratus' ||
+    updatedExisting.siigoWarehouses[1]?.name !== 'Bodega' ||
+    updatedExisting.siigoWarehouses[1]?.quantity !== 7 ||
     updatedExisting.siigoWarehouses[2]?.id !== 185 ||
     updatedExisting.siigoWarehouses[2]?.name !== 'Portal 80' ||
     !updatedExisting.siigoWarehousesUpdatedAt
@@ -398,12 +401,14 @@ try {
     preview.store.variationId !== '9102' ||
     preview.syncStatus !== 'SYNCED' ||
     !preview.canLink ||
-    preview.siigo.warehouses?.length !== 3 ||
+    preview.siigo.warehouses?.length !== 4 ||
     preview.siigo.warehouses[0]?.id !== -1 ||
     preview.siigo.warehouses[0]?.quantity !== 2 ||
-    preview.siigo.warehouses[1]?.id !== 178 ||
-    preview.siigo.warehouses[1]?.quantity !== 7 ||
-    preview.siigo.warehouses[2]?.id !== 185
+    preview.siigo.warehouses[1]?.id !== 177 ||
+    preview.siigo.warehouses[1]?.quantity !== 2 ||
+    preview.siigo.warehouses[2]?.id !== 178 ||
+    preview.siigo.warehouses[2]?.quantity !== 5 ||
+    preview.siigo.warehouses[3]?.id !== 185
   ) {
     throw new Error('La vista previa normalizada no contiene los valores esperados.');
   }
@@ -476,7 +481,8 @@ try {
     created.siigoWarehouses[0]?.name !== 'Sin asignar' ||
     created.siigoWarehouses[0]?.quantity !== 2 ||
     created.siigoWarehouses[1]?.id !== 178 ||
-    created.siigoWarehouses[1]?.name !== 'Seratus' ||
+    created.siigoWarehouses[1]?.name !== 'Bodega' ||
+    created.siigoWarehouses[1]?.quantity !== 7 ||
     created.siigoWarehouses[2]?.id !== 185 ||
     created.siigoWarehouses[2]?.name !== 'Portal 80' ||
     !created.siigoWarehousesUpdatedAt
@@ -505,11 +511,14 @@ try {
     | null;
   if (
     !Array.isArray(storedWarehouses) ||
-    storedWarehouses.length !== 3 ||
+    storedWarehouses.length !== 4 ||
     storedWarehouses[0]?.id !== -1 ||
     storedWarehouses[0]?.quantity !== 2 ||
-    storedWarehouses[1]?.id !== 178 ||
-    storedWarehouses[2]?.id !== 185 ||
+    storedWarehouses[1]?.id !== 177 ||
+    storedWarehouses[1]?.quantity !== 2 ||
+    storedWarehouses[2]?.id !== 178 ||
+    storedWarehouses[2]?.quantity !== 5 ||
+    storedWarehouses[3]?.id !== 185 ||
     !stored.siigoWarehousesUpdatedAt
   ) {
     throw new Error('El enlace no guardó el snapshot de bodegas.');
@@ -600,7 +609,7 @@ try {
     firstLoad.warehouses[0]?.name !== 'Sin asignar' ||
     firstLoad.warehouses[0]?.quantity !== 1 ||
     firstLoad.warehouses[1]?.id !== 178 ||
-    firstLoad.warehouses[1]?.name !== 'Seratus' ||
+    firstLoad.warehouses[1]?.name !== 'Bodega' ||
     firstLoad.warehouses[1]?.quantity !== 8 ||
     firstLoad.warehouses[2]?.id !== 185 ||
     firstLoad.warehouses[2]?.name !== 'Portal 80' ||
@@ -622,9 +631,11 @@ try {
     | null;
   if (
     !Array.isArray(afterFirstLoadWarehouses) ||
-    afterFirstLoadWarehouses.length !== 3 ||
+    afterFirstLoadWarehouses.length !== 4 ||
     afterFirstLoadWarehouses[0]?.quantity !== 1 ||
-    afterFirstLoadWarehouses[1]?.quantity !== 8 ||
+    afterFirstLoadWarehouses[1]?.quantity !== 1 ||
+    afterFirstLoadWarehouses[2]?.quantity !== 7 ||
+    afterFirstLoadWarehouses[3]?.quantity !== 3 ||
     afterFirstLoad.siigoStock !== beforeFirstLoad.siigoStock ||
     afterFirstLoad.syncStatus !== beforeFirstLoad.syncStatus ||
     afterFirstLoad.lastCheckAt?.getTime() !== beforeFirstLoad.lastCheckAt?.getTime() ||

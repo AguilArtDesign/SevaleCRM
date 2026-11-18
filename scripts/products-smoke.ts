@@ -72,6 +72,7 @@ try {
       name: 'Producto Alfa',
       warehouses: [
         { id: 178, name: 'SERATUS', quantity: 5 },
+        { id: 177, name: 'PALI', quantity: 3 },
         { id: -1, name: 'Sin asignar', quantity: 2 },
         { id: 999, name: 'VACIA', quantity: 0 },
       ],
@@ -157,8 +158,8 @@ try {
     searchBody.data[0]?.id !== productIds[0] ||
     searchBody.data[0]?.siigoWarehouses?.length !== 2 ||
     searchBody.data[0]?.siigoWarehouses[0]?.id !== 178 ||
-    searchBody.data[0]?.siigoWarehouses[0]?.name !== 'Seratus' ||
-    searchBody.data[0]?.siigoWarehouses[0]?.quantity !== 5 ||
+    searchBody.data[0]?.siigoWarehouses[0]?.name !== 'Bodega' ||
+    searchBody.data[0]?.siigoWarehouses[0]?.quantity !== 8 ||
     searchBody.data[0]?.siigoWarehouses[1]?.id !== -1 ||
     searchBody.data[0]?.siigoWarehouses[1]?.name !== 'Sin asignar' ||
     searchBody.data[0]?.siigoWarehouses[1]?.quantity !== 2 ||
@@ -265,7 +266,8 @@ try {
     detail.wooPriceEur !== null ||
     detail.siigoWarehouses?.length !== 2 ||
     detail.siigoWarehouses[0]?.id !== 178 ||
-    detail.siigoWarehouses[0]?.name !== 'Seratus' ||
+    detail.siigoWarehouses[0]?.name !== 'Bodega' ||
+    detail.siigoWarehouses[0]?.quantity !== 8 ||
     detail.siigoWarehouses[1]?.id !== -1 ||
     detail.siigoWarehouses[1]?.name !== 'Sin asignar' ||
     !detail.siigoWarehousesUpdatedAt
