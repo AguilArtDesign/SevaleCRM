@@ -42,6 +42,8 @@ function siigoProduct(sku: string, options: SiigoProductOptions = {}) {
       { id: 177, name: 'PALI', quantity: 2 },
       { id: 178, name: 'SERATUS', quantity: 3 },
       { id: 185, name: 'SERATUS BOGOTA PORTAL 80', quantity: 1 },
+      // Siigo puede devolver cantidades negativas; el CRM debe descartarlas.
+      { id: 188, name: 'SERATUS BOGOTA FLORENCIA', quantity: -4 },
     ],
   };
 }

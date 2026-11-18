@@ -1009,7 +1009,12 @@ const siigoWarehouseSchema = z
     // Opcional: el nombre visible sale del glosario del CRM. Solo se usa como respaldo si el id
     // todavía no está en el glosario.
     name: z.string().trim().min(1).max(191).optional(),
-    quantity: z.number().int().nonnegative(),
+    // Siigo puede devolver cantidades negativas (por ejemplo, «Sin asignar» con -1). El CRM las
+    // normaliza a 0; como solo se guardan las bodegas con existencias, no se muestran.
+    quantity: z
+      .number()
+      .int()
+      .transform((quantity) => Math.max(quantity, 0)),
   })
   .strict();
 

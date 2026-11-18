@@ -387,13 +387,15 @@ try {
   });
 
   // n8n puede omitir `name`: el nombre visible se resuelve con el glosario del CRM.
+  // Siigo puede devolver cantidades negativas («Sin asignar» con -1): se normalizan a 0.
   const warehousesA = [
-    { id: -1, quantity: 2 },
+    { id: -1, quantity: -1 },
     { id: 178, quantity: 5 },
     { id: 177, quantity: 4 },
     { id: 185, quantity: 1 },
     { id: 999, quantity: 1 },
     { id: 1000, quantity: 0 },
+    { id: 188, quantity: -3 },
   ];
   const warehouseResponse = await post(
     { ...warehouseBase, siigo_warehouses: warehousesA },
@@ -412,19 +414,16 @@ try {
   if (
     warehouseUpdate.product.siigoStock !== 8 ||
     warehouseUpdate.product.syncStatus !== 'SYNCED' ||
-    warehouseUpdate.product.siigoWarehouses?.length !== 4 ||
-    warehouseUpdate.product.siigoWarehouses[0]?.id !== -1 ||
-    warehouseUpdate.product.siigoWarehouses[0]?.name !== 'Sin asignar' ||
-    warehouseUpdate.product.siigoWarehouses[0]?.quantity !== 2 ||
-    warehouseUpdate.product.siigoWarehouses[1]?.id !== 178 ||
-    warehouseUpdate.product.siigoWarehouses[1]?.name !== 'Bodega' ||
-    warehouseUpdate.product.siigoWarehouses[1]?.quantity !== 9 ||
-    warehouseUpdate.product.siigoWarehouses[2]?.id !== 185 ||
-    warehouseUpdate.product.siigoWarehouses[2]?.name !== 'Portal 80' ||
+    warehouseUpdate.product.siigoWarehouses?.length !== 3 ||
+    warehouseUpdate.product.siigoWarehouses[0]?.id !== 178 ||
+    warehouseUpdate.product.siigoWarehouses[0]?.name !== 'Bodega' ||
+    warehouseUpdate.product.siigoWarehouses[0]?.quantity !== 9 ||
+    warehouseUpdate.product.siigoWarehouses[1]?.id !== 185 ||
+    warehouseUpdate.product.siigoWarehouses[1]?.name !== 'Portal 80' ||
+    warehouseUpdate.product.siigoWarehouses[1]?.quantity !== 1 ||
+    warehouseUpdate.product.siigoWarehouses[2]?.id !== 999 ||
+    warehouseUpdate.product.siigoWarehouses[2]?.name !== 'Bodega 999' ||
     warehouseUpdate.product.siigoWarehouses[2]?.quantity !== 1 ||
-    warehouseUpdate.product.siigoWarehouses[3]?.id !== 999 ||
-    warehouseUpdate.product.siigoWarehouses[3]?.name !== 'Bodega 999' ||
-    warehouseUpdate.product.siigoWarehouses[3]?.quantity !== 1 ||
     !warehouseUpdate.product.siigoWarehousesUpdatedAt ||
     Object.values(warehouseUpdate.changes).some((change) => change !== null)
   ) {
@@ -449,16 +448,16 @@ try {
     | null;
   if (
     !Array.isArray(storedWarehouses) ||
-    storedWarehouses.length !== 5 ||
-    storedWarehouses[0]?.id !== -1 ||
+    storedWarehouses.length !== 4 ||
+    storedWarehouses[0]?.id !== 178 ||
     storedWarehouses[0]?.name !== '' ||
-    storedWarehouses[1]?.id !== 178 ||
+    storedWarehouses[1]?.id !== 177 ||
     storedWarehouses[1]?.name !== '' ||
-    storedWarehouses[2]?.id !== 177 ||
+    storedWarehouses[2]?.id !== 185 ||
     storedWarehouses[2]?.name !== '' ||
-    storedWarehouses[3]?.id !== 185 ||
+    storedWarehouses[3]?.id !== 999 ||
     storedWarehouses[3]?.name !== '' ||
-    storedWarehouses[4]?.id !== 999 ||
+    storedWarehouses.some((warehouse) => warehouse.quantity <= 0) ||
     !storedWarehouseProduct.siigoWarehousesUpdatedAt
   ) {
     throw new Error('La base de datos no guardó el snapshot filtrado de bodegas.');
@@ -475,12 +474,11 @@ try {
     | null;
   if (
     !Array.isArray(preservedWarehouses) ||
-    preservedWarehouses.length !== 5 ||
-    preservedWarehouses[0]?.id !== -1 ||
-    preservedWarehouses[1]?.id !== 178 ||
-    preservedWarehouses[2]?.id !== 177 ||
-    preservedWarehouses[3]?.id !== 185 ||
-    preservedWarehouses[4]?.id !== 999
+    preservedWarehouses.length !== 4 ||
+    preservedWarehouses[0]?.id !== 178 ||
+    preservedWarehouses[1]?.id !== 177 ||
+    preservedWarehouses[2]?.id !== 185 ||
+    preservedWarehouses[3]?.id !== 999
   ) {
     throw new Error('Omitir siigo_warehouses borró el snapshot anterior.');
   }
@@ -507,9 +505,37 @@ try {
     throw new Error('La base de datos no guardó la lista vacía de bodegas.');
   }
 
+  // Una lista con solo cantidades negativas es válida: se normalizan a 0 y no se guarda nada.
+  const negativeResponse = await post(
+    {
+      ...warehouseBase,
+      siigo_warehouses: [
+        { id: -1, quantity: -1 },
+        { id: 188, quantity: -3 },
+      ],
+    },
+    `Bearer ${apiKey}`,
+  );
+  expectStatus(negativeResponse, 200, 'Cantidades negativas');
+  const negative = (await negativeResponse.json()) as {
+    product: { siigoWarehouses: { id: number; quantity: number }[] | null };
+  };
+  if (
+    !Array.isArray(negative.product.siigoWarehouses) ||
+    negative.product.siigoWarehouses.length !== 0
+  ) {
+    throw new Error('Las cantidades negativas se mostraron en el desglose de bodegas.');
+  }
+  const negativeProduct = await prisma.product.findUniqueOrThrow({ where: { id: product.id } });
+  if (
+    !Array.isArray(negativeProduct.siigoWarehouses) ||
+    negativeProduct.siigoWarehouses.length !== 0
+  ) {
+    throw new Error('La base de datos guardó bodegas con cantidades negativas.');
+  }
+
   const invalidWarehouses: { value: unknown; context: string }[] = [
     { value: {}, context: 'Bodegas no es un arreglo' },
-    { value: [{ id: 178, name: 'SERATUS', quantity: -1 }], context: 'Cantidad negativa' },
     { value: [{ id: 178, name: 'SERATUS', quantity: 1.5 }], context: 'Cantidad decimal' },
     { value: [{ id: 1.5, name: 'SERATUS', quantity: 1 }], context: 'Id decimal' },
     { value: [{ id: 178, name: '', quantity: 1 }], context: 'Nombre vacío' },

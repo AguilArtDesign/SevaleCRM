@@ -24,6 +24,9 @@ function finiteNumber(value: unknown): number | null {
  * Devuelve `null` cuando el valor no es una lista reconocible: así un proveedor que deja de
  * enviar el campo no borra un snapshot anterior. Una lista válida sin unidades devuelve `[]`,
  * que sí reemplaza el snapshot porque significa que se consultó y no había existencias.
+ *
+ * Siigo a veces devuelve cantidades negativas (por ejemplo, «Sin asignar» con -1). No se
+ * rechazan: se normalizan a 0 y luego se descartan, porque solo se guardan existencias positivas.
  */
 export function parseWarehouseSnapshot(value: unknown): ProductWarehouseStock[] | null {
   if (!Array.isArray(value)) return null;
@@ -35,12 +38,12 @@ export function parseWarehouseSnapshot(value: unknown): ProductWarehouseStock[] 
     const id = finiteNumber(item.id);
     const quantity = finiteNumber(item.quantity);
     if (id === null || !Number.isSafeInteger(id)) continue;
-    if (quantity === null || !Number.isSafeInteger(quantity) || quantity < 0) continue;
+    if (quantity === null || !Number.isSafeInteger(quantity)) continue;
 
     // El nombre es opcional: el visible se resuelve con el glosario de bodegas al serializar.
     // Se conserva el nombre del proveedor como respaldo para ids que aún no estén en el glosario.
     const name = typeof item.name === 'string' ? item.name.trim() : '';
-    valid.push({ id, name, quantity });
+    valid.push({ id, name, quantity: Math.max(quantity, 0) });
   }
 
   // Una lista con datos pero sin ninguna entrada reconocible indica que cambió la forma del
