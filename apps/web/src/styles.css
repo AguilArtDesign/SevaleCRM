@@ -1444,6 +1444,10 @@ select {
   min-width: 0;
   box-shadow: none;
   height: calc(100vh - 200px);
+  /* El pie (filas por página y paginación) queda pegado al fondo del panel: el contenedor con
+     scroll se lleva todo el alto sobrante y no se reparte con el pie cuando la búsqueda deja
+     pocas filas. */
+  grid-template-rows: minmax(0, 1fr) auto;
 }
 
 .inventory-products-table .table__content {
@@ -7503,6 +7507,45 @@ select {
   font-size: 0.75rem;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* Conciliación de una redención: dos resultados posibles, uno debajo del otro para que se lean como
+   una decisión y no como dos campos más del formulario. */
+.points-reconcile-options {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.points-reconcile-option {
+  width: 100%;
+  min-width: 0;
+  padding: 0.75rem;
+  background: var(--surface-secondary);
+  border: 0;
+  border-radius: var(--field-radius);
+}
+
+.points-reconcile-option .radio__content {
+  align-items: flex-start;
+}
+
+.points-reconcile-copy {
+  display: grid;
+  min-width: 0;
+  gap: 0.15rem;
+}
+
+.points-reconcile-copy > span {
+  font-size: 0.8125rem;
+  font-weight: 500;
+}
+
+.points-reconcile-copy .description {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.75rem;
+  line-height: 1.25;
+  text-align: left;
 }
 
 /* El logotipo encabeza el modal, centrado: es una operación de marca, no una ficha interna. El

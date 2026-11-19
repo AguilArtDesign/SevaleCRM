@@ -1649,6 +1649,26 @@ export const pointsRedemptionSchema = pointsAccountLookupSchema.extend({
 export const pointsRedemptionInvoiceSchema = pointsInvoiceSearchSchema;
 
 /**
+ * Conciliación manual de una redención ambigua. Solo se usa después de que Puntos Colombia confirma
+ * si los puntos se quemaron; el CRM no consulta al proveedor en este paso. La referencia es
+ * obligatoria: es la prueba de por qué un administrador cambió un estado que el sistema no pudo
+ * resolver solo.
+ */
+export const pointsRedemptionReconcileSchema = z.object({
+  outcome: z.enum(['APPLIED', 'NOT_APPLIED']),
+  approbationNumber: z.preprocess(
+    (value) =>
+      value === null || (typeof value === 'string' && value.trim() === '') ? undefined : value,
+    z.string().trim().max(128, 'El número de aprobación es demasiado largo.').optional(),
+  ),
+  note: z
+    .string()
+    .trim()
+    .min(5, 'Ingresa la referencia de la validación con Puntos Colombia.')
+    .max(500, 'La referencia no puede superar los 500 caracteres.'),
+});
+
+/**
  * Importe escrito a mano. Se acepta como se teclea en Colombia: `250.000`, `250,50` o `250000`. El
  * punto se interpreta como separador de miles solo cuando agrupa de tres en tres; en cualquier otro
  * caso es decimal. Así `1.234.567` y `1234.56` significan lo que parecen.
@@ -1736,6 +1756,7 @@ export type PointsAccountLookupInput = z.infer<typeof pointsAccountLookupSchema>
 export type PointsAccrualInput = z.infer<typeof pointsAccrualSchema>;
 export type PointsRedemptionInput = z.infer<typeof pointsRedemptionSchema>;
 export type PointsRedemptionInvoiceInput = z.infer<typeof pointsRedemptionInvoiceSchema>;
+export type PointsRedemptionReconcileInput = z.infer<typeof pointsRedemptionReconcileSchema>;
 export type PointsUatInvoiceInput = z.infer<typeof pointsUatInvoiceSchema>;
 export type PointsInvoiceListQuery = z.infer<typeof pointsInvoiceListQuerySchema>;
 export type PointsDocumentType = (typeof pointsDocumentTypes)[number]['value'];

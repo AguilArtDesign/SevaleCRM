@@ -63,6 +63,10 @@ export const permissions = [
   // Anular puntos ya acreditados es destructivo y no reversible desde el CRM: se separa de acumular
   // para poder cerrarlo sin cerrar el resto del panel cuando se habiliten los comerciales.
   'loyalty.revoke',
+  // Conciliar a mano una redención que quedó «Por verificar». Solo lo hace la administración y
+  // después de validar con Puntos Colombia: cambia el estado de una operación financiera sin llamar
+  // al proveedor, así que no puede compartir permiso con redimir.
+  'loyalty.reconcile',
   // Quitar del panel una factura que todavía no se operó en Puntos Colombia. Es su propio permiso
   // porque borra el registro y su historial: habilitar la acumulación a los comerciales no debe
   // habilitar el borrado.

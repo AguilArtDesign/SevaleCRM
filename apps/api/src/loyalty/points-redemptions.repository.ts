@@ -4,6 +4,7 @@ import { PrismaService } from '../database/prisma.service.js';
 
 const redemptionInclude = {
   createdBy: { select: { id: true, name: true, email: true } },
+  reconciledBy: { select: { id: true, name: true } },
 } as const;
 
 export type PointsRedemptionRecord = Prisma.PointsRedemptionGetPayload<{
@@ -52,6 +53,17 @@ export type PointsRedemptionRemoval =
   | { outcome: 'NOT_FOUND' }
   | { outcome: 'NOT_DELETABLE' }
   | { outcome: 'DELETED'; documentNumber: string };
+
+/**
+ * Resolución manual de un resultado ambiguo. `APPLIED` deja la redención pendiente de factura;
+ * `NOT_APPLIED` la deja fallida, que es lo que habilita reintentar o quitarla del panel.
+ */
+export type PointsRedemptionReconciliation = {
+  outcome: 'APPLIED' | 'NOT_APPLIED';
+  note: string;
+  approbationNumber: string | null;
+  userId: string;
+};
 
 @Injectable()
 export class PointsRedemptionsRepository {
@@ -106,6 +118,63 @@ export class PointsRedemptionsRepository {
       where: { id },
       data: { status: 'UNVERIFIED', errorCode: code, errorMessage: message },
       include: redemptionInclude,
+    });
+  }
+
+  /**
+   * Resuelve a mano una redención «Por verificar» después de que Puntos Colombia confirma si los
+   * puntos se quemaron. La condición de estado va en el `updateMany` y no solo en la lectura: dos
+   * administradores no pueden conciliar la misma fila a la vez, y el segundo recibe `null`.
+   *
+   * `APPLIED` la deja pendiente de factura, igual que una redención exitosa: los puntos salieron de
+   * la cuenta y falta el documento que los respalda. `NOT_APPLIED` la deja fallida, que es lo que
+   * habilita reintentar o retirarla del panel.
+   */
+  reconcile(
+    id: number,
+    reconciliation: PointsRedemptionReconciliation,
+  ): Promise<PointsRedemptionRecord | null> {
+    return this.prisma.$transaction(async (transaction) => {
+      const current = await transaction.pointsRedemption.findUnique({
+        where: { id },
+        select: {
+          status: true,
+          pointsRequested: true,
+          pointsRedeemed: true,
+          approbationNumber: true,
+          completedAt: true,
+        },
+      });
+      if (!current || current.status !== 'UNVERIFIED') return null;
+
+      const applied = reconciliation.outcome === 'APPLIED';
+      const updated = await transaction.pointsRedemption.updateMany({
+        where: { id, status: 'UNVERIFIED' },
+        data: {
+          status: applied ? 'PENDING_INVOICE' : 'FAILED',
+          // Lo aplicado lo confirma el proveedor por fuera del CRM; se conserva lo que ya estuviera
+          // guardado y, si nunca llegó, se toma lo solicitado, que es lo que quemó la operación.
+          pointsRedeemed: applied
+            ? (current.pointsRedeemed ?? current.pointsRequested)
+            : current.pointsRedeemed,
+          completedAt: applied ? (current.completedAt ?? new Date()) : current.completedAt,
+          approbationNumber: applied
+            ? (reconciliation.approbationNumber ?? current.approbationNumber)
+            : current.approbationNumber,
+          errorCode: applied ? null : 'POINTS_REDEMPTION_RECONCILED_NOT_APPLIED',
+          errorMessage: applied ? null : 'Puntos Colombia confirmó que la redención no se aplicó.',
+          reconciliationOutcome: reconciliation.outcome,
+          reconciliationNote: reconciliation.note,
+          reconciledAt: new Date(),
+          reconciledByUserId: reconciliation.userId,
+        },
+      });
+      if (updated.count !== 1) return null;
+
+      return transaction.pointsRedemption.findUnique({
+        where: { id },
+        include: redemptionInclude,
+      });
     });
   }
 

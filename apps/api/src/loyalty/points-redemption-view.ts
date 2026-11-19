@@ -62,6 +62,21 @@ export function serializeRedemption(
         })
       : null,
     revokedAt: redemption.revokedAt,
+    /**
+     * Identificador exacto que viajó al proveedor. Es lo que se le entrega a Puntos Colombia para
+     * conciliar un resultado ambiguo, así que solo lo ve el administrador.
+     */
+    transactionIdentifier: options.diagnosis ? redemption.transactionIdentifier : null,
+    /** Cómo se resolvió a mano un resultado ambiguo. Nula si nunca hizo falta conciliar. */
+    reconciliation:
+      options.diagnosis && redemption.reconciliationOutcome
+        ? {
+            outcome: redemption.reconciliationOutcome,
+            note: redemption.reconciliationNote,
+            reconciledAt: redemption.reconciledAt,
+            reconciledBy: redemption.reconciledBy,
+          }
+        : null,
   };
 }
 

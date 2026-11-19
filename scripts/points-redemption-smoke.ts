@@ -196,13 +196,21 @@ type Row = {
   revocationErrorMessage: string | null;
   revokedAt: Date | null;
   revokedByUserId: string | null;
+  reconciliationOutcome: 'APPLIED' | 'NOT_APPLIED' | null;
+  reconciliationNote: string | null;
+  reconciledAt: Date | null;
+  reconciledByUserId: string | null;
 };
 
 const rows = new Map<number, Row>();
 let nextId = 1;
 
 function withAuthor(row: Row) {
-  return { ...row, createdBy: { id: 'user-admin', name: 'Admin', email: 'a@example.invalid' } };
+  return {
+    ...row,
+    createdBy: { id: 'user-admin', name: 'Admin', email: 'a@example.invalid' },
+    reconciledBy: row.reconciledByUserId ? { id: row.reconciledByUserId, name: 'Admin' } : null,
+  };
 }
 
 const repository = {
@@ -239,6 +247,10 @@ const repository = {
       revocationErrorMessage: null,
       revokedAt: null,
       revokedByUserId: null,
+      reconciliationOutcome: null,
+      reconciliationNote: null,
+      reconciledAt: null,
+      reconciledByUserId: null,
     };
     rows.set(row.id, row);
     return withAuthor(row);
@@ -266,6 +278,35 @@ const repository = {
     const row = rows.get(id)!;
     Object.assign(row, { status: 'UNVERIFIED', errorCode: code, errorMessage: message });
     return withAuthor(row);
+  },
+  /** Misma regla que el repositorio real: solo una fila «Por verificar» se puede conciliar. */
+  reconcile(
+    id: number,
+    reconciliation: {
+      outcome: 'APPLIED' | 'NOT_APPLIED';
+      note: string;
+      approbationNumber: string | null;
+      userId: string;
+    },
+  ) {
+    const row = rows.get(id);
+    if (!row || row.status !== 'UNVERIFIED') return Promise.resolve(null);
+    const applied = reconciliation.outcome === 'APPLIED';
+    Object.assign(row, {
+      status: applied ? 'PENDING_INVOICE' : 'FAILED',
+      pointsRedeemed: applied ? (row.pointsRedeemed ?? row.pointsRequested) : row.pointsRedeemed,
+      completedAt: applied ? (row.completedAt ?? new Date()) : row.completedAt,
+      approbationNumber: applied
+        ? (reconciliation.approbationNumber ?? row.approbationNumber)
+        : row.approbationNumber,
+      errorCode: applied ? null : 'POINTS_REDEMPTION_RECONCILED_NOT_APPLIED',
+      errorMessage: applied ? null : 'Puntos Colombia confirmó que la redención no se aplicó.',
+      reconciliationOutcome: reconciliation.outcome,
+      reconciliationNote: reconciliation.note,
+      reconciledAt: new Date(),
+      reconciledByUserId: reconciliation.userId,
+    });
+    return Promise.resolve(withAuthor(row));
   },
   find(id: number) {
     const row = rows.get(id);
@@ -481,6 +522,10 @@ function redemptionRowFor(id: number, createdAt: Date): Row {
     revocationErrorMessage: null,
     revokedAt: null,
     revokedByUserId: null,
+    reconciliationOutcome: null,
+    reconciliationNote: null,
+    reconciledAt: null,
+    reconciledByUserId: null,
   };
 }
 
@@ -931,8 +976,90 @@ try {
     'El borrado ajeno debía responder POINTS_REDEMPTION_NOT_OWNED.',
   );
 
+  /**
+   * 21. Conciliar a mano una redención por verificar. Puntos Colombia confirma por fuera que no se
+   * aplicó: queda fallida, con la referencia y el usuario que la resolvió, y ya se puede retirar.
+   */
+  const reconciledNotApplied = await service.reconcile(
+    busySeed.id,
+    { outcome: 'NOT_APPLIED', note: 'Caso PC-1: el proveedor confirmó que no se aplicó.' },
+    admin,
+  );
+  assert(
+    reconciledNotApplied.status === 'FAILED',
+    `La redención conciliada como no aplicada quedó ${reconciledNotApplied.status}.`,
+  );
+  assert(
+    reconciledNotApplied.reconciliation?.outcome === 'NOT_APPLIED',
+    'La conciliación debía quedar registrada en la fila.',
+  );
+  assert(
+    reconciledNotApplied.reconciliation?.reconciledBy?.id === 'user-admin',
+    'La conciliación debía registrar quién la hizo.',
+  );
+  const reconciledIdentifier = reconciledNotApplied.transactionIdentifier as {
+    transactionId?: string;
+  } | null;
+  assert(
+    reconciledIdentifier?.transactionId === 'nut-busy',
+    'El administrador debía recibir el identificador exacto para conciliar.',
+  );
+  const removedAfterReconcile = await service.remove(busySeed.id, admin);
+  assert(
+    removedAfterReconcile.success === true,
+    'Una redención conciliada como no aplicada debía poder retirarse.',
+  );
+
+  /**
+   * 22. El otro resultado: el proveedor confirma que sí se aplicó. Queda pendiente de factura, con
+   * la aprobación manual, y se puede cerrar asociando la factura. Una fila ya conciliada no se
+   * vuelve a conciliar.
+   */
+  const reconciledAppliedSeed = seedRevocable('PENDING_INVOICE', 'nut-reconcile-applied');
+  reconciledAppliedSeed.status = 'UNVERIFIED';
+  reconciledAppliedSeed.pointsRedeemed = null;
+  reconciledAppliedSeed.completedAt = null;
+  const reconciledApplied = await service.reconcile(
+    reconciledAppliedSeed.id,
+    {
+      outcome: 'APPLIED',
+      note: 'Caso PC-2: el proveedor confirmó que sí se aplicó.',
+      approbationNumber: 'AP-MANUAL-2',
+    },
+    admin,
+  );
+  assert(
+    reconciledApplied.status === 'PENDING_INVOICE',
+    `La redención conciliada como aplicada quedó ${reconciledApplied.status}.`,
+  );
+  assert(
+    reconciledApplied.pointsRedeemed === reconciledAppliedSeed.pointsRequested,
+    'Sin puntos del proveedor, se conserva lo solicitado como lo quemado.',
+  );
+  assert(
+    reconciledApplied.approbationNumber === 'AP-MANUAL-2',
+    'La aprobación manual debía quedar guardada.',
+  );
+  const invoicedAfterReconcile = await service.attachInvoice(
+    reconciledAppliedSeed.id,
+    { number: '846' },
+    admin,
+  );
+  assert(
+    invoicedAfterReconcile.status === 'COMPLETED',
+    'Una redención conciliada como aplicada debía poder facturarse.',
+  );
+  await rejects(
+    service.reconcile(
+      reconciledAppliedSeed.id,
+      { outcome: 'NOT_APPLIED', note: 'Segundo intento sobre la misma fila.' },
+      admin,
+    ),
+    'Una redención ya conciliada no debía aceptar otra conciliación.',
+  );
+
   console.log(
-    'Points redemption smoke: lookup, OTP challenge sin filtrar el código, saldo insuficiente, cuenta inhabilitada, redención correcta con importe puntos × 6, fallo incierto, rechazo definitivo, factura asociada, bitácora sin PIN, anulación con identificador nuevo, factura conservada, rechazo reintentable, 5xx bloqueado, filtro «En proceso», borrado de una redención resuelta y bloqueo de lo que sigue por conciliar OK.',
+    'Points redemption smoke: lookup, OTP challenge sin filtrar el código, saldo insuficiente, cuenta inhabilitada, redención correcta con importe puntos × 6, fallo incierto, rechazo definitivo, factura asociada, bitácora sin PIN, anulación con identificador nuevo, factura conservada, rechazo reintentable, 5xx bloqueado, filtro «En proceso», borrado de una redención resuelta, bloqueo de lo que sigue por conciliar y conciliación manual aplicada/no aplicada OK.',
   );
 } finally {
   server.close();

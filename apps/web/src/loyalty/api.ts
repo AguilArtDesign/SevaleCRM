@@ -37,6 +37,22 @@ export type PointsRedemptionRecord = {
   /** Traducción del error de anulación para el administrador. */
   revocationDiagnosis: PointsErrorDiagnosis | null;
   revokedAt: string | null;
+  /** Identificador exacto que viajó al proveedor. Solo lo recibe el administrador. */
+  transactionIdentifier: {
+    terminalId: string;
+    transactionId: string;
+    cashierId: string;
+    locationCode: string;
+    transactionDate: string;
+    nut: string;
+  } | null;
+  /** Conciliación manual de un resultado ambiguo. Solo la recibe el administrador. */
+  reconciliation: {
+    outcome: 'APPLIED' | 'NOT_APPLIED';
+    note: string | null;
+    reconciledAt: string | null;
+    reconciledBy: { id: string; name: string } | null;
+  } | null;
 };
 
 /** Fila del panel: una acumulación con su factura, o una redención sin factura todavía. */
@@ -243,6 +259,18 @@ export const pointsColombiaApi = {
   revokeRedemption: (id: number) =>
     apiRequest<PointsRedemptionRecord>(`/api/points-colombia/redemptions/${id}/revoke`, {
       method: 'POST',
+    }),
+  /**
+   * Resuelve una redención «Por verificar» después de validarla con Puntos Colombia. No llama al
+   * proveedor: registra si los puntos se aplicaron y la referencia de la validación.
+   */
+  reconcileRedemption: (
+    id: number,
+    input: { outcome: 'APPLIED' | 'NOT_APPLIED'; note: string; approbationNumber?: string },
+  ) =>
+    apiRequest<PointsRedemptionRecord>(`/api/points-colombia/redemptions/${id}/reconcile`, {
+      method: 'POST',
+      body: JSON.stringify(input),
     }),
   /** Quita la redención del panel. No habla con el proveedor: borra el registro local. */
   removeRedemption: (id: number) =>

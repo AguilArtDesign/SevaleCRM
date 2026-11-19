@@ -8,12 +8,15 @@ import {
   DateField,
   DatePicker,
   DateRangePicker,
+  Description,
   Dropdown,
   EmptyState,
   InputOTP,
   Label,
   ListBox,
   Modal,
+  Radio,
+  RadioGroup,
   RangeCalendar,
   SearchField,
   Separator,
@@ -25,6 +28,7 @@ import { parseDate, type CalendarDate } from '@internationalized/date';
 import {
   ArrowRightArrowLeft,
   ArrowRotateLeft,
+  CircleCheck,
   EllipsisVertical,
   Eye,
   FileText,
@@ -62,6 +66,7 @@ import {
   canAttachInvoice,
   canDelete,
   canDeleteRedemption,
+  canReconcileRedemption,
   canRevoke,
   canRevokeRedemption,
   invoiceDate,
@@ -92,6 +97,9 @@ export function PointsColombiaPage() {
   const canCreateUat = Boolean(user && hasPermission(user.role, 'loyalty.uat'));
   // Redimir le quita puntos al cliente: permiso propio, no el de acumular.
   const canRedeem = Boolean(user && hasPermission(user.role, 'loyalty.redeem'));
+  // Conciliar un resultado ambiguo cambia el estado de una operación financiera sin llamar al
+  // proveedor: es una acción de administración, después de validar con Puntos Colombia.
+  const canReconcilePoints = Boolean(user && hasPermission(user.role, 'loyalty.reconcile'));
   // El vendedor solo lo usa la administración: un comercial opera sus propias facturas y la columna
   // le repetiría su propio nombre en todas las filas.
   const isAdmin = user?.role === 'ADMIN';
@@ -106,6 +114,7 @@ export function PointsColombiaPage() {
   const [accrualTarget, setAccrualTarget] = useState<PointsInvoiceRecord | null>(null);
   const [revokeTarget, setRevokeTarget] = useState<PointsInvoiceRecord | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<PointsInvoiceRecord | null>(null);
+  const [reconcileTarget, setReconcileTarget] = useState<PointsRedemptionRecord | null>(null);
   const [detailTarget, setDetailTarget] = useState<PointsInvoiceRecord | null>(null);
   const [redeemOpen, setRedeemOpen] = useState(false);
   const [invoiceTarget, setInvoiceTarget] = useState<PointsRedemptionRecord | null>(null);
@@ -452,6 +461,7 @@ export function PointsColombiaPage() {
                                 aria-label={`Acciones para la redención de ${row.documentNumber}`}
                                 onAction={(key) => {
                                   if (String(key) === 'detail') setRedemptionDetailTarget(row);
+                                  if (String(key) === 'reconcile') setReconcileTarget(row);
                                   if (String(key) === 'invoice') setInvoiceTarget(row);
                                   if (String(key) === 'revoke') setRevokeRedemptionTarget(row);
                                   if (String(key) === 'delete') setDeleteRedemptionTarget(row);
@@ -467,6 +477,15 @@ export function PointsColombiaPage() {
                                     />
                                     <Label>Detalles</Label>
                                   </Dropdown.Item>
+                                  {/* Un resultado ambiguo no tiene otra salida: ni se factura ni se
+                                      anula ni se borra hasta que Puntos Colombia confirme qué pasó
+                                      con los puntos. */}
+                                  {canReconcileRedemption(row) && canReconcilePoints && (
+                                    <Dropdown.Item id="reconcile" textValue="Conciliar">
+                                      <CircleCheck className="size-4 shrink-0 text-muted" />
+                                      <Label>Conciliar</Label>
+                                    </Dropdown.Item>
+                                  )}
                                   {canAttachInvoice(row) && (
                                     <Dropdown.Item id="invoice" textValue="Asociar factura">
                                       <FileText className="size-4 shrink-0 text-muted" />
@@ -846,6 +865,18 @@ export function PointsColombiaPage() {
         />
       )}
 
+      {reconcileTarget && (
+        <ReconcileRedemptionModal
+          key={reconcileTarget.id}
+          redemption={reconcileTarget}
+          onClose={() => setReconcileTarget(null)}
+          onDone={() => {
+            setReconcileTarget(null);
+            void refresh();
+          }}
+        />
+      )}
+
       {deleteRedemptionTarget && (
         <DeleteRedemptionModal
           key={deleteRedemptionTarget.id}
@@ -1121,6 +1152,28 @@ function RedemptionDetailModal({
                   <dt>Aprobación</dt>
                   <dd>{redemption.approbationNumber ?? '—'}</dd>
                 </div>
+                {/* El identificador exacto es lo que se le entrega a Puntos Colombia para conciliar
+                    un resultado ambiguo; solo lo recibe el administrador. */}
+                {redemption.transactionIdentifier && (
+                  <>
+                    <div>
+                      <dt>Identificador</dt>
+                      <dd>{redemption.transactionIdentifier.transactionId}</dd>
+                    </div>
+                    <div>
+                      <dt>NUT</dt>
+                      <dd>{redemption.transactionIdentifier.nut}</dd>
+                    </div>
+                    <div>
+                      <dt>Punto de venta</dt>
+                      <dd>{redemption.transactionIdentifier.locationCode}</dd>
+                    </div>
+                    <div>
+                      <dt>Fecha de la transacción</dt>
+                      <dd>{redemption.transactionIdentifier.transactionDate}</dd>
+                    </div>
+                  </>
+                )}
                 <div>
                   <dt>Autorización</dt>
                   <dd>{redemption.validationMethod ?? '—'}</dd>
@@ -1141,6 +1194,42 @@ function RedemptionDetailModal({
                   <dt>Fecha de redención</dt>
                   <dd>{redemption.completedAt ? accrualTimestamp(redemption.completedAt) : '—'}</dd>
                 </div>
+                {redemption.reconciliation && (
+                  <>
+                    <div>
+                      <dt>Conciliación</dt>
+                      <dd>
+                        <Chip
+                          color={
+                            redemption.reconciliation.outcome === 'APPLIED'
+                              ? 'success'
+                              : 'warning'
+                          }
+                        >
+                          {redemption.reconciliation.outcome === 'APPLIED'
+                            ? 'Aplicada'
+                            : 'No aplicada'}
+                        </Chip>
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>Referencia de la conciliación</dt>
+                      <dd>{redemption.reconciliation.note ?? '—'}</dd>
+                    </div>
+                    <div>
+                      <dt>Conciliada por</dt>
+                      <dd>{redemption.reconciliation.reconciledBy?.name ?? '—'}</dd>
+                    </div>
+                    <div>
+                      <dt>Conciliada el</dt>
+                      <dd>
+                        {redemption.reconciliation.reconciledAt
+                          ? accrualTimestamp(redemption.reconciliation.reconciledAt)
+                          : '—'}
+                      </dd>
+                    </div>
+                  </>
+                )}
                 {redemption.revocationStatus && (
                   <>
                     <div>
@@ -2059,6 +2148,194 @@ function RevokeRedemptionModal({
                   <ArrowRotateLeft width={16} height={16} />
                 )}
                 Revocar puntos
+              </Button>
+            </Modal.Footer>
+          </Modal.Dialog>
+        </Modal.Container>
+      </Modal.Backdrop>
+    </Modal>
+  );
+}
+
+/**
+ * Conciliación manual de una redención «Por verificar».
+ *
+ * El CRM no sabe si Puntos Colombia alcanzó a quemar los puntos, así que el estado ambiguo no se
+ * resuelve solo. El administrador valida por fuera y aquí deja el resultado con la referencia de esa
+ * validación. `APPLIED` la deja por facturar —y entonces puede asociar la factura o revocarla—;
+ * `NOT_APPLIED` la deja fallida, que es lo que habilita reintentar o eliminarla. No llama al
+ * proveedor.
+ */
+function ReconcileRedemptionModal({
+  redemption,
+  onClose,
+  onDone,
+}: {
+  redemption: PointsRedemptionRecord;
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const [outcome, setOutcome] = useState<'APPLIED' | 'NOT_APPLIED' | null>(null);
+  const [note, setNote] = useState('');
+  const [approbationNumber, setApprobationNumber] = useState('');
+  const [error, setError] = useState('');
+  const reconcileMutation = useMutation({
+    mutationFn: () =>
+      pointsColombiaApi.reconcileRedemption(redemption.id, {
+        outcome: outcome ?? 'NOT_APPLIED',
+        note,
+        ...(outcome === 'APPLIED' && approbationNumber.trim()
+          ? { approbationNumber: approbationNumber.trim() }
+          : {}),
+      }),
+    onError: (failure: Error) => setError(failure.message),
+    onSuccess: () => {
+      setError('');
+      onDone();
+    },
+  });
+
+  const points = redemption.pointsRedeemed ?? redemption.pointsRequested;
+  const identifier = redemption.transactionIdentifier;
+  const complete = outcome !== null && note.trim().length >= 5;
+
+  return (
+    <Modal isOpen onOpenChange={(open) => !open && onClose()}>
+      <Modal.Backdrop>
+        <Modal.Container placement="center">
+          <Modal.Dialog className="siigo-quotation-modal">
+            <Modal.CloseTrigger aria-label="Cerrar conciliación" />
+            <Modal.Header>
+              <div>
+                <Modal.Heading>Conciliar redención</Modal.Heading>
+                <p className="siigo-quotation-subtitle">
+                  {points} puntos · {redemption.documentNumber}
+                </p>
+              </div>
+            </Modal.Header>
+            <Modal.Body>
+              {error && (
+                <Alert status="danger">
+                  <Alert.Content>
+                    <Alert.Description>{error}</Alert.Description>
+                  </Alert.Content>
+                </Alert>
+              )}
+              <Alert status="warning">
+                <Alert.Content>
+                  <Alert.Description>
+                    Hazlo solo después de que Puntos Colombia confirme si la redención se aplicó.
+                    Esta acción no consulta al proveedor y cambia el estado de la operación.
+                  </Alert.Description>
+                </Alert.Content>
+              </Alert>
+              <dl className="order-ticket-data">
+                <div>
+                  <dt>Documento</dt>
+                  <dd>{redemption.documentNumber}</dd>
+                </div>
+                <div>
+                  <dt>Puntos</dt>
+                  <dd>
+                    <strong>{points}</strong>
+                  </dd>
+                </div>
+                {/* Es el identificador que se le entrega al proveedor para que confirme la
+                    operación; sin él la validación por fuera del CRM no se puede hacer. */}
+                {identifier && (
+                  <>
+                    <div>
+                      <dt>Identificador</dt>
+                      <dd>{identifier.transactionId}</dd>
+                    </div>
+                    <div>
+                      <dt>NUT</dt>
+                      <dd>{identifier.nut}</dd>
+                    </div>
+                    <div>
+                      <dt>Punto de venta</dt>
+                      <dd>{identifier.locationCode}</dd>
+                    </div>
+                    <div>
+                      <dt>Fecha de la transacción</dt>
+                      <dd>{identifier.transactionDate}</dd>
+                    </div>
+                  </>
+                )}
+              </dl>
+
+              <RadioGroup
+                aria-label="Resultado de la validación"
+                className="points-reconcile-options"
+                value={outcome}
+                onChange={(selected) => setOutcome(selected as 'APPLIED' | 'NOT_APPLIED')}
+              >
+                <Radio className="points-reconcile-option" value="APPLIED">
+                  <Radio.Content>
+                    <Radio.Control>
+                      <Radio.Indicator />
+                    </Radio.Control>
+                    <div className="points-reconcile-copy">
+                      <span>Se aplicó</span>
+                      <Description>
+                        Los puntos se descontaron. Queda por facturar y podrás asociar la factura o
+                        revocarla.
+                      </Description>
+                    </div>
+                  </Radio.Content>
+                </Radio>
+                <Radio className="points-reconcile-option" value="NOT_APPLIED">
+                  <Radio.Content>
+                    <Radio.Control>
+                      <Radio.Indicator />
+                    </Radio.Control>
+                    <div className="points-reconcile-copy">
+                      <span>No se aplicó</span>
+                      <Description>
+                        Los puntos siguen en la cuenta. Queda fallida y podrás reintentar o
+                        eliminarla del panel.
+                      </Description>
+                    </div>
+                  </Radio.Content>
+                </Radio>
+              </RadioGroup>
+
+              <TextField isRequired>
+                <Label>Referencia de la validación</Label>
+                <Input
+                  variant="secondary"
+                  placeholder="Caso, fecha o funcionario de Puntos Colombia"
+                  value={note}
+                  onChange={(event) => setNote(event.target.value)}
+                />
+              </TextField>
+              {outcome === 'APPLIED' && (
+                <TextField>
+                  <Label>Número de aprobación (opcional)</Label>
+                  <Input
+                    variant="secondary"
+                    value={approbationNumber}
+                    onChange={(event) => setApprobationNumber(event.target.value)}
+                  />
+                </TextField>
+              )}
+            </Modal.Body>
+            <Modal.Footer>
+              <Button variant="tertiary" onPress={onClose}>
+                Cancelar
+              </Button>
+              <Button
+                variant="primary"
+                isPending={reconcileMutation.isPending}
+                isDisabled={!complete || reconcileMutation.isPending}
+                onPress={() => reconcileMutation.mutate()}
+              >
+                {reconcileMutation.isPending ? (
+                  <Spinner color="current" size="sm" />
+                ) : (
+                  <CircleCheck width={16} height={16} />
+                )}
+                Guardar conciliación
               </Button>
             </Modal.Footer>
           </Modal.Dialog>

@@ -95,6 +95,15 @@ export function canDeleteRedemption(redemption: {
 }
 
 /**
+ * Conciliar una redención ambigua. Solo aplica a «Por verificar»: cuando Puntos Colombia confirma
+ * por fuera si los puntos se quemaron, el administrador resuelve la fila a mano para poder facturar,
+ * reintentar o eliminar. No se ofrece en ningún otro estado porque las demás ya tienen una salida.
+ */
+export function canReconcileRedemption(redemption: { status: PointsRedemptionStatus }) {
+  return redemption.status === 'UNVERIFIED';
+}
+
+/**
  * Anular solo tiene sentido sobre puntos acreditados. Un intento de anulación que quedó fallido se
  * puede repetir; uno ambiguo, no: repetir podría anular una operación que ya se anuló.
  */

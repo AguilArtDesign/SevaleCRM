@@ -12,6 +12,7 @@ import {
   pointsAccountLookupSchema,
   pointsInvoiceIdSchema,
   pointsRedemptionInvoiceSchema,
+  pointsRedemptionReconcileSchema,
   pointsRedemptionSchema,
 } from '@sevale/validation';
 import type { ZodType } from 'zod';
@@ -103,6 +104,25 @@ export class PointsRedemptionsController {
   @RequirePermissions('loyalty.revoke')
   revoke(@Param('id') id: string, @Req() request: AuthenticatedRequest) {
     return this.redemptions.revoke(parseInput(pointsInvoiceIdSchema, id), this.user(request));
+  }
+
+  /**
+   * Resuelve una redención «Por verificar» después de validarla con Puntos Colombia. Tiene permiso
+   * propio porque no habla con el proveedor: cambia el estado de una operación financiera con la
+   * confirmación que el administrador obtuvo por fuera del CRM.
+   */
+  @Post(':id/reconcile')
+  @RequirePermissions('loyalty.reconcile')
+  reconcile(
+    @Param('id') id: string,
+    @Body() body: unknown,
+    @Req() request: AuthenticatedRequest,
+  ) {
+    return this.redemptions.reconcile(
+      parseInput(pointsInvoiceIdSchema, id),
+      parseInput(pointsRedemptionReconcileSchema, body),
+      this.user(request),
+    );
   }
 
   /**

@@ -13,6 +13,7 @@ import type {
   PointsAccountLookupInput,
   PointsRedemptionInput,
   PointsRedemptionInvoiceInput,
+  PointsRedemptionReconcileInput,
 } from '@sevale/validation';
 import {
   IntegrationAuthenticationException,
@@ -459,6 +460,68 @@ export class PointsRedemptionsService {
         error: { code, message: clientMessage },
       });
     }
+  }
+
+  /**
+   * Resuelve a mano una redención «Por verificar». No llama a Puntos Colombia: el administrador ya
+   * validó por fuera si los puntos se aplicaron, y aquí solo se registra el resultado con su
+   * referencia. Es la única salida de ese estado, que de otro modo no permite facturar, reintentar
+   * ni eliminar la fila.
+   */
+  async reconcile(id: number, input: PointsRedemptionReconcileInput, user: SessionUser) {
+    const redemption = await this.redemptions.find(id);
+    if (!redemption) {
+      throw businessError(
+        NotFoundException,
+        'POINTS_REDEMPTION_NOT_FOUND',
+        'La redención no existe en el panel.',
+      );
+    }
+    if (redemption.status !== 'UNVERIFIED') {
+      throw businessError(
+        ConflictException,
+        'POINTS_REDEMPTION_NOT_UNVERIFIED',
+        'Solo se puede conciliar una redención que quedó por verificar.',
+      );
+    }
+
+    const updated = await this.redemptions.reconcile(id, {
+      outcome: input.outcome,
+      note: input.note,
+      approbationNumber: input.outcome === 'APPLIED' ? (input.approbationNumber ?? null) : null,
+      userId: user.id,
+    });
+    if (!updated) {
+      throw businessError(
+        ConflictException,
+        'POINTS_REDEMPTION_ALREADY_RECONCILED',
+        'La redención ya fue resuelta por otra persona.',
+      );
+    }
+
+    await this.logs.record({
+      integration: 'PUNTOS_COLOMBIA',
+      operation: 'redemption.reconcile',
+      outcome: 'SUCCESS',
+      code:
+        input.outcome === 'APPLIED'
+          ? 'POINTS_REDEMPTION_RECONCILED_APPLIED'
+          : 'POINTS_REDEMPTION_RECONCILED_NOT_APPLIED',
+      message:
+        input.outcome === 'APPLIED'
+          ? `Redención ${id} conciliada como aplicada: queda por facturar.`
+          : `Redención ${id} conciliada como no aplicada: queda fallida.`,
+      responseBody: {
+        outcome: input.outcome,
+        approbationNumber: input.approbationNumber ?? null,
+        note: input.note,
+      },
+      referenceType: 'POINTS_REDEMPTION',
+      referenceId: id,
+      userId: user.id,
+    });
+    this.logger.log(`Redención ${id} conciliada como ${input.outcome} por ${user.id}.`);
+    return serializeRedemption(updated, { diagnosis: user.role === 'ADMIN' });
   }
 
   /**
