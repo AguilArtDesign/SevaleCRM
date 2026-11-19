@@ -73,6 +73,15 @@ export class PointsInvoicesController {
     return this.points.prefixOptions();
   }
 
+  /**
+   * Estado de las ayudas de certificación. El panel lo consulta para no mostrar «Factura UAT»
+   * cuando el servidor ya apunta al ambiente real, aunque el rol conserve el permiso.
+   */
+  @Get('config')
+  config() {
+    return { uatEnabled: puntosColombiaUatEnabled() };
+  }
+
   @Get('invoices/:id')
   detail(@Param('id') id: string, @Req() request: AuthenticatedRequest) {
     return this.points.detail(parseInput(pointsInvoiceIdSchema, id), this.user(request));

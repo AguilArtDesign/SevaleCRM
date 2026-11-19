@@ -180,6 +180,8 @@ export const pointsColombiaApi = {
     return apiRequest<PointsInvoiceListResponse>(`/api/points-colombia/invoices?${query}`);
   },
   prefixes: () => apiRequest<PointsPrefixOption[]>('/api/points-colombia/invoices/prefixes'),
+  /** Ayudas de certificación habilitadas en el servidor; en producción `uatEnabled` es false. */
+  config: () => apiRequest<{ uatEnabled: boolean }>('/api/points-colombia/config'),
   detail: (id: number) => apiRequest<PointsInvoiceRecord>(`/api/points-colombia/invoices/${id}`),
   search: (number: string, ownerId?: string) =>
     apiRequest<PointsInvoicePreview>('/api/points-colombia/invoices/search', {

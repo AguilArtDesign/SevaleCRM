@@ -93,8 +93,9 @@ export function PointsColombiaPage() {
   const canRevokePoints = Boolean(user && hasPermission(user.role, 'loyalty.revoke'));
   // Quitar una factura borra el registro y su historial: permiso propio, no el de acumular.
   const canDeletePoints = Boolean(user && hasPermission(user.role, 'loyalty.delete'));
-  // Crear facturas de prueba es una ayuda de certificación, separada de operar el panel.
-  const canCreateUat = Boolean(user && hasPermission(user.role, 'loyalty.uat'));
+  // Crear facturas de prueba es una ayuda de certificación, separada de operar el panel. El permiso
+  // solo no basta: el servidor también tiene que tenerla habilitada con `PCO_UAT_ENABLED`.
+  const canCreateUatByRole = Boolean(user && hasPermission(user.role, 'loyalty.uat'));
   // Redimir le quita puntos al cliente: permiso propio, no el de acumular.
   const canRedeem = Boolean(user && hasPermission(user.role, 'loyalty.redeem'));
   // Conciliar un resultado ambiguo cambia el estado de una operación financiera sin llamar al
@@ -154,6 +155,14 @@ export function PointsColombiaPage() {
     queryFn: pointsColombiaApi.prefixes,
     staleTime: 5 * 60_000,
   });
+  const configQuery = useQuery({
+    queryKey: ['points-colombia', 'config'],
+    queryFn: pointsColombiaApi.config,
+    staleTime: 5 * 60_000,
+  });
+  // Si la consulta aún no respondió, el botón no se muestra: en producción es preferible que
+  // aparezca un instante tarde a que quede visible una ayuda que el servidor va a rechazar.
+  const canCreateUat = canCreateUatByRole && configQuery.data?.uatEnabled === true;
 
   const refresh = () => queryClient.invalidateQueries({ queryKey: ['points-colombia'] });
   const result = listQuery.data;
