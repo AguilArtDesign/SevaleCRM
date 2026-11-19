@@ -1201,9 +1201,7 @@ function RedemptionDetailModal({
                       <dd>
                         <Chip
                           color={
-                            redemption.reconciliation.outcome === 'APPLIED'
-                              ? 'success'
-                              : 'warning'
+                            redemption.reconciliation.outcome === 'APPLIED' ? 'success' : 'warning'
                           }
                         >
                           {redemption.reconciliation.outcome === 'APPLIED'

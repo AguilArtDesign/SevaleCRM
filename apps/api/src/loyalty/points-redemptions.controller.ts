@@ -113,11 +113,7 @@ export class PointsRedemptionsController {
    */
   @Post(':id/reconcile')
   @RequirePermissions('loyalty.reconcile')
-  reconcile(
-    @Param('id') id: string,
-    @Body() body: unknown,
-    @Req() request: AuthenticatedRequest,
-  ) {
+  reconcile(@Param('id') id: string, @Body() body: unknown, @Req() request: AuthenticatedRequest) {
     return this.redemptions.reconcile(
       parseInput(pointsInvoiceIdSchema, id),
       parseInput(pointsRedemptionReconcileSchema, body),
