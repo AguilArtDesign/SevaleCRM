@@ -111,6 +111,9 @@ siempre viaja. COP sigue siendo el `regular_price` superior y no aparece en ning
 La escritura dual permite cambiar de plugin sin repoblar precios; antes de activar YayCurrency hay que
 sincronizar todos los productos para que cada uno tenga ya su clave nueva.
 
+El flujo de n8n que también escribe precios en WooCommerce envía las mismas dos claves (ver «Webhook
+interno de n8n»). Mientras la escritura dual esté vigente, ambos escritores deben mantenerlas.
+
 ### Bodegas del stock
 
 La columna Stock sigue mostrando el entero de `siigoStock`. Junto a él, un icono de cubos abre un popover con el desglose por bodega que devuelve Siigo en `warehouses`. Solo se listan bodegas con `quantity > 0`; la bodega `-1` se muestra como **Sin asignar**. El popover lee el snapshot guardado en `products.siigo_warehouses` y su fecha en `siigo_warehouses_updated_at`. Solo si el producto todavía no tiene desglose (`null`) se consulta Siigo la primera vez mediante `POST /api/products/:id/warehouses/refresh`, que lo persiste; las lecturas siguientes salen de la base. n8n actualiza el snapshot en cada actualización de producto. La consulta inicial no modifica `siigo_stock`, `sync_status`, `last_check_at`, `last_sync_at` ni los precios, y conserva `updated_at` para no reordenar la tabla.
@@ -290,6 +293,8 @@ El payload aceptado es estricto y normalizado:
 `siigo_price_mxn`, `siigo_price_eur`, `price_mxn`, `price_eur` y `siigo_warehouses` son **opcionales**: un n8n que todavía no los envía sigue funcionando y el producto conserva lo que ya tenía guardado en esas columnas. El resto del contrato es estricto y una clave desconocida devuelve `400`.
 
 `siigo_warehouses` acepta `id` y `quantity` por bodega; `name` es **opcional** y solo se usa como respaldo si el id todavía no está en el glosario del CRM. `id: -1` es válido para «Sin asignar», `quantity` debe ser un entero, los valores negativos se normalizan a 0 y los ceros se descartan al guardar. Si el campo se omite, el snapshot anterior se conserva; si se envía `[]`, se limpia. El flujo de n8n vive fuera de este repositorio y debe reenviar `products[].warehouses` de Siigo con esos ids y cantidades.
+
+El nodo de n8n que actualiza productos en WooCommerce envía también las dos meta claves de precios descritas en «Monedas del producto»: `_regular_price_wmcp` y `yay_currency_custom_fixed_prices`, con el mismo criterio de omitir MXN/EUR cuando no hay dato. Al activar YayCurrency se retira `_regular_price_wmcp` del payload de n8n y del CRM, y el CRM pasa a leer la clave nueva; hasta entonces ambos escritores mantienen las dos.
 
 La API busca el enlace por `siigo_id`, comprueba que el SKU coincida, actualiza los precios de Siigo y el stock, registra `last_check_at` y recalcula `sync_status` comparando las cuatro monedas y el stock contra los valores WooCommerce almacenados. Si el payload trae `siigo_warehouses`, también actualiza el snapshot; un cambio solo de bodegas no altera `sync_status`, no crea notificaciones y no toca WooCommerce. La respuesta incluye el producto normalizado (con `siigoWarehouses` usando los nombres visibles del glosario y `siigoWarehousesUpdatedAt`) y los cambios reales detectados. No se modifican las tiendas externas.
 
