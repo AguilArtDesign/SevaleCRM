@@ -276,6 +276,9 @@ function normalizeOrderSnapshot(value: unknown): WooCommerceOrderSnapshot | null
   };
 }
 
+const WMCP_PRICE_META_KEY = '_regular_price_wmcp';
+const YAY_CURRENCY_PRICE_META_KEY = 'yay_currency_custom_fixed_prices';
+
 /** Las monedas adicionales viajan como texto, igual que el USD, y se omiten cuando no hay dato. */
 function wmcpPriceValue(update: WooCommerceBatchProductUpdate) {
   return JSON.stringify({
@@ -285,17 +288,38 @@ function wmcpPriceValue(update: WooCommerceBatchProductUpdate) {
   });
 }
 
+/** YayCurrency pide cada moneda como objeto y los precios como texto, sin venta. */
+function yayCurrencyPrice(value: number) {
+  const price = String(value);
+  return { regular_price: price, sale_price: '', price };
+}
+
+/** Mismo criterio de omisión que `wmcpPriceValue`: USD siempre, MXN/EUR solo si tienen dato. */
+function yayCurrencyPriceValue(update: WooCommerceBatchProductUpdate) {
+  return {
+    USD: yayCurrencyPrice(update.priceUsd),
+    ...(update.priceMxn === null ? {} : { MXN: yayCurrencyPrice(update.priceMxn) }),
+    ...(update.priceEur === null ? {} : { EUR: yayCurrencyPrice(update.priceEur) }),
+  };
+}
+
+/**
+ * Las dos claves viajan siempre en la misma petición: la antigua mantiene el plugin actual y la
+ * nueva deja los datos listos para YayCurrency.
+ */
+function priceMetaData(update: WooCommerceBatchProductUpdate) {
+  return [
+    { key: WMCP_PRICE_META_KEY, value: wmcpPriceValue(update) },
+    { key: YAY_CURRENCY_PRICE_META_KEY, value: yayCurrencyPriceValue(update) },
+  ];
+}
+
 function updateBody(update: WooCommerceBatchProductUpdate) {
   return {
     regular_price: String(update.priceCop),
     stock_quantity: update.stock,
     manage_stock: true,
-    meta_data: [
-      {
-        key: '_regular_price_wmcp',
-        value: wmcpPriceValue(update),
-      },
-    ],
+    meta_data: priceMetaData(update),
   };
 }
 
@@ -313,7 +337,7 @@ type WmcpPrices = {
 function wmcpPrices(metaData: unknown): WmcpPrices {
   const empty: WmcpPrices = { priceUsd: null, priceMxn: null, priceEur: null, invalid: false };
   if (!Array.isArray(metaData)) return empty;
-  const entry = metaData.filter(isRecord).find((item) => item.key === '_regular_price_wmcp');
+  const entry = metaData.filter(isRecord).find((item) => item.key === WMCP_PRICE_META_KEY);
   if (!entry || entry.value === null || entry.value === '') return empty;
   let value: unknown = entry.value;
   if (typeof value === 'string') {

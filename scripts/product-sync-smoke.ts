@@ -152,11 +152,15 @@ async function createProduct({
   store,
   parentId,
   productId,
+  priceMxn = 847,
+  priceEur = 45,
 }: {
   suffix: string;
   store: Store;
   parentId: bigint | null;
   productId: bigint;
+  priceMxn?: number | null;
+  priceEur?: number | null;
 }) {
   const sku = `SYNC-${suffix}-${runId}`;
   const product = await prisma.product.create({
@@ -165,8 +169,8 @@ async function createProduct({
       sku,
       siigoPriceCop: 45_000,
       siigoPriceUsd: 23,
-      siigoPriceMxn: 847,
-      siigoPriceEur: 45,
+      siigoPriceMxn: priceMxn,
+      siigoPriceEur: priceEur,
       siigoStock: 27,
       store,
       wooParentId: parentId,
@@ -227,6 +231,14 @@ try {
     parentId: null,
     productId: 2202n,
   });
+  const optional = await createProduct({
+    suffix: 'OPTIONAL',
+    store: Store.SERATUS,
+    parentId: null,
+    productId: 3302n,
+    priceMxn: null,
+    priceEur: null,
+  });
   const failing = await createProduct({
     suffix: 'FAIL',
     store: Store.PALI,
@@ -276,6 +288,29 @@ try {
     throw new Error('El producto simple no quedó sincronizado.');
   }
 
+  const optionalResponse = await api(`/api/products/${optional.id}/sync`, adminCookie);
+  expectStatus(optionalResponse, 201, 'Sincronización de producto sin MXN ni EUR');
+  const optionalRequest = requests.find((item) => item.path.endsWith('/products/3302'));
+  const expectedOptionalBody = {
+    regular_price: '45000',
+    stock_quantity: 27,
+    manage_stock: true,
+    meta_data: [
+      { key: '_regular_price_wmcp', value: '{"USD":"23"}' },
+      {
+        key: 'yay_currency_custom_fixed_prices',
+        value: { USD: { regular_price: '23', sale_price: '', price: '23' } },
+      },
+    ],
+  };
+  if (
+    optionalRequest?.method !== 'PUT' ||
+    optionalRequest.path !== '/seratus/wc/v3/products/3302' ||
+    JSON.stringify(optionalRequest.body) !== JSON.stringify(expectedOptionalBody)
+  ) {
+    throw new Error('Las monedas sin dato no se omitieron del contrato de WooCommerce.');
+  }
+
   const bulkResponse = await api('/api/products/sync-jobs', adminCookie, {
     ids: [variation.id, simple.id],
   });
@@ -318,7 +353,17 @@ try {
     regular_price: '45000',
     stock_quantity: 27,
     manage_stock: true,
-    meta_data: [{ key: '_regular_price_wmcp', value: '{"USD":"23","MXN":"847","EUR":"45"}' }],
+    meta_data: [
+      { key: '_regular_price_wmcp', value: '{"USD":"23","MXN":"847","EUR":"45"}' },
+      {
+        key: 'yay_currency_custom_fixed_prices',
+        value: {
+          USD: { regular_price: '23', sale_price: '', price: '23' },
+          MXN: { regular_price: '847', sale_price: '', price: '847' },
+          EUR: { regular_price: '45', sale_price: '', price: '45' },
+        },
+      },
+    ],
   };
   const variationRequest = requests
     .filter((item) => item.path.endsWith('/products/1100/variations/1102'))

@@ -88,13 +88,28 @@ En la tabla el precio principal es COP y un botón junto a él abre las cuatro m
 
 El estado de sincronización compara **las cuatro monedas y el stock**: coinciden los cuatro precios y las unidades, o el producto queda desactualizado. Un nulo contra un nulo cuenta como igual; un nulo contra un número es una diferencia, que es justo lo que pasa cuando Siigo ya tiene MXN y la tienda todavía no.
 
-`_regular_price_wmcp` guarda las monedas adicionales en el mismo meta serializado de la tienda:
+Cada sincronización envía las monedas adicionales en dos meta claves a la vez. `_regular_price_wmcp`
+conserva el formato serializado que usa el plugin de multiconeda actual; `yay_currency_custom_fixed_prices`
+lleva el mismo dato en el formato de YayCurrency, con un objeto por moneda y los precios como texto:
 
 ```json
-[{ "key": "_regular_price_wmcp", "value": "{\"USD\":\"50\",\"MXN\":\"847\",\"EUR\":\"45\"}" }]
+[
+  { "key": "_regular_price_wmcp", "value": "{\"USD\":\"50\",\"MXN\":\"847\",\"EUR\":\"45\"}" },
+  {
+    "key": "yay_currency_custom_fixed_prices",
+    "value": {
+      "USD": { "regular_price": "50", "sale_price": "", "price": "50" },
+      "MXN": { "regular_price": "847", "sale_price": "", "price": "847" },
+      "EUR": { "regular_price": "45", "sale_price": "", "price": "45" }
+    }
+  }
+]
 ```
 
-Mientras una moneda no exista, su clave se omite en lugar de enviarse vacía.
+Mientras una moneda no exista, su clave se omite en ambas entradas en lugar de enviarse vacía; USD
+siempre viaja. COP sigue siendo el `regular_price` superior y no aparece en ninguno de los dos metas.
+La escritura dual permite cambiar de plugin sin repoblar precios; antes de activar YayCurrency hay que
+sincronizar todos los productos para que cada uno tenga ya su clave nueva.
 
 ### Bodegas del stock
 
