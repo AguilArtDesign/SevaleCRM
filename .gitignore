@@ -24,6 +24,9 @@ coverage/
 *.log
 npm-debug.log*
 
+# Local agent tooling (Playwright MCP snapshots)
+.playwright-mcp/
+
 # Editors and operating systems
 .idea/
 .vscode/
