@@ -1536,7 +1536,10 @@ function InvoiceSearchModal({
           <Modal.Dialog className="siigo-quotation-modal points-invoice-search-modal">
             <Modal.CloseTrigger aria-label="Cerrar búsqueda" />
             <Modal.Header>
-              <div>
+              {/* Misma distribución que «Redimir Puntos»: el logotipo del proveedor encabeza el
+                  modal, centrado, y debajo van el título y la línea de contexto. */}
+              <div className="points-accrual-header">
+                <img className="points-invoice-logo" src="/img/siigo.svg" alt="Siigo" />
                 <Modal.Heading>Agregar factura</Modal.Heading>
                 <p className="siigo-quotation-subtitle">Consulta la factura en Siigo</p>
               </div>
@@ -2911,11 +2914,14 @@ function AttachInvoiceModal({
   return (
     <Modal isOpen onOpenChange={(open) => !open && onClose()}>
       <Modal.Backdrop>
-        <Modal.Container placement="center">
-          <Modal.Dialog className="siigo-quotation-modal">
+        <Modal.Container placement="center" size="sm">
+          <Modal.Dialog className="siigo-quotation-modal points-invoice-attach-modal">
             <Modal.CloseTrigger aria-label="Cerrar asociación de factura" />
             <Modal.Header>
-              <div>
+              {/* Misma cabecera de marca que «Agregar factura»: el logotipo de Siigo encabeza el
+                  modal, centrado, y debajo van el título y el contexto de la redención. */}
+              <div className="points-accrual-header">
+                <img className="points-invoice-logo" src="/img/siigo.svg" alt="Siigo" />
                 <Modal.Heading>Asociar factura</Modal.Heading>
                 <p className="siigo-quotation-subtitle">
                   Redención de {redemption.pointsRequested} puntos ·{' '}

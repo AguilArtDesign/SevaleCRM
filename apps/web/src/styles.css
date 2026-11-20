@@ -5487,11 +5487,27 @@ select {
   max-width: 24rem;
 }
 
-/* El buscador de factura solo tiene el comercial y el número: en 32rem sobraba media pantalla
-   vacía. */
-.siigo-quotation-modal.points-invoice-search-modal {
+/* Los modales de factura solo tienen un par de campos: en 32rem sobraba media pantalla vacía. */
+.siigo-quotation-modal.points-invoice-search-modal,
+.siigo-quotation-modal.points-invoice-attach-modal {
   width: min(24rem, calc(100vw - 2rem));
   max-width: 24rem;
+}
+
+/* La cabecera repite la distribución de «Redimir Puntos» —logotipo centrado, título y contexto
+   debajo—, así que el separador sobra igual que allí. */
+.siigo-quotation-modal.points-invoice-search-modal .modal__header,
+.siigo-quotation-modal.points-invoice-attach-modal .modal__header {
+  border-bottom: 0;
+}
+
+/* El logotipo de Siigo es más apaisado que el de Puntos Colombia: se iguala la altura para que
+   ambos modales tengan el mismo peso visual. */
+.points-invoice-logo {
+  display: block;
+  width: auto;
+  height: 3.25rem;
+  margin: 0 auto 0.95rem;
 }
 
 /* El alta de una factura de prueba son cinco campos cortos: en 32rem sobraba media pantalla vacía. */
