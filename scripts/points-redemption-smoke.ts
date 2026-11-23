@@ -66,6 +66,7 @@ const balances = new Map<string, { pointsAmount: number; allowRedemption: boolea
   ['3031237866', { pointsAmount: 9185, allowRedemption: false }],
   ['500500500', { pointsAmount: 9185, allowRedemption: true }],
   ['600600600', { pointsAmount: 9185, allowRedemption: true }],
+  ['700700700', { pointsAmount: 9185, allowRedemption: true }],
 ]);
 
 const server = createServer((request, response) => {
@@ -116,6 +117,13 @@ const server = createServer((request, response) => {
         return json(response, 400, {
           resultCode: 'POS_INVALID_OTP',
           resultMsg: 'El código ingresado no es válido.',
+        });
+      }
+      if (payload.documentNo === '700700700') {
+        // Puntos Colombia usa 401 para el código de verificación inválido, no solo para credenciales.
+        return json(response, 401, {
+          resultCode: 'UNAUTHORIZED_VERIFICATION_CODE_NOT_VALID',
+          resultMsg: 'Some of the data provided are not valid or does not exist.',
         });
       }
       // El esquema del proveedor exige `pin` con contenido: sin él la redención no es válida.
@@ -273,6 +281,11 @@ const repository = {
     const row = rows.get(id)!;
     Object.assign(row, { status: 'FAILED', errorCode: code, errorMessage: message });
     return withAuthor(row);
+  },
+  /** Misma regla que el repositorio real: el rechazo definitivo se retira del panel. */
+  discardRedemption(id: number) {
+    rows.delete(id);
+    return Promise.resolve({ count: 1 });
   },
   markUnverified(id: number, code: string, message: string) {
     const row = rows.get(id)!;
@@ -686,8 +699,34 @@ try {
     ),
     'Un rechazo debía fallar la redención.',
   );
-  const failedRow = [...rows.values()].find((row) => row.documentNumber === '600600600');
-  assert(failedRow?.status === 'FAILED', 'La fila debía quedar FAILED.');
+  assert(
+    ![...rows.values()].some((row) => row.documentNumber === '600600600'),
+    'Un rechazo definitivo no debía dejar una fila en el panel.',
+  );
+
+  /**
+   * 7b. Un código inválido llega como 401 del proveedor, pero es un rechazo definitivo del cliente:
+   * la fila queda fallida con el mensaje de OTP y no se renueva el token ni se reintenta.
+   */
+  const invalidOtp = await rejects(
+    service.redeem(
+      { documentNumber: '700700700', documentType: '2', points: 500, pin: '000000' },
+      admin,
+    ),
+    'Un OTP inválido debía fallar la redención.',
+  );
+  assert(
+    businessCode(invalidOtp) === 'POINTS_OTP_INVALID',
+    `El OTP inválido debía responder POINTS_OTP_INVALID, respondió ${businessCode(invalidOtp)}.`,
+  );
+  assert(
+    ![...rows.values()].some((row) => row.documentNumber === '700700700'),
+    'Un OTP inválido no debía dejar una fila en el panel.',
+  );
+  assert(
+    redemptions.filter((payload) => payload.documentNo === '700700700').length === 1,
+    'Un 401 por OTP inválido no debía renovar el token ni reintentar la redención.',
+  );
 
   // 8. Asociar la factura cierra la redención.
   const invoiced = await service.attachInvoice(redeemed.id, { number: '844' }, admin);
@@ -1059,7 +1098,7 @@ try {
   );
 
   console.log(
-    'Points redemption smoke: lookup, OTP challenge sin filtrar el código, saldo insuficiente, cuenta inhabilitada, redención correcta con importe puntos × 6, fallo incierto, rechazo definitivo, factura asociada, bitácora sin PIN, anulación con identificador nuevo, factura conservada, rechazo reintentable, 5xx bloqueado, filtro «En proceso», borrado de una redención resuelta, bloqueo de lo que sigue por conciliar y conciliación manual aplicada/no aplicada OK.',
+    'Points redemption smoke: lookup, OTP challenge sin filtrar el código, saldo insuficiente, cuenta inhabilitada, redención correcta con importe puntos × 6, fallo incierto conservado para conciliar, rechazo definitivo y OTP inválido sin fila en el panel, factura asociada, bitácora sin PIN, anulación con identificador nuevo, factura conservada, rechazo reintentable, 5xx bloqueado, filtro «En proceso», borrado de una redención resuelta, bloqueo de lo que sigue por conciliar y conciliación manual aplicada/no aplicada OK.',
   );
 } finally {
   server.close();

@@ -13,11 +13,16 @@ export type PointsRedemptionRecord = Prisma.PointsRedemptionGetPayload<{
 
 /** Datos con los que se abre el intento, antes de hablar con el proveedor. */
 export type NewPointsRedemption = {
+  /** `MIXED` es el pago mixto; las redenciones que ya existían quedan en el valor por defecto. */
+  type?: 'REDEMPTION' | 'MIXED';
   documentNumber: string;
   documentType: string;
   customerName: string | null;
   pointsRequested: number;
   amountCop: Prisma.Decimal;
+  /** Solo en `MIXED`: total de la venta y parte pagada con dinero. */
+  saleTotalCop?: Prisma.Decimal;
+  cashAmountCop?: Prisma.Decimal;
   validationMethod: string | null;
   transactionIdentifier: Prisma.InputJsonValue;
   createdByUserId: string;
@@ -25,13 +30,24 @@ export type NewPointsRedemption = {
 
 /**
  * Lo que se aplicó en el proveedor. Se guarda por separado del intento porque lo que manda es lo que
- * el proveedor dice haber quemado, no lo que se le pidió.
+ * el proveedor dice haber quemado, no lo que se le pidió. `pointsEarned` solo llega en un pago mixto.
  */
 export type PointsRedemptionApplied = {
   pointsRedeemed: number;
+  pointsEarned?: number;
   pointsBalance: number;
   approbationNumber: string | null;
 };
+
+/**
+ * Resultado de abrir un pago mixto. La comprobación de operaciones abiertas viaja en la misma
+ * transacción que la creación: un doble clic o un reintento tras un resultado incierto no puede
+ * abrir una segunda transacción para el mismo documento.
+ */
+export type PointsMixedCreation =
+  | { outcome: 'IN_PROGRESS' }
+  | { outcome: 'UNVERIFIED' }
+  | { outcome: 'CREATED'; redemption: PointsRedemptionRecord };
 
 /** El estado al que vuelve la redención si la anulación falla: el que tenía antes de reclamarla. */
 export type PointsRedemptionRevocableStatus = 'PENDING_INVOICE' | 'COMPLETED';
@@ -81,8 +97,55 @@ export class PointsRedemptionsRepository {
   }
 
   /**
+   * Abre un pago mixto solo si ese documento no tiene ya una operación mixta en curso o por
+   * verificar. Es la barrera del servidor contra el doble clic y contra reintentar a ciegas un
+   * resultado ambiguo: repetir la llamada podría quemar y acreditar puntos dos veces.
+   */
+  createMixed(input: NewPointsRedemption): Promise<PointsMixedCreation> {
+    return this.prisma.$transaction(async (transaction) => {
+      const open = await transaction.pointsRedemption.findFirst({
+        where: {
+          type: 'MIXED',
+          documentNumber: input.documentNumber,
+          documentType: input.documentType,
+          status: { in: ['PROCESSING', 'UNVERIFIED'] },
+        },
+        orderBy: { id: 'desc' },
+        select: { status: true },
+      });
+      if (open) {
+        return { outcome: open.status === 'UNVERIFIED' ? 'UNVERIFIED' : 'IN_PROGRESS' } as const;
+      }
+
+      const redemption = await transaction.pointsRedemption.create({
+        data: { ...input, status: 'PROCESSING' },
+        include: redemptionInclude,
+      });
+      return { outcome: 'CREATED' as const, redemption };
+    });
+  }
+
+  /**
+   * Retira un intento que el proveedor rechazó de forma definitiva. No movió puntos, así que no hay
+   * nada que conciliar y el panel no necesita mostrarlo: el detalle queda en el log de integraciones.
+   * El `status` en el `where` evita borrar una fila que haya cambiado de estado.
+   */
+  discardRedemption(id: number) {
+    return this.prisma.pointsRedemption.deleteMany({
+      where: { id, type: 'REDEMPTION', status: 'PROCESSING' },
+    });
+  }
+
+  discardMixed(id: number) {
+    return this.prisma.pointsRedemption.deleteMany({
+      where: { id, type: 'MIXED', status: 'PROCESSING' },
+    });
+  }
+
+  /**
    * Los puntos se quemaron. Queda pendiente de factura: la venta que los documenta todavía no existe
-   * porque el comercial la emite en el punto de venta después de redimir.
+   * porque el comercial la emite en el punto de venta después de redimir. En un pago mixto también
+   * se guardan los puntos acreditados por la parte pagada en dinero.
    */
   markApplied(id: number, applied: PointsRedemptionApplied) {
     return this.prisma.pointsRedemption.update({
@@ -90,6 +153,7 @@ export class PointsRedemptionsRepository {
       data: {
         status: 'PENDING_INVOICE',
         pointsRedeemed: applied.pointsRedeemed,
+        pointsEarned: applied.pointsEarned,
         pointsBalance: applied.pointsBalance,
         approbationNumber: applied.approbationNumber,
         completedAt: new Date(),
@@ -199,6 +263,26 @@ export class PointsRedemptionsRepository {
 
   find(id: number) {
     return this.prisma.pointsRedemption.findUnique({ where: { id }, include: redemptionInclude });
+  }
+
+  /**
+   * Si la factura ya está asociada a otro movimiento del panel. Lo comprueba el pago mixto antes de
+   * asociarla: una misma factura de Siigo no puede documentar dos operaciones.
+   */
+  invoiceNameTaken(name: string, exceptId: number): Promise<boolean> {
+    return this.prisma.pointsRedemption
+      .count({ where: { invoiceName: name, id: { not: exceptId } } })
+      .then((count) => count > 0);
+  }
+
+  /**
+   * Si la factura ya documentó un pago mixto. Sirve para impedir que después se registre la misma
+   * factura para una acumulación normal, que duplicaría los puntos sobre la misma venta.
+   */
+  mixedInvoiceNameTaken(name: string): Promise<boolean> {
+    return this.prisma.pointsRedemption
+      .count({ where: { type: 'MIXED', invoiceName: name } })
+      .then((count) => count > 0);
   }
 
   /**

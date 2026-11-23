@@ -12,13 +12,20 @@ export type PointsRedemptionStatus =
 export type PointsRedemptionRecord = {
   id: number;
   kind: 'REDEMPTION';
+  /** `MIXED` es el pago mixto; comparte fila, estados y acciones con la redención. */
+  type: 'REDEMPTION' | 'MIXED';
   documentNumber: string;
   documentType: string;
   customerName: string | null;
   pointsRequested: number;
   pointsRedeemed: number | null;
+  /** Puntos acreditados por la parte pagada en dinero. Solo lo trae un pago mixto. */
+  pointsEarned: number | null;
   pointsBalance: number | null;
   amountCop: string;
+  /** Total de la venta y parte pagada con dinero. Solo lo trae un pago mixto. */
+  saleTotalCop: string | null;
+  cashAmountCop: string | null;
   approbationNumber: string | null;
   validationMethod: string | null;
   status: PointsRedemptionStatus;
@@ -148,7 +155,18 @@ export type PointsPrefixOption = {
   userId: string;
 };
 
-type ApiErrorBody = { message?: string; error?: { message?: string } };
+type ApiErrorBody = { message?: string; error?: { code?: string; message?: string } };
+
+/** Error del API con el código de negocio, para que el modal pueda reaccionar a casos concretos. */
+export class PointsApiError extends Error {
+  constructor(
+    message: string,
+    readonly code: string | null,
+  ) {
+    super(message);
+    this.name = 'PointsApiError';
+  }
+}
 
 async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${apiUrl}${path}`, {
@@ -161,7 +179,10 @@ async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
   });
   if (!response.ok) {
     const body = (await response.json().catch(() => ({}))) as ApiErrorBody;
-    throw new Error(body.error?.message || body.message || 'No pudimos completar la solicitud.');
+    throw new PointsApiError(
+      body.error?.message || body.message || 'No pudimos completar la solicitud.',
+      body.error?.code ?? null,
+    );
   }
   return response.json() as Promise<T>;
 }
@@ -248,6 +269,21 @@ export const pointsColombiaApi = {
     pin: string;
   }) =>
     apiRequest<PointsRedemptionRecord>('/api/points-colombia/redemptions', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+  /**
+   * Pago mixto: una sola transacción que redime y acumula. El backend calcula la parte en dinero y
+   * la estimación de acumulación desde el total de la venta.
+   */
+  redeemMixed: (input: {
+    documentNumber: string;
+    documentType: PointsDocumentType;
+    points: number;
+    pin: string;
+    saleTotal: string;
+  }) =>
+    apiRequest<PointsRedemptionRecord>('/api/points-colombia/redemptions/mixed', {
       method: 'POST',
       body: JSON.stringify(input),
     }),

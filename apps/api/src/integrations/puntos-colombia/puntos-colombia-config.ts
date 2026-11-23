@@ -58,3 +58,27 @@ export function puntosColombiaUatEnabled(): boolean {
   const value = process.env.PCO_UAT_ENABLED?.trim().toLowerCase();
   return value !== 'false';
 }
+
+/**
+ * Modalidad de cálculo del pago mixto. `SEND` envía en `mainPointsRedeemed`/`mainPointsAccumulated`
+ * los puntos calculados por el CRM; `ZERO` envía ceros y deja que el proveedor los calcule a partir
+ * de `totalCashRedeemed` y de los medios de pago.
+ *
+ * `SEND` se validó en UAT el 2026-11-23 con una operación completa y su anulación. `ZERO` sigue sin
+ * probarse: el ejemplo del portal muestra ceros, pero es un ejemplo estático y no una petición
+ * validada.
+ */
+export type PuntosColombiaMixedPointsMode = 'SEND' | 'ZERO';
+
+export function puntosColombiaMixedPointsMode(): PuntosColombiaMixedPointsMode {
+  return process.env.PCO_MIXED_POINTS_MODE?.trim().toLowerCase() === 'zero' ? 'ZERO' : 'SEND';
+}
+
+/**
+ * Código del medio de pago con el que se registra la parte en dinero del pago mixto. `UN` funcionó
+ * en la prueba UAT del 2026-11-23 y es el valor del ejemplo del portal; se deja configurable por si
+ * el proveedor confirma otro código para los distintos medios.
+ */
+export function puntosColombiaMixedPaymentMethodCode(): string {
+  return process.env.PCO_MIXED_PAYMENT_METHOD_CODE?.trim() || 'UN';
+}

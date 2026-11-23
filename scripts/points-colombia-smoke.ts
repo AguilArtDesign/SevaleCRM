@@ -486,6 +486,10 @@ const redemptions = {
   count() {
     return resolved(0);
   },
+  // Ninguna factura de este smoke se usó en un pago mixto: ese flujo tiene su propio smoke.
+  mixedInvoiceNameTaken() {
+    return resolved(false);
+  },
 } as unknown as PointsRedemptionsRepository;
 // El punto de venta sale de la ficha del usuario, así que el smoke ejerce el servicio real contra un
 // doble de Prisma en lugar de saltárselo: así se cubre también el caso del usuario sin código.

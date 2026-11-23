@@ -11,6 +11,7 @@ import {
 import {
   pointsAccountLookupSchema,
   pointsInvoiceIdSchema,
+  pointsMixedRedemptionSchema,
   pointsRedemptionInvoiceSchema,
   pointsRedemptionReconcileSchema,
   pointsRedemptionSchema,
@@ -79,6 +80,19 @@ export class PointsRedemptionsController {
   @RequirePermissions('loyalty.redeem')
   redeem(@Body() body: unknown, @Req() request: AuthenticatedRequest) {
     return this.redemptions.redeem(parseInput(pointsRedemptionSchema, body), this.user(request));
+  }
+
+  /**
+   * Pago mixto: redime y acumula en una sola transacción del proveedor. Comparte permiso con la
+   * redención porque mueve puntos en el mismo sentido y se autoriza con el mismo código del cliente.
+   */
+  @Post('mixed')
+  @RequirePermissions('loyalty.redeem')
+  redeemMixed(@Body() body: unknown, @Req() request: AuthenticatedRequest) {
+    return this.redemptions.redeemMixed(
+      parseInput(pointsMixedRedemptionSchema, body),
+      this.user(request),
+    );
   }
 
   /** Asocia la factura de Siigo que documenta la venta y cierra la redención. */

@@ -343,8 +343,8 @@ export class PointsInvoicesService {
     /**
      * El panel muestra dos operaciones distintas. Cada tabla aporta sus filas y se mezclan aquí: la
      * página no se puede pedir a una sola tabla porque una acumulación y una redención del mismo día
-     * se alternan. Se piden las primeras `page × pageSize` de cada lado, que es suficiente para
-     * armar cualquier página con exactitud, y se corta la que toca.
+     * se alternan. Se piden las primeras `page × pageSize` de cada lado, ordenadas las dos por
+     * `createdAt`, que es la misma clave con la que se mezclan; luego se corta la página que toca.
      */
     const take = query.page * query.pageSize;
     const showsInvoices = hasInvoiceStatus(query.status);
@@ -363,7 +363,10 @@ export class PointsInvoicesService {
     const names = await this.sellerNames(invoiceRows.map((row) => row.sellerId));
     const rows = [
       ...invoiceRows.map((row) => ({
-        at: row.invoiceDate.getTime(),
+        // La entrada más reciente del panel es la que se creó de última, no la que tiene la fecha
+        // de factura más nueva: una factura registrada hoy con fecha de hoy a medianoche se
+        // quedaría debajo de un pago mixto hecho esta mañana.
+        at: row.createdAt.getTime(),
         kind: 'ACCRUAL' as const,
         payload: serializeInvoice(
           row,
@@ -372,7 +375,7 @@ export class PointsInvoicesService {
         ),
       })),
       ...redemptionRows.map((row) => ({
-        at: row.invoiceDate?.getTime() ?? row.createdAt.getTime(),
+        at: row.createdAt.getTime(),
         kind: 'REDEMPTION' as const,
         payload: serializeRedemption(row, { diagnosis }),
       })),
@@ -391,6 +394,14 @@ export class PointsInvoicesService {
         totalPages: Math.max(1, Math.ceil(total / query.pageSize)),
       },
     };
+  }
+
+  /**
+   * Si una factura con ese nombre ya está registrada en el panel. Lo consulta el pago mixto antes de
+   * asociar su factura: una factura registrada para acumular no puede documentar además un pago mixto.
+   */
+  async isInvoiceRegistered(name: string): Promise<boolean> {
+    return (await this.invoices.byName(name)) !== null;
   }
 
   /**
@@ -512,6 +523,15 @@ export class PointsInvoicesService {
     }
     const existing = await this.invoices.bySiigoId(invoice.id);
     if (existing) return this.detail(existing.id, user);
+    // Una factura que ya documentó un pago mixto no se registra para acumular: la venta ya movió
+    // puntos y volver a acumular sobre ella los duplicaría. La comprobación es solo para `MIXED`.
+    if (await this.redemptions.mixedInvoiceNameTaken(invoice.name)) {
+      throw businessError(
+        ConflictException,
+        'POINTS_INVOICE_USED_BY_MIXED',
+        'Esta factura ya se usó en un pago mixto.',
+      );
+    }
 
     const points = pointsForTotal(invoice.total);
     if (points <= 0) {
@@ -607,6 +627,14 @@ export class PointsInvoicesService {
     const invoice = await this.invoices.detail(id);
     if (!invoice) throw new NotFoundException('La factura no existe en el panel.');
     this.assertOwned(invoice, user);
+    // Una factura que ya documentó un pago mixto no puede acumular otra vez: la venta ya movió puntos.
+    if (await this.redemptions.mixedInvoiceNameTaken(invoice.name)) {
+      throw businessError(
+        ConflictException,
+        'POINTS_INVOICE_USED_BY_MIXED',
+        'Esta factura ya se usó en un pago mixto.',
+      );
+    }
 
     // El punto de venta es de quien opera: sin él no se acumula, y se valida antes de tocar la factura.
     const locationCode = await this.location.requireLocationCode(user.id);

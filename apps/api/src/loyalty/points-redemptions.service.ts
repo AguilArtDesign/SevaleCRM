@@ -8,9 +8,14 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Prisma } from '../generated/prisma/client.js';
-import { amountForRedemptionPoints, pointsRedemptionMinimum } from '@sevale/shared';
+import {
+  amountForRedemptionPoints,
+  pointsForAccrualAmount,
+  pointsRedemptionMinimum,
+} from '@sevale/shared';
 import type {
   PointsAccountLookupInput,
+  PointsMixedRedemptionInput,
   PointsRedemptionInput,
   PointsRedemptionInvoiceInput,
   PointsRedemptionReconcileInput,
@@ -78,6 +83,17 @@ function providerCodeOf(error: unknown): string | null {
   if (error instanceof PointsCancellationRejectedError) return error.resultCode;
   if (error instanceof IntegrationRequestRejectedException) return error.providerCode;
   return null;
+}
+
+/**
+ * Puntos Colombia documenta el código de verificación inválido como 401
+ * (`UNAUTHORIZED_VERIFICATION_CODE_NOT_VALID`). Es un rechazo definitivo del cliente, no un fallo
+ * ambiguo de la transacción: el comercial tiene que corregir el código y reintentar.
+ */
+const invalidOtpProviderCode = 'UNAUTHORIZED_VERIFICATION_CODE_NOT_VALID';
+
+function isInvalidOtp(error: unknown): boolean {
+  return providerCodeOf(error) === invalidOtpProviderCode;
 }
 
 /**
@@ -236,6 +252,8 @@ export class PointsRedemptionsService {
       createdByUserId: user.id,
     });
 
+    /** Igual que en el pago mixto: si el proveedor ya aplicó, un fallo posterior no borra la fila. */
+    let providerSucceeded = false;
     try {
       const result = await this.puntos.redeemPoints({
         documentNumber: input.documentNumber,
@@ -244,23 +262,32 @@ export class PointsRedemptionsService {
         points: input.points,
         transactionIdentifier,
       });
+      providerSucceeded = true;
       const applied = await this.redemptions.markApplied(attempt.id, result);
       return serializeRedemption(applied, { diagnosis: user.role === 'ADMIN' });
     } catch (error) {
-      // Un rechazo es definitivo: nada se quemó, así que la fila queda fallida y se puede repetir.
+      if (providerSucceeded) throw error;
+      // Un rechazo definitivo no quemó puntos ni dejó nada que conciliar: se retira la fila. El
+      // detalle del proveedor queda en el log de integraciones.
       if (error instanceof PointsAccountNotFoundError) {
-        await this.redemptions.markFailed(
-          attempt.id,
-          'POINTS_ACCOUNT_NOT_FOUND',
-          'Cuenta no encontrada.',
-        );
+        await this.discardRedemptionAttempt(attempt.id);
         throw businessError(
           BadRequestException,
           'POINTS_ACCOUNT_NOT_FOUND',
           'El cliente no está registrado en Puntos Colombia.',
         );
       }
+      // Un OTP inválido es definitivo y el comercio puede reintentarlo con un código nuevo.
+      if (isInvalidOtp(error)) {
+        await this.discardRedemptionAttempt(attempt.id);
+        throw businessError(
+          BadRequestException,
+          'POINTS_OTP_INVALID',
+          'El código OTP no es válido. Revísalo o solicita uno nuevo.',
+        );
+      }
       if (isAmbiguous(error)) {
+        // Ambiguo sí conserva la fila: es la única prueba de lo que pudo haber pasado con los puntos.
         this.logger.warn(`Redención ${attempt.id} quedó por verificar.`);
         await this.redemptions.markUnverified(
           attempt.id,
@@ -275,13 +302,208 @@ export class PointsRedemptionsService {
           },
         });
       }
-      // La fila conserva el código y el motivo del proveedor; al comercial le llega un texto corto.
-      await this.redemptions.markFailed(
-        attempt.id,
-        providerCodeOf(error) ?? 'POINTS_REDEMPTION_REJECTED',
-        safeMessage(error, 'No se pudo redimir.'),
-      );
+      await this.discardRedemptionAttempt(attempt.id);
       throw businessError(BadRequestException, 'POINTS_REDEMPTION_REJECTED', 'No se pudo redimir.');
+    }
+  }
+
+  /**
+   * Pago mixto: redimir y acumular en una sola transacción del proveedor. Se guarda como una fila de
+   * `points_redemptions` con `type: MIXED`, así que reutiliza la tabla, los estados, la asociación de
+   * factura y la revocación de la redención sin crear una tercera operación en el panel.
+   *
+   * El navegador manda el total de la venta y los puntos que se redimen; la parte en dinero y su
+   * estimación de acumulación se calculan aquí, y la cuenta se revalida antes de enviar.
+   */
+  async redeemMixed(input: PointsMixedRedemptionInput, user: SessionUser) {
+    const locationCode = await this.location.requireLocationCode(user.id);
+    const balance = await this.puntos
+      .lookupAccount(input.documentNumber, input.documentType, locationCode)
+      .catch((error) => {
+        if (error instanceof PointsAccountNotFoundError) {
+          throw businessError(
+            BadRequestException,
+            'POINTS_ACCOUNT_NOT_FOUND',
+            'El cliente no está registrado en Puntos Colombia.',
+          );
+        }
+        throw error;
+      });
+    // Las dos habilitaciones se exigen juntas: un pago mixto hace las dos operaciones a la vez.
+    if (!balance.allowRedemption) {
+      throw businessError(
+        BadRequestException,
+        'POINTS_REDEMPTION_NOT_ENABLED',
+        'La cuenta no permite redimir puntos.',
+      );
+    }
+    if (!balance.allowAccrual) {
+      throw businessError(
+        BadRequestException,
+        'POINTS_ACCRUAL_NOT_ENABLED',
+        'La cuenta no permite acumular puntos.',
+      );
+    }
+    if (balance.pointsAmount < input.points) {
+      throw businessError(
+        BadRequestException,
+        'POINTS_INSUFFICIENT_BALANCE',
+        'Saldo insuficiente para redimir.',
+      );
+    }
+    if (input.points < pointsRedemptionMinimum) {
+      throw businessError(
+        BadRequestException,
+        'POINTS_REDEMPTION_BELOW_MINIMUM',
+        `El mínimo para redimir son ${pointsRedemptionMinimum} puntos.`,
+      );
+    }
+
+    // El total es el de la venta completa; la parte con puntos se recalcula desde los puntos y el
+    // resto tiene que existir como pago en dinero.
+    const saleTotal = new Prisma.Decimal(input.saleTotal);
+    const redeemedAmount = new Prisma.Decimal(amountForRedemptionPoints(input.points));
+    const cashAmount = saleTotal.minus(redeemedAmount);
+    if (redeemedAmount.lte(0) || cashAmount.lte(0)) {
+      throw businessError(
+        BadRequestException,
+        'POINTS_MIXED_INVALID_SPLIT',
+        'El valor pagado con puntos debe ser menor que el total de la venta.',
+      );
+    }
+    const pointsAccumulated = pointsForAccrualAmount(cashAmount.toNumber());
+
+    // Igual que en la redención: el identificador se guarda antes del envío para poder conciliar.
+    const now = new Date();
+    const stamp = puntoColombiaDate(now).replace(/[-:T]/g, '');
+    const transactionIdentifier: TransactionIdentifier = {
+      terminalId: this.terminalId(),
+      transactionId: stamp,
+      cashierId: this.cashierId(),
+      locationCode,
+      transactionDate: puntoColombiaDate(now),
+      nut: stamp,
+    };
+
+    const creation = await this.redemptions.createMixed({
+      type: 'MIXED',
+      documentNumber: input.documentNumber,
+      documentType: input.documentType,
+      customerName: balance.name,
+      pointsRequested: input.points,
+      amountCop: redeemedAmount,
+      saleTotalCop: saleTotal,
+      cashAmountCop: cashAmount,
+      validationMethod: 'OTP',
+      transactionIdentifier,
+      createdByUserId: user.id,
+    });
+    // Primero el bloqueo: no se abre una segunda transacción para el mismo documento.
+    if (creation.outcome === 'IN_PROGRESS') {
+      throw businessError(
+        ConflictException,
+        'POINTS_MIXED_IN_PROGRESS',
+        'El pago mixto está en curso.',
+      );
+    }
+    if (creation.outcome === 'UNVERIFIED') {
+      throw businessError(
+        ConflictException,
+        'POINTS_MIXED_UNVERIFIED',
+        'El pago mixto anterior quedó por verificar.',
+      );
+    }
+    const attempt = creation.redemption;
+
+    /**
+     * Distingue un fallo del proveedor de uno posterior. Si el proveedor ya confirmó la operación,
+     * un error al guardar el resultado no puede borrar la fila: los puntos ya se movieron y el
+     * intento es la única prueba local de lo que pasó.
+     */
+    let providerSucceeded = false;
+    try {
+      const result = await this.puntos.processPurchaseAndRedemption({
+        documentNumber: input.documentNumber,
+        documentType: input.documentType,
+        pin: input.pin,
+        pointsRedeemed: input.points,
+        pointsAccumulated,
+        redeemedAmountCop: redeemedAmount.toNumber(),
+        cashAmountCop: cashAmount.toNumber(),
+        transactionIdentifier,
+      });
+      providerSucceeded = true;
+      const applied = await this.redemptions.markApplied(attempt.id, result);
+      return serializeRedemption(applied, { diagnosis: user.role === 'ADMIN' });
+    } catch (error) {
+      if (providerSucceeded) throw error;
+      // Un rechazo definitivo no movió puntos ni dejó nada que conciliar: se retira la fila. El
+      // proveedor y su respuesta quedan registrados en el log de integraciones.
+      if (error instanceof PointsAccountNotFoundError) {
+        await this.discardMixedAttempt(attempt.id);
+        throw businessError(
+          BadRequestException,
+          'POINTS_ACCOUNT_NOT_FOUND',
+          'El cliente no está registrado en Puntos Colombia.',
+        );
+      }
+      // Mismo caso que la redención: el proveedor rechazó el código, no la transacción.
+      if (isInvalidOtp(error)) {
+        await this.discardMixedAttempt(attempt.id);
+        throw businessError(
+          BadRequestException,
+          'POINTS_OTP_INVALID',
+          'El código OTP no es válido. Revísalo o solicita uno nuevo.',
+        );
+      }
+      if (isAmbiguous(error)) {
+        // Ambiguo sí conserva la fila: es la única prueba de lo que pudo haber pasado con los puntos.
+        this.logger.warn(`Pago mixto ${attempt.id} quedó por verificar.`);
+        await this.redemptions.markUnverified(
+          attempt.id,
+          'POINTS_MIXED_UNVERIFIED',
+          safeMessage(error, 'No se pudo confirmar el pago mixto.'),
+        );
+        throw new BadGatewayException({
+          success: false,
+          error: {
+            code: 'POINTS_MIXED_UNVERIFIED',
+            message: 'No se pudo confirmar el pago mixto.',
+          },
+        });
+      }
+      await this.discardMixedAttempt(attempt.id);
+      throw businessError(
+        BadRequestException,
+        'POINTS_MIXED_REJECTED',
+        'No se pudo procesar el pago mixto.',
+      );
+    }
+  }
+
+  /**
+   * Retira una redención rechazada de forma definitiva. El detalle del proveedor ya quedó en el log
+   * de integraciones; la fila solo añadiría ruido a la tabla porque no hay nada que conciliar.
+   */
+  private async discardRedemptionAttempt(id: number) {
+    try {
+      await this.redemptions.discardRedemption(id);
+    } catch {
+      this.logger.warn(`No se pudo retirar la redención ${id} del panel.`);
+    }
+  }
+
+  /**
+   * Retira el intento mixto de un rechazo definitivo. El detalle del proveedor ya quedó en el log de
+   * integraciones; la fila solo añadiría ruido a la tabla porque no hay nada que conciliar.
+   */
+  private async discardMixedAttempt(id: number) {
+    try {
+      await this.redemptions.discardMixed(id);
+    } catch {
+      // Un fallo al limpiar no debe ocultar el rechazo original. Si la fila queda, el bloqueo de
+      // operaciones abiertas la delata y se puede resolver a mano.
+      this.logger.warn(`No se pudo retirar el intento mixto ${id} del panel.`);
     }
   }
 
@@ -331,6 +553,36 @@ export class PointsRedemptionsService {
         'POINTS_INVOICE_NOT_OWNED',
         'La factura es de otro seller en Siigo.',
       );
+    }
+
+    /**
+     * El pago mixto añade dos comprobaciones que la redención normal no tiene: la factura tiene que
+     * cuadrar con el total que se procesó y no puede documentar otro movimiento. La API de Siigo que
+     * se consulta aquí no expone el desglose de medios de pago, así que solo se valida el total.
+     */
+    if (redemption.type === 'MIXED') {
+      const invoiceTotal = new Prisma.Decimal(invoice.total.toFixed(2));
+      if (redemption.saleTotalCop === null || !invoiceTotal.equals(redemption.saleTotalCop)) {
+        throw businessError(
+          ConflictException,
+          'POINTS_MIXED_TOTAL_MISMATCH',
+          `El total de la factura no coincide con el del pago mixto (${redemption.saleTotalCop?.toFixed(2) ?? '—'}).`,
+        );
+      }
+      if (await this.redemptions.invoiceNameTaken(invoice.name, redemption.id)) {
+        throw businessError(
+          ConflictException,
+          'POINTS_INVOICE_ALREADY_ASSOCIATED',
+          'La factura ya está asociada a otro movimiento del panel.',
+        );
+      }
+      if (await this.invoices.isInvoiceRegistered(invoice.name)) {
+        throw businessError(
+          ConflictException,
+          'POINTS_INVOICE_ALREADY_REGISTERED',
+          'La factura ya está registrada en el panel para acumular.',
+        );
+      }
     }
 
     const updated = await this.redemptions.attachInvoice(id, {

@@ -5,6 +5,11 @@
   --font-inter: 'Inter Variable', 'Inter', sans-serif;
   /* Color de marca de Puntos Colombia: solo se usa mezclado, nunca como fondo plano. */
   --puntos-colombia: #5e00cc;
+  /* Color secundario de la marca, para el chip de pago mixto. */
+  --puntos-colombia-secondary: #fcc616;
+  /* En tema claro el amarillo puro no contrasta sobre el fondo: se oscurece con el texto del tema.
+     En oscuro se usa el color exacto (ver el bloque `.dark`). */
+  --points-mixed-fg: color-mix(in srgb, var(--puntos-colombia-secondary) 55%, var(--foreground));
 }
 
 :root,
@@ -64,6 +69,9 @@
 .dark,
 [data-theme='dark'] {
   color-scheme: dark;
+
+  /* Sobre el fondo oscuro el color secundario se lee tal cual. */
+  --points-mixed-fg: var(--puntos-colombia-secondary);
 
   /* Theme Colors (Dark Mode) */
   --accent: oklch(62.04% 0.195 253.83);
@@ -5550,6 +5558,20 @@ select {
   color: color-mix(in srgb, var(--accent) 70%, var(--foreground));
 }
 
+/* Vigencia del código de un solo uso: el contador va bajo las casillas, centrado con ellas. */
+.points-otp-timer {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+.points-otp-timer strong {
+  color: var(--foreground);
+  font-weight: 500;
+}
+
 /* El cargador ocupa la misma caja que el botón de limpiar al que sustituye —20px y su margen
    derecho—, así el campo no cambia de ancho ni el icono se pega al borde. Lo usan los dos modales
    que consultan el documento, Redimir y Acumular. */
@@ -7417,6 +7439,24 @@ select {
   background: color-mix(in srgb, #5e00cc 85%, black);
 }
 
+/* La acción del pago mixto se percibe morada: fondo de la marca al 25 % y borde al 40 %. Al pasar
+   el cursor el tinte sube un poco para que el botón responda sin volverse sólido. */
+.points-mixed-button {
+  background: color-mix(in srgb, var(--puntos-colombia) 25%, transparent);
+  border-color: color-mix(in srgb, var(--puntos-colombia) 40%, transparent);
+}
+
+.points-mixed-button:hover,
+.points-mixed-button[data-hovered='true'] {
+  background: color-mix(in srgb, var(--puntos-colombia) 32%, transparent);
+  border-color: color-mix(in srgb, var(--puntos-colombia) 50%, transparent);
+}
+
+.points-mixed-button:active,
+.points-mixed-button[data-pressed='true'] {
+  background: color-mix(in srgb, var(--puntos-colombia) 40%, transparent);
+}
+
 /* Misma altura y pie que las demás tablas del CRM: el listado se lee igual que Clientes o Pedidos. */
 .points-table {
   height: calc(100vh - 200px);
@@ -7510,6 +7550,85 @@ select {
 }
 
 .points-cell.is-revoked img {
+  opacity: 0.5;
+}
+
+/*
+ * Un pago mixto mueve puntos en los dos sentidos. La columna muestra las dos cifras por separado
+ * —redimidos y acumulados— y no una resta de ambas: son movimientos distintos y netearlos escondería
+ * lo que se le hizo a la cuenta del cliente.
+ */
+/* Dos filas y tres columnas compartidas: logo, número y flecha. La columna del número mide lo que
+   el número más ancho de la fila —no un ancho fijo grande—, así que el «+» de los acumulados queda
+   bajo la primera cifra de los redimidos, las flechas en la misma vertical y sin agrandar la celda. */
+.points-mixed-movements {
+  display: grid;
+  grid-template-columns: 1rem max-content auto;
+  align-items: center;
+  column-gap: 0.3rem;
+  row-gap: 0.1rem;
+}
+
+.points-mixed-logo img {
+  display: block;
+  width: 1rem;
+  height: 1rem;
+  object-fit: contain;
+}
+
+.points-mixed-number {
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.points-mixed-arrow {
+  justify-self: start;
+}
+
+.points-mixed-accrual {
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+/* Resumen del pago mixto: una caja con los tres valores del acuerdo, etiqueta a la izquierda y
+   valor a la derecha. */
+.points-mixed-summary {
+  display: grid;
+  gap: 0.4rem;
+  margin: 0;
+  padding: 0.75rem 1rem;
+  background: var(--surface-secondary);
+  border-radius: var(--field-radius);
+}
+
+.points-mixed-summary-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.points-mixed-summary-row dt {
+  color: var(--muted);
+  font-size: 0.8125rem;
+}
+
+.points-mixed-summary-row dd {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  margin: 0;
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.points-mixed-movements.is-revoked .points-mixed-number {
+  color: var(--muted);
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+}
+
+.points-mixed-movements.is-revoked .points-mixed-logo img {
   opacity: 0.5;
 }
 
@@ -7779,4 +7898,13 @@ select {
 .points-table .chip.points-type-accrual {
   --chip-bg: color-mix(in oklch, var(--puntos-colombia) 22%, transparent);
   --chip-fg: color-mix(in srgb, var(--puntos-colombia) 45%, var(--foreground));
+}
+
+/* El pago mixto usa el color secundario de la marca: fondo tenue al 22 %, la misma intensidad del
+   chip de «Acumulación», y texto con el color secundario (oscurecido en tema claro para que
+   contraste). El chip base pinta `background-color`, así que el tono plano va en `background`. */
+.points-table .chip.points-type-mixed {
+  --chip-bg: transparent;
+  --chip-fg: var(--points-mixed-fg);
+  background: color-mix(in oklab, var(--puntos-colombia-secondary) 22%, transparent);
 }

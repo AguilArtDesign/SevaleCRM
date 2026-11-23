@@ -1691,6 +1691,19 @@ const pointsMoneySchema = z
   });
 
 /**
+ * Pago mixto: el cliente redime puntos y paga el resto en dinero en una sola transacción. El total de
+ * la venta se escribe como el de una factura y el backend recalcula la parte pagada con puntos; la
+ * parte en dinero tiene que quedar positiva, y eso se valida en el servidor porque depende de ambos
+ * valores.
+ */
+export const pointsMixedRedemptionSchema = pointsRedemptionSchema.extend({
+  saleTotal: pointsMoneySchema.refine(
+    (value) => Number(value) > 0,
+    'El total de la venta debe ser mayor que cero.',
+  ),
+});
+
+/**
  * Alta manual de una factura de prueba. El nombre no viene de Siigo, así que se escribe a mano; el
  * resto son los datos que el proveedor necesita para acumular sobre esa factura.
  */
@@ -1755,6 +1768,7 @@ export type PointsInvoiceSearchInput = z.infer<typeof pointsInvoiceSearchSchema>
 export type PointsAccountLookupInput = z.infer<typeof pointsAccountLookupSchema>;
 export type PointsAccrualInput = z.infer<typeof pointsAccrualSchema>;
 export type PointsRedemptionInput = z.infer<typeof pointsRedemptionSchema>;
+export type PointsMixedRedemptionInput = z.infer<typeof pointsMixedRedemptionSchema>;
 export type PointsRedemptionInvoiceInput = z.infer<typeof pointsRedemptionInvoiceSchema>;
 export type PointsRedemptionReconcileInput = z.infer<typeof pointsRedemptionReconcileSchema>;
 export type PointsUatInvoiceInput = z.infer<typeof pointsUatInvoiceSchema>;

@@ -4,6 +4,7 @@ export { bogotaTimeZone } from './bogota-datetime.js';
 
 export {
   amountForRedemptionPoints,
+  pointsForAccrualAmount,
   pointsForRedemptionAmount,
   pointsRedemptionMinimum,
   pointsRedemptionValueCop,

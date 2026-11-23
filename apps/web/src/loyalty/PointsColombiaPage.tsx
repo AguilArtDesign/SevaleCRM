@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Alert,
@@ -26,8 +26,10 @@ import {
 } from '@heroui/react';
 import { parseDate, type CalendarDate } from '@internationalized/date';
 import {
+  ArrowDown,
   ArrowRightArrowLeft,
   ArrowRotateLeft,
+  ArrowUp,
   CircleCheck,
   EllipsisVertical,
   Eye,
@@ -40,6 +42,7 @@ import {
 import { pointsDocumentTypes, type PointsDocumentType } from '@sevale/validation';
 import {
   amountForRedemptionPoints,
+  pointsForAccrualAmount,
   pointsForRedemptionAmount,
   pointsRedemptionMinimum,
   redemptionProblem,
@@ -56,6 +59,7 @@ import { PointsFeedback } from './PointsFeedback';
 import { PointsErrorDiagnosisBox } from './PointsErrorDiagnosis';
 import {
   pointsColombiaApi,
+  PointsApiError,
   type PointsInvoiceRecord,
   type PointsPrefixOption,
   type PointsRedemptionRecord,
@@ -80,6 +84,18 @@ type DateRangeValue = { start: CalendarDate; end: CalendarDate };
 
 /** Datos mínimos para consultar o acumular: el tipo de documento no se hereda de la factura. */
 type LookupRequest = { document: string; type: PointsDocumentType };
+
+/**
+ * Vigencia del código de un solo uso acordada con Puntos Colombia. El proveedor no la devuelve en
+ * la respuesta, así que el contador de la pantalla se apoya en este valor: al llegar a cero el
+ * código deja de ser válido y se ofrece reenviarlo.
+ */
+const otpValidityMs = 3 * 60_000;
+
+/** Tiempo restante del código en formato `m:ss`. */
+function otpCountdown(seconds: number): string {
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
+}
 
 /**
  * Panel de Puntos Colombia. Mientras el proveedor certifica, el módulo es exclusivo del
@@ -118,6 +134,7 @@ export function PointsColombiaPage() {
   const [reconcileTarget, setReconcileTarget] = useState<PointsRedemptionRecord | null>(null);
   const [detailTarget, setDetailTarget] = useState<PointsInvoiceRecord | null>(null);
   const [redeemOpen, setRedeemOpen] = useState(false);
+  const [mixedOpen, setMixedOpen] = useState(false);
   const [invoiceTarget, setInvoiceTarget] = useState<PointsRedemptionRecord | null>(null);
   const [revokeRedemptionTarget, setRevokeRedemptionTarget] =
     useState<PointsRedemptionRecord | null>(null);
@@ -199,6 +216,18 @@ export function PointsColombiaPage() {
                 className="points-redeem-icon"
               />
               Redimir puntos
+            </Button>
+          )}
+          {/* El pago mixto redime y acumula en una sola operación: mismo permiso que redimir, y su
+              propio modal para no meter los campos nuevos en el de redención. */}
+          {canRedeem && (
+            <Button
+              variant="outline"
+              className="points-mixed-button"
+              onPress={() => setMixedOpen(true)}
+            >
+              <ArrowRightArrowLeft width={16} height={16} />
+              Pago mixto
             </Button>
           )}
           <Button variant="primary" onPress={() => setSearchOpen(true)}>
@@ -406,7 +435,14 @@ export function PointsColombiaPage() {
                   return (
                     <Table.Row key={`redemption-${row.id}`}>
                       <Table.Cell>
-                        <Chip color="accent">Redención</Chip>
+                        {/* El pago mixto comparte la fila de la redención: misma tabla, mismas
+                            columnas y acciones, solo cambia el tipo que documenta la operación. */}
+                        <Chip
+                          color="accent"
+                          className={row.type === 'MIXED' ? 'points-type-mixed' : undefined}
+                        >
+                          {row.type === 'MIXED' ? 'Pago Mixto' : 'Redención'}
+                        </Chip>
                       </Table.Cell>
                       <Table.Cell>
                         {row.invoice ? <strong>{row.invoice.name}</strong> : '—'}
@@ -422,19 +458,68 @@ export function PointsColombiaPage() {
                       </Table.Cell>
                       <Table.Cell>{row.createdBy?.name ?? '—'}</Table.Cell>
                       <Table.Cell>
-                        {formattedMoneyWithCode(row.invoice?.total ?? row.amountCop, 'COP')}
+                        {/* Un pago mixto muestra el total de la venta; la redención normal sigue
+                            mostrando el importe que cubren los puntos. */}
+                        {formattedMoneyWithCode(
+                          row.invoice?.total ?? row.saleTotalCop ?? row.amountCop,
+                          'COP',
+                        )}
                       </Table.Cell>
                       <Table.Cell>
-                        {/* Los puntos de una redención anulada volvieron al cliente: se muestran
-                            tachados para que no se lean como puntos gastados. */}
-                        <span
-                          className={
-                            row.status === 'REVOKED' ? 'points-cell is-revoked' : 'points-cell'
-                          }
-                        >
-                          <img src="/img/puntos-colombia.svg" alt="" aria-hidden="true" />
-                          <strong>{row.pointsRedeemed ?? row.pointsRequested}</strong>
-                        </span>
+                        {/* Un pago mixto mueve puntos en los dos sentidos. Se muestran los dos
+                            valores por separado, sin netearlos: el que se redime y el que se
+                            acumula por la parte pagada en dinero. */}
+                        {row.type === 'MIXED' ? (
+                          <div
+                            className={
+                              row.status === 'REVOKED'
+                                ? 'points-mixed-movements is-revoked'
+                                : 'points-mixed-movements'
+                            }
+                          >
+                            <span className="points-mixed-logo">
+                              <img src="/img/puntos-colombia.svg" alt="" aria-hidden="true" />
+                            </span>
+                            <strong className="points-mixed-number">
+                              {row.pointsRedeemed ?? row.pointsRequested}
+                            </strong>
+                            {/* La flecha distingue el sentido del movimiento sin alargar la
+                                celda con las palabras «redimidos» y «acumulados». */}
+                            <ArrowDown
+                              className="points-mixed-arrow"
+                              role="img"
+                              aria-label="Puntos redimidos"
+                              width={13}
+                              height={13}
+                              style={{ color: 'var(--danger)' }}
+                            />
+                            {/* La segunda fila deja vacía la columna del logo: así los números y
+                                las flechas comparten columnas y quedan alineados. */}
+                            <span aria-hidden="true" />
+                            <span className="points-mixed-number points-mixed-accrual">
+                              +{row.pointsEarned ?? '—'}
+                            </span>
+                            <ArrowUp
+                              className="points-mixed-arrow"
+                              role="img"
+                              aria-label="Puntos acumulados"
+                              width={13}
+                              height={13}
+                              style={{ color: 'var(--success)' }}
+                            />
+                          </div>
+                        ) : (
+                          /* Los puntos de una redención anulada volvieron al cliente: se muestran
+                             tachados para que no se lean como puntos gastados. */
+                          <span
+                            className={
+                              row.status === 'REVOKED' ? 'points-cell is-revoked' : 'points-cell'
+                            }
+                          >
+                            <img src="/img/puntos-colombia.svg" alt="" aria-hidden="true" />
+                            <strong>{row.pointsRedeemed ?? row.pointsRequested}</strong>
+                          </span>
+                        )}
                       </Table.Cell>
                       <Table.Cell>
                         <Chip color={redemptionMeta.color}>{redemptionMeta.label}</Chip>
@@ -850,6 +935,17 @@ export function PointsColombiaPage() {
         />
       )}
 
+      {canRedeem && (
+        <MixedPayModal
+          isOpen={mixedOpen}
+          onClose={() => setMixedOpen(false)}
+          onDone={() => {
+            setMixedOpen(false);
+            void refresh();
+          }}
+        />
+      )}
+
       {invoiceTarget && (
         <AttachInvoiceModal
           key={invoiceTarget.id}
@@ -1117,8 +1213,16 @@ function RedemptionDetailModal({
             <Modal.CloseTrigger aria-label="Cerrar detalle" />
             <Modal.Header>
               <div>
-                <Modal.Heading>Detalle de la redención</Modal.Heading>
-                <p className="siigo-quotation-subtitle">Resultado de la redención</p>
+                <Modal.Heading>
+                  {redemption.type === 'MIXED'
+                    ? 'Detalle del pago mixto'
+                    : 'Detalle de la redención'}
+                </Modal.Heading>
+                <p className="siigo-quotation-subtitle">
+                  {redemption.type === 'MIXED'
+                    ? 'Resultado del pago mixto'
+                    : 'Resultado de la redención'}
+                </p>
               </div>
             </Modal.Header>
             <Modal.Body>
@@ -1147,8 +1251,36 @@ function RedemptionDetailModal({
                     <strong>{redemption.pointsRedeemed ?? redemption.pointsRequested}</strong>
                   </dd>
                 </div>
+                {/* Un pago mixto acredita además los puntos de la parte pagada en dinero; la
+                    redención normal no tiene ese movimiento. */}
+                {redemption.type === 'MIXED' && (
+                  <>
+                    <div>
+                      <dt>Puntos acumulados</dt>
+                      <dd>
+                        <strong>{redemption.pointsEarned ?? '—'}</strong>
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>Total de la venta</dt>
+                      <dd>
+                        {redemption.saleTotalCop
+                          ? formattedMoneyWithCode(redemption.saleTotalCop, 'COP')
+                          : '—'}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>Pagado con dinero</dt>
+                      <dd>
+                        {redemption.cashAmountCop
+                          ? formattedMoneyWithCode(redemption.cashAmountCop, 'COP')
+                          : '—'}
+                      </dd>
+                    </div>
+                  </>
+                )}
                 <div>
-                  <dt>Valor aplicado</dt>
+                  <dt>{redemption.type === 'MIXED' ? 'Valor con puntos' : 'Valor aplicado'}</dt>
                   <dd>{formattedMoneyWithCode(redemption.amountCop, 'COP')}</dd>
                 </div>
                 <div>
@@ -1305,6 +1437,19 @@ function RedemptionDetailModal({
 
 function pointsDocumentLabel(value: string) {
   return pointsDocumentTypes.find((type) => type.value === value)?.label ?? value;
+}
+
+/**
+ * Interpreta un importe como se escribe en Colombia (`250.000`, `250,50` o `250000`). Es la misma
+ * regla que aplica el backend; aquí solo alimenta la parte en dinero y la estimación de acumulación.
+ */
+function moneyValue(value: string): number {
+  const clean = value.replace(/\s/g, '');
+  const normalized = /^\d{1,3}(\.\d{3})+$/.test(clean)
+    ? clean.replace(/\./g, '')
+    : clean.replace(',', '.');
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : 0;
 }
 
 /** Resultado del intento de anulación, tal como se lee en el detalle. */
@@ -2521,12 +2666,26 @@ function RedeemModal({
   /** Si el código ya se pidió: el modal pasa de ofrecerlo a pedirlo. */
   const [challengeSent, setChallengeSent] = useState(false);
   const [pin, setPin] = useState('');
+  /** Vigencia del código pedido: se cuenta desde la respuesta del proveedor. */
+  const [otpExpiresAt, setOtpExpiresAt] = useState<number | null>(null);
+  const [otpNow, setOtpNow] = useState(0);
   const [error, setError] = useState<string | null>(null);
   /**
    * Identifica la búsqueda en curso. Cerrar o cambiar el documento la deja atrás, y la respuesta que
    * llegue tarde se descarta en vez de pintar el saldo de una consulta que ya no interesa.
    */
   const sessionRef = useRef(0);
+
+  // El contador se apoya en una fecha de vencimiento, no en restar segundos: si la pestaña queda en
+  // segundo plano, al volver el tiempo restante sigue siendo el real.
+  useEffect(() => {
+    if (otpExpiresAt === null || otpNow >= otpExpiresAt) return;
+    const timer = setTimeout(() => setOtpNow(Date.now()), 1000);
+    return () => clearTimeout(timer);
+  }, [otpExpiresAt, otpNow]);
+
+  const otpSecondsLeft =
+    otpExpiresAt === null ? null : Math.max(0, Math.ceil((otpExpiresAt - otpNow) / 1000));
 
   const reset = () => {
     sessionRef.current += 1;
@@ -2538,6 +2697,8 @@ function RedeemModal({
     setPuntos('');
     setChallengeSent(false);
     setPin('');
+    setOtpExpiresAt(null);
+    setOtpNow(0);
     setError(null);
   };
 
@@ -2551,6 +2712,8 @@ function RedeemModal({
     setNotFound(false);
     setChallengeSent(false);
     setPin('');
+    setOtpExpiresAt(null);
+    setOtpNow(0);
     setPesos('');
     setPuntos('');
     setError(null);
@@ -2584,9 +2747,17 @@ function RedeemModal({
       if (session !== sessionRef.current) return;
       setError(null);
       setChallengeSent(true);
+      setPin('');
+      const now = Date.now();
+      setOtpNow(now);
+      setOtpExpiresAt(now + otpValidityMs);
     },
     onError: (failure: Error) => setError(failure.message),
   });
+
+  const requestChallenge = () => {
+    if (documentType) challengeMutation.mutate(documentType);
+  };
 
   const redeemMutation = useMutation({
     mutationFn: (type: PointsDocumentType) =>
@@ -2600,7 +2771,14 @@ function RedeemModal({
       reset();
       onDone();
     },
-    onError: (failure: Error) => setError(failure.message),
+    onError: (failure: Error) => {
+      setError(failure.message);
+      // El código escrito no sirvió, pero el OTP sigue vigente: se limpia solo la casilla para que
+      // el comercial escriba el correcto sin tener que solicitar otro.
+      if (failure instanceof PointsApiError && failure.code === 'POINTS_OTP_INVALID') {
+        setPin('');
+      }
+    },
   });
 
   /**
@@ -2626,7 +2804,9 @@ function RedeemModal({
     documentType &&
     pointsValue > 0 &&
     problem === null &&
-    pin.trim().length >= 4,
+    pin.trim().length >= 4 &&
+    otpSecondsLeft !== null &&
+    otpSecondsLeft > 0,
   );
 
   /** Escribir pesos llena los puntos; escribir puntos llena los pesos. */
@@ -2666,8 +2846,6 @@ function RedeemModal({
               </div>
             </Modal.Header>
             <Modal.Body>
-              {error && <PointsFeedback>{error}</PointsFeedback>}
-
               {/* Fase 1: el cliente y el acuerdo de cuántos puntos se queman. Se busca al enviar el
                   documento, igual que en el alta de clientes, sin un botón aparte. Van apilados
                   porque a 24rem dos columnas dejan los campos demasiado estrechos. */}
@@ -2822,7 +3000,7 @@ function RedeemModal({
                           maxLength={6}
                           inputMode="numeric"
                           variant="secondary"
-                          isDisabled={redeemMutation.isPending}
+                          isDisabled={redeemMutation.isPending || otpSecondsLeft === 0}
                         >
                           <InputOTP.Group>
                             {Array.from({ length: 6 }, (_, index) => (
@@ -2830,7 +3008,28 @@ function RedeemModal({
                             ))}
                           </InputOTP.Group>
                         </InputOTP>
+                        {otpSecondsLeft !== null && otpSecondsLeft > 0 && (
+                          <p className="points-otp-timer">
+                            El código vence en <strong>{otpCountdown(otpSecondsLeft)}</strong>
+                          </p>
+                        )}
                       </div>
+                      {otpSecondsLeft === 0 && (
+                        <Alert status="accent" className="points-redeem-otp">
+                          <Alert.Content>
+                            <Alert.Title>El código venció</Alert.Title>
+                          </Alert.Content>
+                          <Button
+                            size="sm"
+                            variant="primary"
+                            isDisabled={challengeMutation.isPending}
+                            onPress={requestChallenge}
+                          >
+                            {challengeMutation.isPending && <Spinner color="current" size="sm" />}
+                            Reenviar
+                          </Button>
+                        </Alert>
+                      )}
                     </>
                   ) : (
                     // El paso del código, como un aviso más del modal pero en azul: dice qué toca
@@ -2843,7 +3042,7 @@ function RedeemModal({
                         size="sm"
                         variant="primary"
                         isDisabled={challengeMutation.isPending}
-                        onPress={() => documentType && challengeMutation.mutate(documentType)}
+                        onPress={requestChallenge}
                       >
                         {challengeMutation.isPending && <Spinner color="current" size="sm" />}
                         Solicitar
@@ -2852,6 +3051,9 @@ function RedeemModal({
                   )}
                 </>
               )}
+              {/* El error va al final del cuerpo: es donde queda la vista después de operar y no
+                  obliga a desplazarse hasta arriba para enterarse de lo que pasó. */}
+              {error && <PointsFeedback>{error}</PointsFeedback>}
             </Modal.Body>
             <Modal.Footer>
               <Button variant="tertiary" onPress={close} isDisabled={redeemMutation.isPending}>
@@ -2864,6 +3066,506 @@ function RedeemModal({
               >
                 {redeemMutation.isPending && <Spinner color="current" size="sm" />}
                 Redimir puntos
+              </Button>
+            </Modal.Footer>
+          </Modal.Dialog>
+        </Modal.Container>
+      </Modal.Backdrop>
+    </Modal>
+  );
+}
+
+/**
+ * Pago mixto en dos fases, como la redención. La primera consulta al cliente y acuerda el total de la
+ * venta y cuántos puntos se redimen; la segunda pide el código al cliente y envía una sola
+ * transacción al endpoint combinado del proveedor.
+ *
+ * La parte que se paga con dinero se calcula sola —total menos valor en pesos de los puntos— y el
+ * comercial no tiene que escribirla. El servidor revalida todos los importes antes de enviar.
+ */
+function MixedPayModal({
+  isOpen,
+  onClose,
+  onDone,
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const [document, setDocument] = useState('');
+  const [documentType, setDocumentType] = useState<PointsDocumentType | null>(null);
+  const [lookup, setLookup] = useState<{
+    name: string | null;
+    pointsAmount: number;
+    pointsValueInMoney: number;
+    allowAccrual: boolean;
+    allowRedemption: boolean;
+  } | null>(null);
+  const [notFound, setNotFound] = useState(false);
+  /** Total de la venta tal como se escribe; el backend lo normaliza. */
+  const [saleTotal, setSaleTotal] = useState('');
+  /** Los dos campos de la redención se editan entre sí, igual que en el modal de redención. */
+  const [pesos, setPesos] = useState('');
+  const [puntos, setPuntos] = useState('');
+  const [challengeSent, setChallengeSent] = useState(false);
+  const [pin, setPin] = useState('');
+  /** Vigencia del código pedido: se cuenta desde la respuesta del proveedor. */
+  const [otpExpiresAt, setOtpExpiresAt] = useState<number | null>(null);
+  const [otpNow, setOtpNow] = useState(0);
+  const [error, setError] = useState<string | null>(null);
+  /** Descarta respuestas que llegan tarde, de una consulta que ya no interesa. */
+  const sessionRef = useRef(0);
+  /** Evita que un doble clic abra dos transacciones antes de que React pinte el estado pendiente. */
+  const submittingRef = useRef(false);
+
+  // Igual que en la redención: fecha de vencimiento absoluta para que el contador no se desfase si
+  // la pestaña queda en segundo plano.
+  useEffect(() => {
+    if (otpExpiresAt === null || otpNow >= otpExpiresAt) return;
+    const timer = setTimeout(() => setOtpNow(Date.now()), 1000);
+    return () => clearTimeout(timer);
+  }, [otpExpiresAt, otpNow]);
+
+  const otpSecondsLeft =
+    otpExpiresAt === null ? null : Math.max(0, Math.ceil((otpExpiresAt - otpNow) / 1000));
+
+  const reset = () => {
+    sessionRef.current += 1;
+    submittingRef.current = false;
+    setDocument('');
+    setDocumentType(null);
+    setLookup(null);
+    setNotFound(false);
+    setSaleTotal('');
+    setPesos('');
+    setPuntos('');
+    setChallengeSent(false);
+    setPin('');
+    setOtpExpiresAt(null);
+    setOtpNow(0);
+    setError(null);
+  };
+
+  const invalidateLookup = () => {
+    sessionRef.current += 1;
+    setLookup(null);
+    setNotFound(false);
+    setChallengeSent(false);
+    setPin('');
+    setOtpExpiresAt(null);
+    setOtpNow(0);
+    setSaleTotal('');
+    setPesos('');
+    setPuntos('');
+    setError(null);
+  };
+
+  const lookupMutation = useMutation({
+    mutationFn: async (type: PointsDocumentType) => ({
+      session: sessionRef.current,
+      result: await pointsColombiaApi.redemptionLookup(document.trim(), type),
+    }),
+    onSuccess: ({ session, result }) => {
+      if (session !== sessionRef.current) return;
+      setError(null);
+      if (!result.found) {
+        setLookup(null);
+        setNotFound(true);
+        return;
+      }
+      setNotFound(false);
+      setLookup(result.balance);
+    },
+    onError: (failure: Error) => setError(failure.message),
+  });
+
+  const challengeMutation = useMutation({
+    mutationFn: async (type: PointsDocumentType) => ({
+      session: sessionRef.current,
+      result: await pointsColombiaApi.redemptionChallenge(document.trim(), type),
+    }),
+    onSuccess: ({ session }) => {
+      if (session !== sessionRef.current) return;
+      setError(null);
+      setChallengeSent(true);
+      setPin('');
+      const now = Date.now();
+      setOtpNow(now);
+      setOtpExpiresAt(now + otpValidityMs);
+    },
+    onError: (failure: Error) => setError(failure.message),
+  });
+
+  const requestChallenge = () => {
+    if (documentType) challengeMutation.mutate(documentType);
+  };
+
+  const mixedMutation = useMutation({
+    mutationFn: (type: PointsDocumentType) =>
+      pointsColombiaApi.redeemMixed({
+        documentNumber: document.trim(),
+        documentType: type,
+        points: Number(puntos),
+        pin: pin.trim(),
+        saleTotal: saleTotal.trim(),
+      }),
+    onSuccess: () => {
+      reset();
+      onDone();
+    },
+    onError: (failure: Error) => {
+      setError(failure.message);
+      // El código escrito no sirvió, pero el OTP sigue vigente: se limpia solo la casilla para que
+      // el comercial escriba el correcto sin tener que solicitar otro.
+      if (failure instanceof PointsApiError && failure.code === 'POINTS_OTP_INVALID') {
+        setPin('');
+      }
+    },
+    onSettled: () => {
+      submittingRef.current = false;
+    },
+  });
+
+  const close = () => {
+    reset();
+    lookupMutation.reset();
+    challengeMutation.reset();
+    mixedMutation.reset();
+    onClose();
+  };
+
+  const totalValue = moneyValue(saleTotal);
+  const pointsValue = Number(puntos) || 0;
+  /** Valor en pesos de los puntos redimidos: es la parte que cubre Puntos Colombia. */
+  const redeemedValue = amountForRedemptionPoints(pointsValue);
+  /** Lo que el cliente paga con dinero: el total menos la parte cubierta por puntos. */
+  const cashValue = totalValue - redeemedValue;
+  const accrualEstimate = pointsForAccrualAmount(cashValue);
+  const problem = lookup ? redemptionProblem(pointsValue, lookup.pointsAmount) : null;
+  const splitInvalid = totalValue > 0 && redeemedValue >= totalValue;
+  const amountsValid = totalValue > 0 && pointsValue > 0 && cashValue > 0;
+  const canSubmit = Boolean(
+    lookup?.allowRedemption &&
+    lookup?.allowAccrual &&
+    documentType &&
+    amountsValid &&
+    problem === null &&
+    pin.trim().length >= 4 &&
+    otpSecondsLeft !== null &&
+    otpSecondsLeft > 0 &&
+    !mixedMutation.isPending,
+  );
+
+  /** Igual que en la redención: pesos y puntos son el mismo importe escrito de dos formas. */
+  const onPesos = (value: string) => {
+    setPesos(value);
+    const amount = Number(value.replace(/[^\d]/g, ''));
+    setPuntos(amount > 0 ? String(pointsForRedemptionAmount(amount)) : '');
+  };
+  const onPuntos = (value: string) => {
+    const digits = value.replace(/[^\d]/g, '');
+    setPuntos(digits);
+    const points = Number(digits) || 0;
+    setPesos(points > 0 ? String(amountForRedemptionPoints(points)) : '');
+  };
+  const snapPesos = () => {
+    if (pointsValue > 0) setPesos(String(amountForRedemptionPoints(pointsValue)));
+  };
+
+  const submit = () => {
+    if (!documentType || !canSubmit || submittingRef.current) return;
+    submittingRef.current = true;
+    mixedMutation.mutate(documentType);
+  };
+
+  const money = (value: number) => formattedMoneyWithCode(String(value), 'COP');
+
+  return (
+    <Modal isOpen={isOpen} onOpenChange={(open) => !open && close()}>
+      <Modal.Backdrop>
+        <Modal.Container placement="center" size="sm">
+          <Modal.Dialog className="siigo-quotation-modal points-redeem-modal">
+            <Modal.CloseTrigger aria-label="Cerrar pago mixto" />
+            <Modal.Header>
+              <div className="points-accrual-header">
+                <PointsColombiaLogo className="points-accrual-logo" />
+                <Modal.Heading>Pago mixto</Modal.Heading>
+                <p className="siigo-quotation-subtitle">Redimir y acumular en una sola operación</p>
+              </div>
+            </Modal.Header>
+            <Modal.Body>
+              <div className="points-redeem-client">
+                <div className="customer-field">
+                  <Label>Tipo de documento</Label>
+                  <Select
+                    aria-label="Tipo de documento"
+                    value={documentType}
+                    placeholder="Seleccionar tipo"
+                    variant="secondary"
+                    onChange={(value) => {
+                      setDocumentType(
+                        value === null ? null : (String(value) as PointsDocumentType),
+                      );
+                      invalidateLookup();
+                    }}
+                  >
+                    <Select.Trigger>
+                      <Select.Value />
+                      <Select.Indicator />
+                    </Select.Trigger>
+                    <Select.Popover>
+                      <ListBox>
+                        {pointsDocumentTypes.map((option) => (
+                          <ListBox.Item
+                            key={option.value}
+                            id={option.value}
+                            textValue={option.label}
+                          >
+                            {option.label}
+                            <ListBox.ItemIndicator />
+                          </ListBox.Item>
+                        ))}
+                      </ListBox>
+                    </Select.Popover>
+                  </Select>
+                </div>
+                <div className="customer-field">
+                  <SearchField
+                    aria-label="Número de documento"
+                    value={document}
+                    variant="secondary"
+                    isDisabled={lookupMutation.isPending}
+                    onChange={(value) => {
+                      setDocument(value);
+                      invalidateLookup();
+                    }}
+                    onSubmit={() => {
+                      if (document.trim() && documentType) lookupMutation.mutate(documentType);
+                    }}
+                    onClear={() => {
+                      setDocument('');
+                      invalidateLookup();
+                    }}
+                  >
+                    <Label>Número de documento</Label>
+                    <SearchField.Group>
+                      <SearchField.SearchIcon />
+                      <SearchField.Input placeholder="Buscar número de documento…" />
+                      {lookupMutation.isPending ? (
+                        <span className="points-search-loader">
+                          <Spinner color="current" size="sm" aria-label="Consultando el cliente" />
+                        </span>
+                      ) : (
+                        <SearchField.ClearButton />
+                      )}
+                    </SearchField.Group>
+                  </SearchField>
+                </div>
+              </div>
+
+              {notFound && (
+                <p className="points-accrual-notice">Cliente no registrado en Puntos Colombia.</p>
+              )}
+
+              {lookup && (
+                <>
+                  {/* Un pago mixto exige las dos habilitaciones: se avisa de la que falte antes de
+                      pedir el código. */}
+                  {!lookup.allowRedemption && (
+                    <p className="points-accrual-notice">La cuenta no permite redimir puntos.</p>
+                  )}
+                  {!lookup.allowAccrual && (
+                    <p className="points-accrual-notice">La cuenta no permite acumular puntos.</p>
+                  )}
+
+                  <div className="points-accrual-amount">
+                    <strong>{lookup.pointsAmount}</strong>
+                    <span className="points-amount-caption">Puntos disponibles</span>
+                    {/* Equivalencia del saldo que devuelve la consulta, sin calcularla nosotros. */}
+                    {lookup.pointsValueInMoney > 0 && (
+                      <span className="points-amount-caption">
+                        {money(lookup.pointsValueInMoney)} en saldo
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="customer-field">
+                    <TextField>
+                      <Label>Total de la venta</Label>
+                      <Input
+                        variant="secondary"
+                        aria-label="Total de la venta"
+                        inputMode="decimal"
+                        placeholder="Ej. 250.000"
+                        value={saleTotal}
+                        onChange={(event) =>
+                          setSaleTotal(event.target.value.replace(/[^\d.,]/g, ''))
+                        }
+                      />
+                    </TextField>
+                  </div>
+
+                  <div className="points-redeem-exchange">
+                    <TextField isInvalid={problem !== null} className="customer-field">
+                      <Label>Puntos</Label>
+                      <Input
+                        variant="secondary"
+                        aria-label="Puntos a redimir"
+                        inputMode="numeric"
+                        value={puntos}
+                        onChange={(event) => onPuntos(event.target.value)}
+                      />
+                    </TextField>
+                    <span className="points-redeem-swap" aria-hidden="true">
+                      <ArrowRightArrowLeft width={16} height={16} />
+                    </span>
+                    <div className="customer-field">
+                      <TextField>
+                        <Label>Pesos</Label>
+                        <Input
+                          variant="secondary"
+                          aria-label="Pesos a redimir"
+                          inputMode="numeric"
+                          value={pesos}
+                          onChange={(event) => onPesos(event.target.value)}
+                          onBlur={snapPesos}
+                        />
+                      </TextField>
+                    </div>
+                  </div>
+
+                  {/* El valor en dinero no se pide: se deriva del total y de los puntos redimidos
+                      y se muestra junto con los dos movimientos de puntos en un solo resumen. */}
+                  <div className="customer-field">
+                    <Label>Resumen de transacción</Label>
+                    <dl className="points-mixed-summary">
+                      <div className="points-mixed-summary-row">
+                        <dt>Redimidos</dt>
+                        <dd>
+                          <strong>{pointsValue}</strong>
+                          <ArrowDown
+                            role="img"
+                            aria-label="Puntos redimidos"
+                            width={13}
+                            height={13}
+                            style={{ color: 'var(--danger)' }}
+                          />
+                        </dd>
+                      </div>
+                      <div className="points-mixed-summary-row">
+                        <dt>Acumulados</dt>
+                        <dd>
+                          <strong>{accrualEstimate}</strong>
+                          <ArrowUp
+                            role="img"
+                            aria-label="Puntos acumulados"
+                            width={13}
+                            height={13}
+                            style={{ color: 'var(--success)' }}
+                          />
+                        </dd>
+                      </div>
+                      <div className="points-mixed-summary-row">
+                        <dt>Paga con Dinero</dt>
+                        <dd>{cashValue > 0 ? money(cashValue) : '—'}</dd>
+                      </div>
+                    </dl>
+                  </div>
+
+                  {problem === 'BELOW_MINIMUM' && (
+                    <p className="points-accrual-notice">
+                      Mínimo permitido {pointsRedemptionMinimum} Puntos Colombia.
+                    </p>
+                  )}
+                  {problem === 'OVER_BALANCE' && (
+                    <p className="points-accrual-notice">
+                      Excede los puntos disponibles del cliente.
+                    </p>
+                  )}
+                  {splitInvalid && (
+                    <p className="points-accrual-notice">
+                      El total de la venta debe ser mayor que el valor pagado con puntos.
+                    </p>
+                  )}
+                </>
+              )}
+
+              {/* Fase 2: el código, igual que la redención. Solo se ofrece si la cuenta permite
+                  las dos operaciones y los importes ya son válidos. */}
+              {lookup?.allowRedemption &&
+                lookup.allowAccrual &&
+                problem === null &&
+                amountsValid && (
+                  <>
+                    {challengeSent ? (
+                      <>
+                        <div className="otp-field">
+                          <Label>Código de verificación</Label>
+                          <InputOTP
+                            value={pin}
+                            onChange={setPin}
+                            maxLength={6}
+                            inputMode="numeric"
+                            variant="secondary"
+                            isDisabled={mixedMutation.isPending || otpSecondsLeft === 0}
+                          >
+                            <InputOTP.Group>
+                              {Array.from({ length: 6 }, (_, index) => (
+                                <InputOTP.Slot key={index} index={index} />
+                              ))}
+                            </InputOTP.Group>
+                          </InputOTP>
+                          {otpSecondsLeft !== null && otpSecondsLeft > 0 && (
+                            <p className="points-otp-timer">
+                              El código vence en <strong>{otpCountdown(otpSecondsLeft)}</strong>
+                            </p>
+                          )}
+                        </div>
+                        {otpSecondsLeft === 0 && (
+                          <Alert status="accent" className="points-redeem-otp">
+                            <Alert.Content>
+                              <Alert.Title>El código venció</Alert.Title>
+                            </Alert.Content>
+                            <Button
+                              size="sm"
+                              variant="primary"
+                              isDisabled={challengeMutation.isPending}
+                              onPress={requestChallenge}
+                            >
+                              {challengeMutation.isPending && <Spinner color="current" size="sm" />}
+                              Reenviar
+                            </Button>
+                          </Alert>
+                        )}
+                      </>
+                    ) : (
+                      <Alert status="accent" className="points-redeem-otp">
+                        <Alert.Content>
+                          <Alert.Title>Solicitar código OTP</Alert.Title>
+                        </Alert.Content>
+                        <Button
+                          size="sm"
+                          variant="primary"
+                          isDisabled={challengeMutation.isPending}
+                          onPress={requestChallenge}
+                        >
+                          {challengeMutation.isPending && <Spinner color="current" size="sm" />}
+                          Solicitar
+                        </Button>
+                      </Alert>
+                    )}
+                  </>
+                )}
+              {/* El error va al final del cuerpo para que se vea sin desplazarse hasta arriba. */}
+              {error && <PointsFeedback>{error}</PointsFeedback>}
+            </Modal.Body>
+            <Modal.Footer>
+              <Button variant="tertiary" onPress={close} isDisabled={mixedMutation.isPending}>
+                Cancelar
+              </Button>
+              <Button variant="primary" isDisabled={!canSubmit} onPress={submit}>
+                {mixedMutation.isPending && <Spinner color="current" size="sm" />}
+                Procesar puntos
               </Button>
             </Modal.Footer>
           </Modal.Dialog>
@@ -2924,8 +3626,20 @@ function AttachInvoiceModal({
                 <img className="points-invoice-logo" src="/img/siigo.svg" alt="Siigo" />
                 <Modal.Heading>Asociar factura</Modal.Heading>
                 <p className="siigo-quotation-subtitle">
-                  Redención de {redemption.pointsRequested} puntos ·{' '}
-                  {formattedMoneyWithCode(redemption.amountCop, 'COP')}
+                  {redemption.type === 'MIXED' ? (
+                    <>
+                      Pago mixto de {redemption.pointsRequested} puntos · total{' '}
+                      {formattedMoneyWithCode(
+                        redemption.saleTotalCop ?? redemption.amountCop,
+                        'COP',
+                      )}
+                    </>
+                  ) : (
+                    <>
+                      Redención de {redemption.pointsRequested} puntos ·{' '}
+                      {formattedMoneyWithCode(redemption.amountCop, 'COP')}
+                    </>
+                  )}
                 </p>
               </div>
             </Modal.Header>

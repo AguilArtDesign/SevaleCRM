@@ -493,6 +493,8 @@ El panel de Envíos es la cola de despacho: muestra las operaciones que ya tiene
 
 El panel de Puntos Colombia permite buscar una factura de Siigo por su número, registrarla en el CRM y acumular los puntos del cliente en el programa. Mientras el proveedor certifica, el módulo es exclusivo de `ADMIN`: lo cierran el permiso `loyalty.accrue`, la bandera `PCO_ADMIN_ONLY` y la propia pantalla.
 
+La tabla mezcla acumulaciones, redenciones y pagos mixtos y se ordena por **cuándo se creó la fila**, de la más reciente a la más antigua. Así, una factura registrada hoy aparece arriba aunque su fecha de factura sea de otro día.
+
 Cada usuario comercial configura su prefijo de facturación en Usuarios (`siigo_invoice_prefix`, por ejemplo `FV-1-`). El comercial solo escribe el número; el backend compone el nombre completo (`FV-1-` + `846` = `FV-1-846`) y comprueba que el `seller` que devuelve Siigo sea el suyo. Como varios comerciales pueden compartir `seller_id`, esa comprobación no alcanza para separarlos: la factura queda a nombre de la **cuenta del CRM** que la registró (`created_by_user_id`) y el listado, el registro y la asociación a una redención se filtran por ella. Compartir vendedor de Siigo no da acceso a las facturas del colega. El prefijo se escribe con o sin el guion final (`FV-1` y `FV-1-` acaban igual); lo que no debe hacerse es dejar el prefijo sin guion en la base, porque la factura saldría `FV-1846`.
 
 Además del prefijo, cada usuario lleva su **código de punto de venta** de Puntos Colombia (`pco_location_code`, por ejemplo `PDVBRA0001`). No es un dato de la empresa: cada usuario tiene el suyo y algunos lo comparten, así que vive en la ficha y no en el entorno. Es opcional al crear la cuenta; sin él el usuario no opera el programa y el panel le responde «tu usuario no está autorizado» antes de llamar al proveedor, en lugar de dejar que el proveedor rechace la petición con `POS_LOCATION_NOT_OF_PARTNER`.
@@ -509,6 +511,8 @@ El catálogo vive en `packages/shared/src/puntos-colombia-errors.ts` y sale del 
 
 El diagnóstico viaja como `diagnosis` en la acumulación y la redención, y como `revocationDiagnosis` en sus anulaciones. El backend solo lo serializa cuando quien consulta es `ADMIN`; para el resto de roles el campo llega en `null`.
 
+Puntos Colombia devuelve un código de verificación inválido como **401** con `resultCode: UNAUTHORIZED_VERIFICATION_CODE_NOT_VALID`, el mismo estado que usa para credenciales. El CRM lo distingue por el `resultCode`: no renueva el token ni reintenta la operación, retira el intento del panel con el mensaje «El código OTP no es válido» y permite pedir un código nuevo y reintentar, en vez de bloquearlo como «Por verificar» o dejar una fila fallida.
+
 ### Variables de entorno
 
 ```dotenv
@@ -522,9 +526,11 @@ PCO_TERMINAL_ID=PCAliados-01
 PCO_CASHIER_ID=Yohander-01
 PCO_ADMIN_ONLY=true
 PCO_UAT_ENABLED=true
+PCO_MIXED_POINTS_MODE=SEND
+PCO_MIXED_PAYMENT_METHOD_CODE=UN
 ```
 
-`PCO_CLIENT_ID` y `PCO_CLIENT_SECRET` son secretos y viven solo en el servidor. La tokenización envía el secreto en la URL, así que `integration-http` la registra como confidencial: guarda el origen y la ruta en `integration_logs`, nunca la cadena de consulta ni el cuerpo de la respuesta, que contiene el token. `PCO_REMOTE_IPV4` es informativo. `PCO_ADMIN_ONLY` y `PCO_UAT_ENABLED` ausentes equivalen a `true`.
+`PCO_CLIENT_ID` y `PCO_CLIENT_SECRET` son secretos y viven solo en el servidor. La tokenización envía el secreto en la URL, así que `integration-http` la registra como confidencial: guarda el origen y la ruta en `integration_logs`, nunca la cadena de consulta ni el cuerpo de la respuesta, que contiene el token. `PCO_REMOTE_IPV4` es informativo. `PCO_ADMIN_ONLY` y `PCO_UAT_ENABLED` ausentes equivalen a `true`. `PCO_MIXED_POINTS_MODE` y `PCO_MIXED_PAYMENT_METHOD_CODE` permiten ajustar el pago mixto sin desplegar código; `SEND` y `UN` se validaron en UAT el 2026-11-23 y `ZERO` sigue pendiente (ver más abajo).
 
 ### Facturas de prueba
 
@@ -572,7 +578,7 @@ La conversión es la que el comercial hacía a mano en la calculadora: **un punt
 
 La solicitud del código va a `POST Vinculacion/v1/accounts/me/beginidentityvalidation` con `otpActions` (`validate: false`, `redeem: true`) y la redención a `POST pos-management/v1/transactions/processredemption` con el PIN, `mainPointsRedeemed` y el `transactionIdentifier` que identifica la operación. **El proveedor devuelve el código en la respuesta**: el CRM lo descarta y lo enmascara en la bitácora (`otp`, `pin`, `otpCode`) igual que hace con las credenciales, porque guardarlo sería dejar el segundo factor en texto plano.
 
-Una redención nace sin factura, porque el comercial factura después en Siigo: la fila muestra `—` en Factura y Fecha y el estado **Por facturar** (`PENDING_INVOICE`) hasta que alguien asocia la factura desde la propia fila. Los estados son `PROCESSING` mientras el proveedor responde, `PENDING_INVOICE` con los puntos ya quemados, `COMPLETED` cuando tiene factura, `FAILED` o `UNVERIFIED` cuando el intento falló de forma definitiva o ambigua, y `REVOKING`/`REVOKED` cuando se anula. Se guarda en su propia tabla, `points_redemptions`, para no mezclar facturas acumuladas con operaciones que aún no tienen factura.
+Una redención nace sin factura, porque el comercial factura después en Siigo: la fila muestra `—` en Factura y Fecha y el estado **Por facturar** (`PENDING_INVOICE`) hasta que alguien asocia la factura desde la propia fila. Los estados son `PROCESSING` mientras el proveedor responde, `PENDING_INVOICE` con los puntos ya quemados, `COMPLETED` cuando tiene factura, `UNVERIFIED` cuando el resultado quedó ambiguo (se conserva para conciliar) y `REVOKING`/`REVOKED` cuando se anula. Un rechazo definitivo —OTP inválido, validación de negocio— no deja fila: se retira del panel, el detalle queda en el log de integraciones y el comercial puede reintentar de inmediato; `FAILED` queda para las conciliaciones manuales que confirman que la operación no se aplicó. Se guarda en su propia tabla, `points_redemptions`, para no mezclar facturas acumuladas con operaciones que aún no tienen factura.
 
 Va con el permiso `loyalty.redeem`, separado de `loyalty.accrue`: un error al redimir le quita puntos al cliente, no se los suma. `npm run test:points-redemption` cubre la consulta, que el código no quede en la bitácora, el saldo insuficiente, la cuenta inhabilitada, la redención correcta con su importe, el fallo ambiguo, el rechazo definitivo, la factura asociada y la anulación.
 
@@ -587,6 +593,14 @@ Una redención se puede anular: los puntos vuelven a la cuenta del cliente. Se o
 Es el mismo endpoint que la anulación de la acumulación (`POST pos-management/v1/transactions/cancel`) y la misma forma de cuerpo: el `originalTransactionIdentifier` es el que quedó guardado al redimir y el `transactionIdentifier` se genera en el momento de anular, distinguido del original por la fecha. La redención pasa a `REVOKING` mientras el proveedor responde y termina en `REVOKED`.
 
 **La factura asociada se conserva** como dato histórico: existe en Siigo y hay que corregirla allí, así que la fila sigue mostrando su número después de anular. Un rechazo del proveedor deja la anulación en `FAILED` y la redención vuelve a su estado anterior, de modo que se puede repetir; un `5xx` o un tiempo de espera agotado la dejan en `UNVERIFIED` y la bloquean, porque los puntos pudieron volver y reintentar a ciegas los devolvería dos veces. Una redención `FAILED` no se puede anular: nunca descontó puntos, así que no hay nada que devolver.
+
+### Pago mixto
+
+El **Pago mixto** es una operación adicional del panel: una sola transacción de Puntos Colombia en la que el cliente redime puntos y paga el resto en dinero. No se simula con `processredemption` + `processsale`: el CRM llama una única vez a `POST pos-management/v1/transactions/processpurchaseandredemption`. El comercial escribe el total de la venta y cuántos puntos (o pesos) se redimen; el CRM calcula la parte en dinero (`total − puntos × $6`) y la estimación de acumulación sobre esa parte (`$1.000 = 1 punto`, con piso), revalida la cuenta (`allowRedemption` y `allowAccrual`), el saldo y el mínimo de 200 puntos antes de enviar, y bloquea el envío si el documento ya tiene un pago mixto en curso o por verificar.
+
+La fila se guarda en `points_redemptions` con `type = MIXED` y nace **Por facturar**, igual que una redención: se factura después en Siigo y se asocia desde la propia fila. La columna **Tipo** muestra «Pago Mixto» y el resto de columnas no cambia. Los puntos redimidos y los acumulados se conservan por separado (`points_redeemed` y `points_earned`) y la columna **Puntos** muestra las dos cifras —no se netean—. Asociar la factura exige que su total coincida con el total del pago mixto y que no esté ya asociada a otro movimiento ni registrada para acumular; una factura usada en un pago mixto bloquea después una acumulación normal. Revocar reutiliza la anulación de la redención con el identificador original. Un rechazo definitivo del proveedor —OTP inválido, validación de negocio— **no deja fila**: el intento se retira del panel y su detalle queda en el log de integraciones; solo un resultado ambiguo conserva la fila «Por verificar» para conciliarla.
+
+**Verificado en UAT (2026-11-23):** con `PCO_MIXED_POINTS_MODE=SEND` y `PCO_MIXED_PAYMENT_METHOD_CODE=UN`, una operación mixta descontó y acumuló los puntos esperados, y `cancel` revirtió los dos efectos. **Sigue pendiente:** la modalidad `ZERO` —el ejemplo del portal muestra ceros, pero es un ejemplo estático—, otros códigos de medio de pago y el significado exacto de `totalCashRedeemed`, que hoy se envía como el valor en pesos de la redención. La API de Siigo que consulta el CRM no expone el desglose de medios de pago, así que solo se valida el total de la factura. Esto no constituye la certificación formal del proveedor. `npm run test:points-mixed` cubre la operación contra un proveedor simulado: validaciones previas, una sola llamada, fila «Pago Mixto», bloqueos de doble envío y resultado ambiguo, asociación con total exacto, revocación y bloqueo de la acumulación duplicada.
 
 ### Eliminar una redención
 

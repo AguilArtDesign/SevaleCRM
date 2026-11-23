@@ -28,6 +28,16 @@ export function amountForRedemptionPoints(points: number): number {
 }
 
 /**
+ * Puntos que se acumulan por un importe pagado en dinero: la regla vigente de la acumulación, un
+ * punto por cada `$1.000` y redondeando hacia abajo. El pago mixto la aplica solo sobre la parte que
+ * el cliente paga en dinero, no sobre el total de la venta.
+ */
+export function pointsForAccrualAmount(amount: number): number {
+  if (!Number.isFinite(amount) || amount <= 0) return 0;
+  return Math.floor(amount / 1000);
+}
+
+/**
  * Si la cantidad se puede redimir. Devuelve el motivo cuando no, para que la pantalla lo muestre
  * debajo de los campos: el mínimo del proveedor y el saldo del cliente son las dos únicas reglas.
  */

@@ -67,7 +67,15 @@ function emitLog(entry: IntegrationHttpLog): void {
 }
 
 export class IntegrationAuthenticationException extends BadGatewayException {
-  constructor(integration: string) {
+  constructor(
+    integration: string,
+    /**
+     * `resultCode` del proveedor. Puntos Colombia usa el 401 también para rechazos de negocio —un
+     * código de verificación inválido—, así que el código permite distinguirlo de un token vencido.
+     */
+    readonly providerCode: string | null = null,
+    readonly providerDetail: string | null = null,
+  ) {
     super({
       success: false,
       error: {
@@ -377,7 +385,11 @@ async function performRequest(
       const authenticationFailure = response.status === 401 || response.status === 403;
       if (authenticationFailure) {
         await logIntegrationFailure(url, integration, response);
-        throw new IntegrationAuthenticationException(integration);
+        throw new IntegrationAuthenticationException(
+          integration,
+          integrationResultCode(trace.responseBody),
+          integrationErrorMessage(trace.responseBody),
+        );
       }
       // Un 404 describe un estado final y no una condición transitoria: no se reintenta y se
       // informa con un código propio para que quien llama decida si cuenta como fallo.

@@ -11,6 +11,8 @@ import {
 import {
   puntosColombiaConfig,
   puntosColombiaHeaders,
+  puntosColombiaMixedPaymentMethodCode,
+  puntosColombiaMixedPointsMode,
   type PuntosColombiaConfig,
 } from './puntos-colombia-config.js';
 import { PuntosColombiaTokenService } from './puntos-colombia-token.service.js';
@@ -59,6 +61,34 @@ export type PointsRedemptionRequest = {
   documentType: PointsDocumentType;
   pin: string;
   points: number;
+  transactionIdentifier: TransactionIdentifier;
+};
+
+/**
+ * Resultado de un pago mixto: lo que el proveedor dice haber quemado, lo que acreditó por la parte
+ * pagada en dinero y el saldo que queda. `bonusPointsEarned` no se persiste porque tampoco se hace
+ * en la acumulación: el panel muestra los puntos efectivos y no los bonificados.
+ */
+export type PointsMixedResult = {
+  pointsRedeemed: number;
+  pointsEarned: number;
+  pointsBalance: number;
+  approbationNumber: string | null;
+};
+
+/**
+ * Datos que el proveedor necesita para un pago mixto. `redeemedAmountCop` es el valor en pesos de
+ * la redención y `cashAmountCop` la parte que el cliente paga con dinero; ambos son importes de la
+ * misma venta y su suma es el total.
+ */
+export type PointsMixedRequest = {
+  documentNumber: string;
+  documentType: PointsDocumentType;
+  pin: string;
+  pointsRedeemed: number;
+  pointsAccumulated: number;
+  redeemedAmountCop: number;
+  cashAmountCop: number;
   transactionIdentifier: TransactionIdentifier;
 };
 
@@ -156,6 +186,22 @@ export function puntoColombiaDate(date = new Date()): string {
 const cancellationSuccessCodes = new Set(['0', '00', '200', 'OK', 'SUCCESS']);
 
 /**
+ * Puntos Colombia responde 401 para un código de verificación inválido, no solo para credenciales.
+ * Sin distinguirlo, el CRM lo tomaba por un token vencido: renovaba, reintentaba la operación y, al
+ * seguir fallando, la dejaba «por verificar» aunque el cliente nunca autorizó nada.
+ */
+const invalidVerificationCode = 'UNAUTHORIZED_VERIFICATION_CODE_NOT_VALID';
+
+function isInvalidVerificationCode(
+  error: unknown,
+): error is IntegrationAuthenticationException & { providerCode: string } {
+  return (
+    error instanceof IntegrationAuthenticationException &&
+    error.providerCode === invalidVerificationCode
+  );
+}
+
+/**
  * Cliente de las tres fases de Puntos Colombia: token, consulta de cuenta y acumulación. Todo sale
  * del backend; React nunca ve credenciales ni llama al proveedor.
  */
@@ -220,6 +266,20 @@ export class PuntosColombiaService {
    */
   redeemPoints(request: PointsRedemptionRequest): Promise<PointsRedemptionResult> {
     return this.withToken((token, config) => this.requestRedemption(token, config, request));
+  }
+
+  /**
+   * Pago mixto: una sola transacción que redime y acumula a la vez. **No** se simula con
+   * `processredemption` + `processsale`: el proveedor expone este endpoint combinado para eso.
+   *
+   * La modalidad de cálculo (`mainPointsRedeemed`/`mainPointsAccumulated` explícitos o en cero) se
+   * controla con `PCO_MIXED_POINTS_MODE`. `SEND` y el código de pago `UN` se validaron en UAT el
+   * 2026-11-23; `ZERO` y otros códigos siguen pendientes. Ver `puntos-colombia-config.ts`.
+   */
+  processPurchaseAndRedemption(request: PointsMixedRequest): Promise<PointsMixedResult> {
+    return this.withToken((token, config) =>
+      this.requestPurchaseAndRedemption(token, config, request),
+    );
   }
 
   /**
@@ -423,6 +483,14 @@ export class PuntosColombiaService {
         'Puntos Colombia',
       );
     } catch (error) {
+      // Un 401 con este código es una autorización inválida del cliente, no un token vencido: es un
+      // rechazo definitivo y no debe reintentarse ni dejar la redención por verificar.
+      if (isInvalidVerificationCode(error)) {
+        throw new PointsRedemptionRejectedError(
+          error.providerCode,
+          error.providerDetail ?? 'El código de verificación no es válido.',
+        );
+      }
       if (error instanceof IntegrationRequestRejectedException) {
         throw new PointsRedemptionRejectedError(
           error.providerCode ?? String(error.statusCode),
@@ -440,6 +508,88 @@ export class PuntosColombiaService {
       // Lo quemado lo dice el proveedor: no se asume que sea igual a lo pedido.
       pointsRedeemed: Math.trunc(finiteNumber(burned)),
       pointsBalance: Math.trunc(finiteNumber(payload.mainBalance)),
+      approbationNumber:
+        typeof payload.approbationNumber === 'string' ? payload.approbationNumber : null,
+    };
+  }
+
+  /**
+   * Pago mixto. El cuerpo sigue el ejemplo del portal de desarrolladores, con dos incertidumbres
+   * documentadas: la modalidad de cálculo de los puntos y el significado de `totalCashRedeemed`.
+   *
+   * `totalCashRedeemed` se envía como el valor en pesos de la redención —la parte de la venta que
+   * cubren los puntos—, y `paymentMethods` lleva la parte que se paga con dinero. En la prueba UAT
+   * del 2026-11-23 esa forma funcionó; el ejemplo del portal no aclara el campo.
+   */
+  private async requestPurchaseAndRedemption(
+    token: string,
+    config: PuntosColombiaConfig,
+    request: PointsMixedRequest,
+  ): Promise<PointsMixedResult> {
+    const url = integrationUrl(
+      config.baseUrl,
+      'pos-management/v1/transactions/processpurchaseandredemption',
+    );
+    const pointsMode = puntosColombiaMixedPointsMode();
+    let payload: unknown;
+    try {
+      payload = await integrationPost(
+        url,
+        {
+          ...puntosColombiaHeaders(config, token),
+          'content-type': 'application/json',
+          // Como en la redención y en la anulación, el partner viaja también como cabecera.
+          'CA-PARTNERCODE': config.partnerCode,
+        },
+        {
+          documentNo: request.documentNumber,
+          documentType: request.documentType,
+          pin: request.pin,
+          partnerCode: config.partnerCode,
+          mainPointsRedeemed: pointsMode === 'ZERO' ? 0 : request.pointsRedeemed,
+          mainPointsAccumulated: pointsMode === 'ZERO' ? 0 : request.pointsAccumulated,
+          totalCashRedeemed: request.redeemedAmountCop,
+          paymentMethods: [
+            {
+              amount: request.cashAmountCop,
+              code: puntosColombiaMixedPaymentMethodCode(),
+            },
+          ],
+          transactionIdentifier: request.transactionIdentifier,
+        },
+        'Puntos Colombia',
+      );
+    } catch (error) {
+      // Mismo caso que la redención: el 401 por código inválido es un rechazo definitivo.
+      if (isInvalidVerificationCode(error)) {
+        throw new PointsRedemptionRejectedError(
+          error.providerCode,
+          error.providerDetail ?? 'El código de verificación no es válido.',
+        );
+      }
+      if (error instanceof IntegrationRequestRejectedException) {
+        throw new PointsRedemptionRejectedError(
+          error.providerCode ?? String(error.statusCode),
+          error.providerDetail ?? 'Puntos Colombia rechazó el pago mixto.',
+        );
+      }
+      throw error;
+    }
+    if (!isRecord(payload)) throw invalidIntegrationResponse('Puntos Colombia');
+    const balance = isRecord(payload.mainBalance) ? payload.mainBalance : null;
+    if (!balance) throw invalidIntegrationResponse('Puntos Colombia');
+    // El esquema documentado anida lo quemado en `mainBalance.pointsBurned`; se acepta también el
+    // nombre suelto que usa `processredemption` por si el proveedor comparte esa forma.
+    const burned = balance.pointsBurned ?? payload.mainPointsBurned;
+    const earned = balance.pointsEarned;
+    if (burned === undefined || burned === null || earned === undefined || earned === null) {
+      throw invalidIntegrationResponse('Puntos Colombia');
+    }
+    return {
+      // Lo movido lo dice el proveedor: no se asume que coincida con lo solicitado.
+      pointsRedeemed: Math.trunc(finiteNumber(burned)),
+      pointsEarned: Math.trunc(finiteNumber(earned)),
+      pointsBalance: Math.trunc(finiteNumber(balance.pointsBalance)),
       approbationNumber:
         typeof payload.approbationNumber === 'string' ? payload.approbationNumber : null,
     };

@@ -1061,6 +1061,14 @@ enum PointsRevocationStatus {
   UNVERIFIED
 }
 
+/// Tipo de operación de una fila de `points_redemptions`. `MIXED` es el pago mixto: una sola
+/// transacción del proveedor en la que el cliente redime puntos y paga el resto en dinero. Comparte
+/// tabla y estados con la redención para no crear una tercera operación en el panel.
+enum PointsRedemptionType {
+  REDEMPTION
+  MIXED
+}
+
 /// Ciclo de una redención. `PENDING_INVOICE` es el estado normal al terminar de redimir: los puntos
 /// ya salieron de la cuenta del cliente pero la factura que los documenta todavía no existe.
 enum PointsRedemptionStatus {
@@ -1121,6 +1129,8 @@ model PointsInvoice {
 /// puntos y la factura de Siigo se asocia después, cuando el comercial la emite en el punto de venta.
 model PointsRedemption {
   id                     Int                          @id @default(autoincrement())
+  /// `MIXED` usa las columnas de pago mixto; las redenciones anteriores quedan en `REDEMPTION`.
+  type                   PointsRedemptionType         @default(REDEMPTION)
   /// Documento del cliente y su tipo, tal como se enviaron al proveedor.
   documentNumber         String                       @map("document_number") @db.VarChar(32)
   documentType           String                       @map("document_type") @db.VarChar(4)
@@ -1129,10 +1139,17 @@ model PointsRedemption {
   /// Puntos que el comercial pidió quemar, y los que el proveedor dice haber quemado.
   pointsRequested        Int                          @map("points_requested")
   pointsRedeemed         Int?                         @map("points_redeemed")
+  /// Solo en `MIXED`: puntos que el proveedor acreditó por el importe pagado en dinero.
+  pointsEarned           Int?                         @map("points_earned")
   /// Saldo que queda en la cuenta según el proveedor, no una resta nuestra.
   pointsBalance          Int?                         @map("points_balance")
-  /// Valor en pesos que se aplica en la factura: los puntos redimidos por seis.
+  /// Valor en pesos que se aplica en la factura: los puntos redimidos por seis. En un pago mixto es
+  /// la parte pagada con puntos; `cashAmountCop` conserva la parte pagada con dinero.
   amountCop              Decimal                      @map("amount_cop") @db.Decimal(18, 2)
+  /// Solo en `MIXED`: total de la venta en COP, el importe que debe coincidir con la factura de Siigo.
+  saleTotalCop           Decimal?                     @map("sale_total_cop") @db.Decimal(18, 2)
+  /// Solo en `MIXED`: parte del total que el cliente paga con dinero.
+  cashAmountCop          Decimal?                     @map("cash_amount_cop") @db.Decimal(18, 2)
   approbationNumber      String?                      @map("approbation_number") @db.VarChar(128)
   /// El identificador exacto que viajó al proveedor: permite conciliar un resultado incierto.
   transactionIdentifier  Json                         @map("transaction_identifier")

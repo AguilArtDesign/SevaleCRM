@@ -78,14 +78,15 @@ export class PointsInvoicesRepository {
   }
 
   /**
-   * Primeras `take` filas que cumplen el filtro, para el listado unido del panel. Se ordena igual que
-   * en el listado de siempre: la fecha de la factura manda.
+   * Primeras `take` filas que cumplen el filtro, para el listado unido del panel. Se ordena por
+   * cuándo se registró la fila, igual que las redenciones: el panel mezcla las dos tablas y la
+   * entrada más reciente —sin importar de qué tipo— debe quedar arriba.
    */
   listSlice(where: Prisma.PointsInvoiceWhereInput, take: number) {
     return this.prisma.pointsInvoice.findMany({
       where,
       include: invoiceInclude,
-      orderBy: [{ invoiceDate: 'desc' }, { id: 'desc' }],
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       take,
     });
   }

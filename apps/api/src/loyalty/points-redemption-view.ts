@@ -15,13 +15,20 @@ export function serializeRedemption(
 ) {
   return {
     id: redemption.id,
+    /** `MIXED` lo pinta la tabla como «Pago Mixto»; `REDEMPTION` conserva la fila de siempre. */
+    type: redemption.type,
     documentNumber: redemption.documentNumber,
     documentType: redemption.documentType,
     customerName: redemption.customerName,
     pointsRequested: redemption.pointsRequested,
     pointsRedeemed: redemption.pointsRedeemed,
+    /** Puntos acreditados por la parte pagada en dinero. Solo lo trae un pago mixto. */
+    pointsEarned: redemption.pointsEarned,
     pointsBalance: redemption.pointsBalance,
     amountCop: redemption.amountCop.toFixed(2),
+    /** Total de la venta y parte pagada con dinero. Solo lo trae un pago mixto. */
+    saleTotalCop: redemption.saleTotalCop?.toFixed(2) ?? null,
+    cashAmountCop: redemption.cashAmountCop?.toFixed(2) ?? null,
     approbationNumber: redemption.approbationNumber,
     validationMethod: redemption.validationMethod,
     status: redemption.status,
