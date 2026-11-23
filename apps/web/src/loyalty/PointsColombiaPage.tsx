@@ -222,7 +222,7 @@ export function PointsColombiaPage() {
               propio modal para no meter los campos nuevos en el de redención. */}
           {canRedeem && (
             <Button
-              variant="outline"
+              variant="primary"
               className="points-mixed-button"
               onPress={() => setMixedOpen(true)}
             >
@@ -497,7 +497,7 @@ export function PointsColombiaPage() {
                                 las flechas comparten columnas y quedan alineados. */}
                             <span aria-hidden="true" />
                             <span className="points-mixed-number points-mixed-accrual">
-                              +{row.pointsEarned ?? '—'}
+                              {row.pointsEarned ?? '—'}
                             </span>
                             <ArrowUp
                               className="points-mixed-arrow"

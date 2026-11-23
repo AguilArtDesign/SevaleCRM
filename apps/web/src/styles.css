@@ -7439,22 +7439,20 @@ select {
   background: color-mix(in srgb, #5e00cc 85%, black);
 }
 
-/* La acción del pago mixto se percibe morada: fondo de la marca al 25 % y borde al 40 %. Al pasar
-   el cursor el tinte sube un poco para que el botón responda sin volverse sólido. */
+/* La acción del pago mixto usa el mismo morado sólido del botón de factura UAT. */
 .points-mixed-button {
-  background: color-mix(in srgb, var(--puntos-colombia) 25%, transparent);
-  border-color: color-mix(in srgb, var(--puntos-colombia) 40%, transparent);
+  color: oklch(99.11% 0.0015 253.83);
+  background: var(--puntos-colombia);
 }
 
 .points-mixed-button:hover,
 .points-mixed-button[data-hovered='true'] {
-  background: color-mix(in srgb, var(--puntos-colombia) 32%, transparent);
-  border-color: color-mix(in srgb, var(--puntos-colombia) 50%, transparent);
+  background: color-mix(in srgb, var(--puntos-colombia) 85%, white);
 }
 
 .points-mixed-button:active,
 .points-mixed-button[data-pressed='true'] {
-  background: color-mix(in srgb, var(--puntos-colombia) 40%, transparent);
+  background: color-mix(in srgb, var(--puntos-colombia) 85%, black);
 }
 
 /* Misma altura y pie que las demás tablas del CRM: el listado se lee igual que Clientes o Pedidos. */
