@@ -162,9 +162,9 @@ try {
     'Payload con campos arbitrarios',
   );
   expectStatus(
-    await post({ ...validPayload, siigo_stock: -1 }, `Bearer ${apiKey}`),
+    await post({ ...validPayload, siigo_stock: 7.5 }, `Bearer ${apiKey}`),
     400,
-    'Stock negativo',
+    'Stock decimal',
   );
   expectStatus(
     await post({ ...validPayload, siigo_price_cop: '95000' }, `Bearer ${apiKey}`),
@@ -551,6 +551,26 @@ try {
   const afterInvalid = await prisma.product.findUniqueOrThrow({ where: { id: product.id } });
   if (!Array.isArray(afterInvalid.siigoWarehouses) || afterInvalid.siigoWarehouses.length !== 0) {
     throw new Error('Un payload inválido de bodegas modificó el snapshot.');
+  }
+
+  // Siigo usa -1 en `available_quantity` cuando no hay asignación: el webhook lo normaliza a 0 en
+  // vez de rechazar la actualización completa del producto.
+  const negativeStockResponse = await post(
+    { ...warehouseBase, siigo_stock: -1 },
+    `Bearer ${apiKey}`,
+  );
+  expectStatus(negativeStockResponse, 200, 'Stock negativo normalizado');
+  const negativeStock = (await negativeStockResponse.json()) as {
+    product: { siigoStock: number };
+  };
+  if (negativeStock.product.siigoStock !== 0) {
+    throw new Error('El stock negativo no se normalizó a 0.');
+  }
+  const storedNegativeStock = await prisma.product.findUniqueOrThrow({
+    where: { id: product.id },
+  });
+  if (storedNegativeStock.siigoStock !== 0) {
+    throw new Error('La base de datos guardó un stock negativo.');
   }
 
   process.stdout.write(

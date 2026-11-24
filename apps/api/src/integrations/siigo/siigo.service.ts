@@ -200,7 +200,10 @@ function normalizeProduct(value: unknown, requestedSku: string): SiigoProduct | 
     priceUsd: priceOf(prices, 'USD'),
     priceMxn: priceOf(prices, 'MXN'),
     priceEur: priceOf(prices, 'EUR'),
-    stock,
+    // Siigo usa -1 como «Sin asignar» y a veces lo devuelve también en `available_quantity`. Una
+    // existencia negativa no es válida: se normaliza a 0 en vez de rechazar el producto entero,
+    // igual que con las cantidades de bodega.
+    stock: Math.max(stock, 0),
     warehouses: parseWarehouseSnapshot(value.warehouses),
   };
 }

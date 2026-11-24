@@ -156,12 +156,14 @@ export class ProductsService {
         },
       });
     }
-    if (!Number.isSafeInteger(siigo.stock) || siigo.stock < 0) {
+    // Las existencias negativas ya vienen normalizadas a 0 desde `normalizeProduct`; aquí solo se
+    // rechaza un stock que no sea un entero, como un decimal.
+    if (!Number.isSafeInteger(siigo.stock)) {
       throw new UnprocessableEntityException({
         success: false,
         error: {
           code: 'SIIGO_STOCK_INVALID',
-          message: 'Siigo devolvió un stock que no es un entero no negativo.',
+          message: 'Siigo devolvió un stock que no es un entero.',
         },
       });
     }

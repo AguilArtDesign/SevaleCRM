@@ -384,28 +384,53 @@ try {
     throw new Error('El rechazo de precios incompletos modificó el producto.');
   }
 
-  for (const [sku, context] of [
-    ['REFRESH-DECIMAL-STOCK', 'Stock decimal'],
-    ['REFRESH-NEGATIVE-STOCK', 'Stock negativo'],
-  ] as const) {
-    const product = await createProduct(sku, { priceEur: 5, stock: 7 });
-    const before = await prisma.product.findUniqueOrThrow({ where: { id: product.id } });
-    await expectErrorCode(
-      await api(`/api/products/${product.id}/refresh-from-siigo`, adminCookie, {
-        method: 'POST',
-      }),
-      422,
-      'SIIGO_STOCK_INVALID',
-      context,
-    );
-    const after = await prisma.product.findUniqueOrThrow({ where: { id: product.id } });
-    if (
-      after.siigoStock !== before.siigoStock ||
-      after.lastCheckAt?.getTime() !== before.lastCheckAt?.getTime() ||
-      after.updatedAt.getTime() !== before.updatedAt.getTime()
-    ) {
-      throw new Error(`${context}: el rechazo modificó el producto.`);
-    }
+  const decimalStockProduct = await createProduct('REFRESH-DECIMAL-STOCK', {
+    priceEur: 5,
+    stock: 7,
+  });
+  const beforeDecimal = await prisma.product.findUniqueOrThrow({
+    where: { id: decimalStockProduct.id },
+  });
+  await expectErrorCode(
+    await api(`/api/products/${decimalStockProduct.id}/refresh-from-siigo`, adminCookie, {
+      method: 'POST',
+    }),
+    422,
+    'SIIGO_STOCK_INVALID',
+    'Stock decimal',
+  );
+  const afterDecimal = await prisma.product.findUniqueOrThrow({
+    where: { id: decimalStockProduct.id },
+  });
+  if (
+    afterDecimal.siigoStock !== beforeDecimal.siigoStock ||
+    afterDecimal.lastCheckAt?.getTime() !== beforeDecimal.lastCheckAt?.getTime() ||
+    afterDecimal.updatedAt.getTime() !== beforeDecimal.updatedAt.getTime()
+  ) {
+    throw new Error('Stock decimal: el rechazo modificó el producto.');
+  }
+
+  // Siigo devuelve -1 en `available_quantity` cuando no hay asignación. Se normaliza a 0 y la
+  // actualización se completa en vez de rechazarse, igual que con las cantidades de bodega.
+  const negativeStockProduct = await createProduct('REFRESH-NEGATIVE-STOCK', {
+    priceEur: 5,
+    stock: 0,
+  });
+  const negativeStockResponse = await api(
+    `/api/products/${negativeStockProduct.id}/refresh-from-siigo`,
+    adminCookie,
+    { method: 'POST' },
+  );
+  expectStatus(negativeStockResponse, 200, 'Stock negativo normalizado');
+  const negativeStock = (await negativeStockResponse.json()) as ProductResponse;
+  if (negativeStock.siigoStock !== 0 || negativeStock.syncStatus !== 'SYNCED') {
+    throw new Error('El stock negativo no se normalizó a 0.');
+  }
+  const storedNegativeStock = await prisma.product.findUniqueOrThrow({
+    where: { id: negativeStockProduct.id },
+  });
+  if (storedNegativeStock.siigoStock !== 0) {
+    throw new Error('La base de datos guardó un stock negativo.');
   }
 
   const notFoundProduct = await createProduct('REFRESH-NOTFOUND', { priceEur: 5, stock: 7 });

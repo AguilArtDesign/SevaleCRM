@@ -1051,7 +1051,12 @@ export const siigoProductUpdateSchema = z
     // COP y USD mientras se despliega la versión nueva.
     siigo_price_mxn: z.number().finite().nonnegative().optional(),
     siigo_price_eur: z.number().finite().nonnegative().optional(),
-    siigo_stock: z.number().int().nonnegative(),
+    // Siigo puede devolver existencias negativas (por ejemplo, -1 cuando no hay asignación). El
+    // CRM las normaliza a 0 en vez de rechazar la actualización completa del producto.
+    siigo_stock: z
+      .number()
+      .int()
+      .transform((stock) => Math.max(stock, 0)),
     // Opcional para que un n8n sin desplegar siga funcionando; si se omite, el snapshot se conserva.
     siigo_warehouses: z.array(siigoWarehouseSchema).max(100).optional(),
     woo_sync: wooSyncResultSchema.optional(),
