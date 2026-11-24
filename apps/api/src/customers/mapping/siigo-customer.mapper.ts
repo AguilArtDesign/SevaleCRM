@@ -11,8 +11,10 @@ import type { CustomerMappingSource } from './customer-mapping.types.js';
 import type { SiigoLocationSelection } from './customer-mapping.types.js';
 import { CustomerLocationsService } from './customer-locations.service.js';
 
+export type SiigoCustomerType = 'Customer' | 'Supplier' | 'Other';
+
 export type SiigoCustomerPayload = {
-  type: 'Customer';
+  type: SiigoCustomerType;
   person_type: 'Person' | 'Company';
   id_type: string;
   identification: string;
@@ -51,6 +53,11 @@ export type SiigoCustomerOptions = {
   siigoLocation?: SiigoLocationSelection;
   /** Vendedor de Siigo del usuario que sincroniza. Se omite si no lo tiene configurado. */
   sellerId?: number | null;
+  /**
+   * Rol del tercero en Siigo. Al actualizar se conserva el que ya tiene (un proveedor no debe
+   * convertirse en cliente por el solo hecho de vincularlo). Al crear siempre es `Customer`.
+   */
+  type?: SiigoCustomerType;
 };
 
 function cleanAddress(line1: string | null | undefined, line2: string | null | undefined): string {
@@ -134,7 +141,7 @@ export class SiigoCustomerMapper {
     const sellerId = options.sellerId;
 
     return {
-      type: 'Customer',
+      type: options.type ?? 'Customer',
       person_type: customer.personType === 'PERSON' ? 'Person' : 'Company',
       id_type: customer.documentType,
       identification: customer.documentNumber,

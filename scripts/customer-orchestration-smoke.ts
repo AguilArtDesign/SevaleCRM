@@ -110,11 +110,17 @@ const siigoId = '377d11bb-4fce-4e80-bd6d-c593da3fccdb';
 let siigoCreates = 0;
 let lastSiigoLocation: { stateCode: string; cityCode: string } | undefined;
 let lastSiigoSellerId: number | null = null;
+let lastSiigoType: 'Customer' | 'Supplier' | 'Other' | undefined;
 const currentSiigoLocation = () => lastSiigoLocation;
 const currentSiigoSellerId = () => lastSiigoSellerId;
 const siigo = {
   findCustomer: () =>
-    Promise.resolve({ id: siigoId, identification: '13832081', personType: 'Person' as const }),
+    Promise.resolve({
+      id: siigoId,
+      identification: '13832081',
+      personType: 'Person' as const,
+      type: 'Supplier' as const,
+    }),
   createCustomer: () => {
     siigoCreates += 1;
     return Promise.resolve({
@@ -126,10 +132,15 @@ const siigo = {
   updateCustomer: (
     externalId: string,
     _customer: CustomerWithIntegrations,
-    options?: { siigoLocation?: { stateCode: string; cityCode: string }; sellerId?: number | null },
+    options?: {
+      siigoLocation?: { stateCode: string; cityCode: string };
+      sellerId?: number | null;
+      type?: 'Customer' | 'Supplier' | 'Other';
+    },
   ) => {
     lastSiigoLocation = options?.siigoLocation;
     lastSiigoSellerId = options?.sellerId ?? null;
+    lastSiigoType = options?.type;
     if (_customer.country !== 'CO' && !lastSiigoLocation) {
       throw new BadRequestException({
         success: false,
@@ -263,6 +274,14 @@ if (
   paliCreates !== 1
 ) {
   throw new Error('El preflight, los external_id o el error sanitizado no se registraron.');
+}
+if (lastSiigoType !== 'Supplier') {
+  throw new Error('La actualización no conservó el rol del tercero encontrado en Siigo.');
+}
+const rememberedSiigoType = (state('SIIGO').externalData as { siigoCustomerType?: string })
+  .siigoCustomerType;
+if (rememberedSiigoType !== 'Supplier') {
+  throw new Error('No se recordó el rol del tercero para las próximas sincronizaciones.');
 }
 
 const internationalCustomer = {

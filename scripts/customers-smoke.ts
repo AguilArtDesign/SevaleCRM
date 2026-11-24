@@ -93,6 +93,7 @@ siigoCustomers.lookupCustomer = (identification) =>
                   : siigoExternalId,
             identification,
             personType: 'Person',
+            type: 'Customer',
             checkDigit: null,
           },
           prefill: {
@@ -127,6 +128,7 @@ siigoCustomers.createCustomer = (customer) => {
     id: siigoExternalId,
     identification: customer.documentNumber,
     personType: customer.personType === 'PERSON' ? 'Person' : 'Company',
+    type: 'Customer',
     checkDigit: customer.personType === 'COMPANY' ? '7' : null,
   });
 };
@@ -136,6 +138,7 @@ siigoCustomers.updateCustomer = (_externalId, customer) => {
     id: siigoExternalId,
     identification: customer.documentNumber,
     personType: customer.personType === 'PERSON' ? 'Person' : 'Company',
+    type: 'Customer',
     checkDigit: customer.personType === 'COMPANY' ? '7' : null,
   });
 };

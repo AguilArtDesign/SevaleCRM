@@ -23,6 +23,7 @@ import {
   SiigoCustomerMapper,
   type SiigoCustomerOptions,
   type SiigoCustomerPayload,
+  type SiigoCustomerType,
 } from '../mapping/siigo-customer.mapper.js';
 
 type UnknownRecord = Record<string, unknown>;
@@ -31,6 +32,8 @@ export type SiigoCustomerReference = {
   id: string;
   identification: string;
   personType: 'Person' | 'Company';
+  /** Rol del tercero en Siigo: se conserva al actualizar para no cambiar proveedor por cliente. */
+  type: SiigoCustomerType;
   checkDigit: string | null;
 };
 
@@ -73,6 +76,18 @@ function normalizeCustomer(value: unknown): SiigoCustomerReference | null {
   const identification =
     typeof value.identification === 'string' ? value.identification.trim() : '';
   const personType = value.person_type;
+  // El mismo recurso /customers aloja clientes, proveedores y «otros». Si la respuesta omite el
+  // campo, la API de Siigo asume `Customer`.
+  const rawType = value.type;
+  if (
+    rawType !== undefined &&
+    rawType !== 'Customer' &&
+    rawType !== 'Supplier' &&
+    rawType !== 'Other'
+  ) {
+    return null;
+  }
+  const type: SiigoCustomerType = rawType ?? 'Customer';
   const rawCheckDigit = typeof value.check_digit === 'string' ? value.check_digit.trim() : '';
   if (
     !UUID_PATTERN.test(id) ||
@@ -85,6 +100,7 @@ function normalizeCustomer(value: unknown): SiigoCustomerReference | null {
     id,
     identification,
     personType,
+    type,
     checkDigit: /^\d$/.test(rawCheckDigit) ? rawCheckDigit : null,
   };
 }
@@ -120,8 +136,9 @@ function selectCustomerReference(
 ): SiigoCustomerReference | null {
   const matches = candidates
     .map((candidate) => ({
-      reference:
-        !isRecord(candidate) || candidate.type === 'Customer' ? normalizeCustomer(candidate) : null,
+      // Se aceptan los tres tipos: el mismo documento puede existir como proveedor y, en ese caso,
+      // debe vincularse en vez de intentar crearlo de nuevo.
+      reference: normalizeCustomer(candidate),
       branchOffice: isRecord(candidate) ? branchOffice(candidate.branch_office) : null,
     }))
     .filter(
@@ -240,6 +257,11 @@ export class SiigoCustomerService {
     private readonly mapper: SiigoCustomerMapper,
   ) {}
 
+  /**
+   * Busca el tercero por documento sin filtrar por tipo. Siigo comparte el recurso `/customers`
+   * entre clientes, proveedores y «otros», y crear uno nuevo con un documento que ya existe en
+   * cualquiera de esos roles devuelve «identification already exists».
+   */
   async findCustomer(identification: string): Promise<SiigoCustomerReference | null> {
     const normalizedIdentification = identification.trim();
     return this.withAuthenticationRetry((token) =>
@@ -281,7 +303,6 @@ export class SiigoCustomerService {
   ): Promise<SiigoCustomerReference | null> {
     const url = integrationUrl(this.baseUrl(), 'customers');
     url.searchParams.set('identification', identification);
-    url.searchParams.set('type', 'Customer');
     url.searchParams.set('page', '1');
     url.searchParams.set('page_size', '25');
     const response = await integrationGet(url, this.headers(token), 'Siigo', {

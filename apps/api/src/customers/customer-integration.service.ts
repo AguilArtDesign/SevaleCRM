@@ -13,7 +13,7 @@ import { SiigoCustomerService } from './integrations/siigo-customer.service.js';
 import { WooCustomerService } from './integrations/woo-customer.service.js';
 import type { CustomerMappingSource } from './mapping/customer-mapping.types.js';
 import type { SiigoLocationSelection } from './mapping/customer-mapping.types.js';
-import type { SiigoCustomerOptions } from './mapping/siigo-customer.mapper.js';
+import type { SiigoCustomerOptions, SiigoCustomerType } from './mapping/siigo-customer.mapper.js';
 
 export const customerIntegrationProviders = ['SIIGO', 'SERATUS', 'PALI'] as const;
 
@@ -81,6 +81,17 @@ function isUniqueConstraintError(error: unknown): boolean {
     'code' in error &&
     (error as { code?: unknown }).code === 'P2002'
   );
+}
+
+/**
+ * Rol con el que el tercero quedó vinculado en Siigo. Se recuerda entre sincronizaciones para
+ * actualizarlo sin convertirlo: un documento que existe como proveedor no debe pasar a cliente por
+ * el solo hecho de actualizar sus datos.
+ */
+function readSiigoCustomerType(value: unknown): SiigoCustomerType | undefined {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined;
+  const type = (value as { siigoCustomerType?: unknown }).siigoCustomerType;
+  return type === 'Customer' || type === 'Supplier' || type === 'Other' ? type : undefined;
 }
 
 function safeError(error: unknown, provider: CustomerIntegrationProvider): SafeError {
@@ -198,6 +209,8 @@ export class CustomerIntegrationService {
       const sent = await this.send(provider, source, externalId, customer.id, {
         siigoLocation: effectiveSiigoLocation,
         sellerId: options.sellerId,
+        siigoCustomerType:
+          provider === 'SIIGO' ? readSiigoCustomerType(integration?.externalData) : undefined,
       });
       externalId = sent.externalId;
       const syncedAt = new Date();
@@ -272,7 +285,7 @@ export class CustomerIntegrationService {
     customer: CustomerMappingSource,
     externalId: string | null,
     customerId: number,
-    options: CustomerSyncOptions = {},
+    options: CustomerSyncOptions & { siigoCustomerType?: SiigoCustomerType } = {},
   ): Promise<CustomerIntegrationSendResult> {
     if (provider === 'SIIGO') {
       const siigo: SiigoCustomerOptions = {
@@ -280,7 +293,10 @@ export class CustomerIntegrationService {
         sellerId: options.sellerId,
       };
       if (externalId) {
-        const updated = await this.siigo.updateCustomer(externalId, customer, siigo);
+        const updated = await this.siigo.updateCustomer(externalId, customer, {
+          ...siigo,
+          type: options.siigoCustomerType,
+        });
         return { externalId: updated.id, checkDigit: updated.checkDigit };
       }
       const existing = await this.siigo.findCustomer(customer.documentNumber);
@@ -288,7 +304,15 @@ export class CustomerIntegrationService {
         const expectedType = customer.personType === 'PERSON' ? 'Person' : 'Company';
         if (existing.personType !== expectedType) throw this.conflict('Siigo');
         await this.integrations.rememberExternalId(customerId, provider, existing.id);
-        const updated = await this.siigo.updateCustomer(existing.id, customer, siigo);
+        // Se conserva el rol que ya tenía en Siigo. Vincular un proveedor no debe convertirlo en
+        // cliente; el tipo se recuerda para que las próximas sincronizaciones tampoco lo cambien.
+        await this.integrations.mergeExternalData(customerId, 'SIIGO', {
+          siigoCustomerType: existing.type,
+        });
+        const updated = await this.siigo.updateCustomer(existing.id, customer, {
+          ...siigo,
+          type: existing.type,
+        });
         return { externalId: updated.id, checkDigit: updated.checkDigit };
       }
       const created = await this.siigo.createCustomer(customer, siigo);

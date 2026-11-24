@@ -37,7 +37,9 @@ const responses: Response[] = [
     results: [
       {
         id: personId,
-        type: 'Customer',
+        // El documento existe como proveedor: findCustomer debe encontrarlo igual para vincularlo
+        // en vez de intentar crearlo y recibir «identification already exists».
+        type: 'Supplier',
         person_type: 'Person',
         identification: '904940',
       },
@@ -155,7 +157,12 @@ const mapper = new SiigoCustomerMapper(new CustomerLocationsService());
 const service = new SiigoCustomerService(tokens, mapper);
 
 const person = await service.findCustomer('904940');
-if (person?.id !== personId || person.personType !== 'Person' || refreshes !== 1) {
+if (
+  person?.id !== personId ||
+  person.personType !== 'Person' ||
+  person.type !== 'Supplier' ||
+  refreshes !== 1
+) {
   throw new Error('findCustomer no normalizó el cliente o no renovó el token rechazado.');
 }
 
@@ -217,6 +224,13 @@ if ('related_users' in mapper.map(company)) {
 if ('related_users' in mapper.map(company, { sellerId: 0 })) {
   throw new Error('El payload envió related_users con un identificador de vendedor inválido.');
 }
+// Al actualizar se conserva el rol encontrado (por ejemplo, proveedor); al crear es Customer.
+if (mapper.map(company).type !== 'Customer') {
+  throw new Error('El payload no envió type Customer por defecto.');
+}
+if (mapper.map(company, { type: 'Supplier' }).type !== 'Supplier') {
+  throw new Error('El payload no conservó el tipo del tercero encontrado en Siigo.');
+}
 if ((await service.findCustomer('000000000')) !== null) {
   throw new Error('findCustomer debe devolver null cuando Siigo no encuentra coincidencias.');
 }
@@ -251,6 +265,7 @@ const retriedHeaders = new Headers(retriedFind?.init?.headers);
 if (
   firstFind?.init?.method !== 'GET' ||
   !firstFind.url.includes('/v1/customers?identification=904940') ||
+  new URL(firstFind.url).searchParams.has('type') ||
   retriedHeaders.get('authorization') !== 'Bearer renewed-token' ||
   retriedHeaders.get('partner-id') !== 'partner-smoke'
 ) {
