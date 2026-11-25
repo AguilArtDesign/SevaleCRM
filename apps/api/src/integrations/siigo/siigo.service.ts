@@ -37,6 +37,14 @@ export type SiigoProduct = {
   warehouses: ProductWarehouseStock[] | null;
 };
 
+export type SiigoProductPage = {
+  products: SiigoProduct[];
+  /** Resultados crudos de Siigo, incluidos los que no se pudieron normalizar. */
+  received: number;
+  /** Total del catálogo que informa Siigo; null si no vino o no es un entero positivo. */
+  total: number | null;
+};
+
 export type SiigoQuotationCreateInput = {
   /** Tipo de cotización configurado en Siigo. */
   documentId: number;
@@ -182,15 +190,15 @@ function priceOf(index: Map<string, number>, currency: PriceCurrency): number | 
   return null;
 }
 
-function normalizeProduct(value: unknown, requestedSku: string): SiigoProduct | null {
+function normalizeProduct(value: unknown, requestedSku: string | null = null): SiigoProduct | null {
   if (!isRecord(value)) return null;
   const id = typeof value.id === 'string' ? value.id.trim() : '';
   const sku = typeof value.code === 'string' ? value.code.trim() : '';
   const name = typeof value.name === 'string' ? value.name.trim() : '';
   const stock = finiteNumber(value.available_quantity);
-  if (!id || !sku || stock === null || sku.toUpperCase() !== requestedSku.toUpperCase()) {
-    return null;
-  }
+  if (!id || !sku || stock === null) return null;
+  // La búsqueda por SKU exige coincidencia exacta; el barrido del catálogo acepta cualquiera.
+  if (requestedSku !== null && sku.toUpperCase() !== requestedSku.toUpperCase()) return null;
   const prices = priceIndex(value);
   return {
     id,
@@ -303,6 +311,14 @@ export class SiigoService {
   }
 
   /**
+   * Una página del catálogo completo. El refresco masivo es de solo lectura: Siigo no ofrece un
+   * batch de actualización, pero sí listados paginados de hasta cien productos.
+   */
+  async listProductsPage(page: number, pageSize: number): Promise<SiigoProductPage> {
+    return this.withAuthenticationRetry((token) => this.requestProductsPage(page, pageSize, token));
+  }
+
+  /**
    * Busca una factura por su nombre completo (`FV-2-789`). Siigo filtra por `name` y devuelve
    * coincidencias parciales, así que se exige igualdad exacta aqui: aceptar `FV-2-78` cuando se
    * buscó `FV-2-789` sería acumular puntos sobre la factura equivocada.
@@ -407,6 +423,36 @@ export class SiigoService {
     if (exact.length > 1) throw invalidIntegrationResponse('Siigo');
     const invoice = exact[0];
     return invoice ? normalizeInvoice(invoice) : null;
+  }
+
+  private async requestProductsPage(
+    page: number,
+    pageSize: number,
+    token: string,
+  ): Promise<SiigoProductPage> {
+    const baseUrl = requireIntegrationValue('SIIGO_API_URL', 'Siigo');
+    const partnerId = requireIntegrationValue('SIIGO_PARTNER_ID', 'Siigo');
+    const url = integrationUrl(baseUrl, 'products');
+    url.searchParams.set('page', String(page));
+    url.searchParams.set('page_size', String(pageSize));
+
+    const payload = await integrationGet(
+      url,
+      { Authorization: `Bearer ${token}`, 'Partner-Id': partnerId },
+      'Siigo',
+      // El barrido no debe volcar cien productos por página al panel de Logs.
+      { omitResponseBody: true },
+    );
+    if (!isRecord(payload) || !Array.isArray(payload.results)) {
+      throw invalidIntegrationResponse('Siigo');
+    }
+    const products = payload.results
+      .map((product) => normalizeProduct(product))
+      .filter((product): product is SiigoProduct => product !== null);
+    const total = isRecord(payload.pagination)
+      ? positiveInteger(payload.pagination.total_results)
+      : null;
+    return { products, received: payload.results.length, total };
   }
 
   private async requestProductBySku(sku: string, token: string): Promise<SiigoProduct | null> {

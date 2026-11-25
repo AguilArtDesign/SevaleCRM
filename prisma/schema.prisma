@@ -40,6 +40,16 @@ enum ProductSyncJobItemStatus {
   ERROR
 }
 
+/// Estados del barrido manual del catálogo de Siigo. Es una lectura, no una escritura: no toca
+/// Siigo ni WooCommerce, solo el espejo local.
+enum ProductRefreshJobStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  COMPLETED_WITH_ERRORS
+  FAILED
+}
+
 enum CustomerPersonType {
   PERSON
   COMPANY
@@ -135,52 +145,53 @@ enum CouponSyncStatus {
 }
 
 model User {
-  id                          String             @id @default(uuid()) @db.VarChar(36)
-  name                        String             @db.VarChar(191)
-  email                       String             @unique @db.VarChar(191)
+  id                          String              @id @default(uuid()) @db.VarChar(36)
+  name                        String              @db.VarChar(191)
+  email                       String              @unique @db.VarChar(191)
   /// Vendedor de Siigo. **No es único**: el negocio cerró cuentas de Siigo que no se usaban y ahora
   /// dos o tres comerciales comparten una, así que el mismo seller llega para varios usuarios. La
   /// identidad dentro del CRM la da el correo, que sí es único; la propiedad de una operación se
   /// resuelve por el usuario que la registró, nunca por el seller.
-  sellerId                    Int?               @map("seller_id")
+  sellerId                    Int?                @map("seller_id")
   /// Prefijo con el que se arma el nombre de la factura que se busca en Siigo (`FV-2-`). No es
   /// único: en oficina varios comerciales comparten prefijo y se distinguen por el seller.
-  siigoInvoicePrefix          String?            @map("siigo_invoice_prefix") @db.VarChar(20)
+  siigoInvoicePrefix          String?             @map("siigo_invoice_prefix") @db.VarChar(20)
   /// Punto de venta del usuario en Puntos Colombia. No es fijo ni único: cada usuario de la
   /// empresa tiene el suyo y algunos lo comparten. Sin él, el usuario no puede operar el panel:
   /// el proveedor rechazaría la petición con `POS_LOCATION_NOT_OF_PARTNER`.
-  pcoLocationCode             String?            @map("pco_location_code") @db.VarChar(32)
-  emailVerified               Boolean            @default(false) @map("email_verified")
-  image                       String?            @db.Text
-  role                        Role               @default(COMMERCIAL)
-  active                      Boolean            @default(true)
-  lastLoginAt                 DateTime?          @map("last_login_at")
-  createdAt                   DateTime           @default(now()) @map("created_at")
-  updatedAt                   DateTime           @updatedAt @map("updated_at")
+  pcoLocationCode             String?             @map("pco_location_code") @db.VarChar(32)
+  emailVerified               Boolean             @default(false) @map("email_verified")
+  image                       String?             @db.Text
+  role                        Role                @default(COMMERCIAL)
+  active                      Boolean             @default(true)
+  lastLoginAt                 DateTime?           @map("last_login_at")
+  createdAt                   DateTime            @default(now()) @map("created_at")
+  updatedAt                   DateTime            @updatedAt @map("updated_at")
   sessions                    Session[]
   accounts                    Account[]
   notificationReads           NotificationRead[]
   productSyncJobs             ProductSyncJob[]
-  orderOperations             OrderOperation[]   @relation("OrderOperationCreatedBy")
-  orderOperationsUpdated      OrderOperation[]   @relation("OrderOperationUpdatedBy")
-  orderOperationsReopened     OrderOperation[]   @relation("OrderOperationReopenedBy")
-  customersCreated            Customer[]         @relation("CustomerCreatedBy")
-  customerEvents              CustomerEvent[]    @relation("CustomerEventActor")
-  orderEvents                 OrderEvent[]       @relation("OrderEventActor")
-  shipmentEvents              ShipmentEvent[]    @relation("ShipmentEventCreatedBy")
-  agreementsCreated           Agreement[]        @relation("AgreementCreatedBy")
-  agreementComments           AgreementComment[] @relation("AgreementCommentAuthor")
-  agreementTasksCreated       AgreementTask[]    @relation("AgreementTaskCreatedBy")
-  agreementTasksAssigned      AgreementTask[]    @relation("AgreementTaskAssignee")
-  prospectsAssigned           Prospect[]         @relation("ProspectAssignee")
-  prospectsCreated            Prospect[]         @relation("ProspectCreator")
+  productRefreshJobs          ProductRefreshJob[]
+  orderOperations             OrderOperation[]    @relation("OrderOperationCreatedBy")
+  orderOperationsUpdated      OrderOperation[]    @relation("OrderOperationUpdatedBy")
+  orderOperationsReopened     OrderOperation[]    @relation("OrderOperationReopenedBy")
+  customersCreated            Customer[]          @relation("CustomerCreatedBy")
+  customerEvents              CustomerEvent[]     @relation("CustomerEventActor")
+  orderEvents                 OrderEvent[]        @relation("OrderEventActor")
+  shipmentEvents              ShipmentEvent[]     @relation("ShipmentEventCreatedBy")
+  agreementsCreated           Agreement[]         @relation("AgreementCreatedBy")
+  agreementComments           AgreementComment[]  @relation("AgreementCommentAuthor")
+  agreementTasksCreated       AgreementTask[]     @relation("AgreementTaskCreatedBy")
+  agreementTasksAssigned      AgreementTask[]     @relation("AgreementTaskAssignee")
+  prospectsAssigned           Prospect[]          @relation("ProspectAssignee")
+  prospectsCreated            Prospect[]          @relation("ProspectCreator")
   integrationLogs             IntegrationLog[]
-  pointsInvoicesCreated       PointsInvoice[]    @relation("PointsInvoiceCreatedBy")
-  pointsRedemptions           PointsRedemption[] @relation("PointsRedemptionCreatedBy")
-  pointsRedemptionsRevoked    PointsRedemption[] @relation("PointsRedemptionRevokedBy")
-  pointsRedemptionsReconciled PointsRedemption[] @relation("PointsRedemptionReconciledBy")
-  pointsAccruals              PointsAccrual[]    @relation("PointsAccrualActor")
-  pointsAccrualsRevoked       PointsAccrual[]    @relation("PointsAccrualRevokedBy")
+  pointsInvoicesCreated       PointsInvoice[]     @relation("PointsInvoiceCreatedBy")
+  pointsRedemptions           PointsRedemption[]  @relation("PointsRedemptionCreatedBy")
+  pointsRedemptionsRevoked    PointsRedemption[]  @relation("PointsRedemptionRevokedBy")
+  pointsRedemptionsReconciled PointsRedemption[]  @relation("PointsRedemptionReconciledBy")
+  pointsAccruals              PointsAccrual[]     @relation("PointsAccrualActor")
+  pointsAccrualsRevoked       PointsAccrual[]     @relation("PointsAccrualRevokedBy")
 
   // El seller se comparte entre varios usuarios, así que las consultas lo buscan por lista y necesita
   // índice propio; ya no lo aporta una restricción de unicidad.
@@ -232,6 +243,40 @@ model ProductSyncJobItem {
   @@unique([jobId, productId])
   @@index([jobId, status])
   @@map("product_sync_job_items")
+}
+
+/// Un barrido completo del catálogo de Siigo pedido desde el panel. Siigo no tiene batch de
+/// actualización, pero sí páginas de cien productos: el trabajo las recorre en orden, actualiza
+/// solo los productos ya vinculados en el CRM y descarta el resto sin escribir en la base.
+model ProductRefreshJob {
+  id             String                  @id @default(uuid()) @db.VarChar(36)
+  requestedById  String                  @map("requested_by_id") @db.VarChar(36)
+  status         ProductRefreshJobStatus @default(PENDING)
+  /// Páginas ya solicitadas a Siigo; sirve para mostrar el avance mientras corre.
+  pagesProcessed Int                     @default(0) @map("pages_processed")
+  /// Productos recibidos del catálogo, incluidos los que no se pudieron normalizar.
+  scanned        Int                     @default(0)
+  /// Productos de Siigo que existen en el CRM (por `siigoId`).
+  matched        Int                     @default(0)
+  /// Productos que se actualizaron en la base local.
+  updated        Int                     @default(0)
+  /// Actualizados que quedaron sincronizados con el espejo de WooCommerce.
+  synced         Int                     @default(0)
+  /// Actualizados que quedaron desactualizados contra el espejo de WooCommerce.
+  outOfSync      Int                     @default(0) @map("out_of_sync")
+  /// Productos de Siigo sin vínculo en el CRM: no se crean ni se escriben.
+  discarded      Int                     @default(0)
+  /// Productos vinculados que no se pudieron actualizar (datos incompletos o error de base).
+  failed         Int                     @default(0)
+  errorMessage   String?                 @map("error_message") @db.Text
+  createdAt      DateTime                @default(now()) @map("created_at")
+  startedAt      DateTime?               @map("started_at")
+  completedAt    DateTime?               @map("completed_at")
+  requestedBy    User                    @relation(fields: [requestedById], references: [id], onDelete: Restrict)
+
+  @@index([status, createdAt])
+  @@index([requestedById])
+  @@map("product_refresh_jobs")
 }
 
 model Customer {

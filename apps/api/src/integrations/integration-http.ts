@@ -17,6 +17,13 @@ export type IntegrationRequestOptions = {
    * secreto no quede escrito en la base ni visible en el panel de Logs.
    */
   confidential?: boolean;
+  /**
+   * No guarda el cuerpo exitoso en el registro. Un barrido paginado del catálogo de Siigo devuelve
+   * cien productos por página y volcarlos en `integration_logs` llenaría el panel de Logs con datos
+   * que el resumen del trabajo ya cuenta. Los errores sí conservan su cuerpo, que es breve y sirve
+   * para diagnosticar.
+   */
+  omitResponseBody?: boolean;
 };
 
 /**
@@ -299,7 +306,7 @@ async function integrationRequest(
       code: null,
       message: null,
       requestBody: confidential ? null : init.body,
-      responseBody: confidential ? null : payload,
+      responseBody: confidential || options.omitResponseBody === true ? null : payload,
       durationMs: Date.now() - startedAt,
     });
     return payload;

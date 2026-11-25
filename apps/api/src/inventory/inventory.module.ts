@@ -7,6 +7,7 @@ import { ProductsService } from './products.service.js';
 import { RealtimeModule } from '../realtime/realtime.module.js';
 import { NotificationsModule } from '../notifications/notifications.module.js';
 import { BulkProductSyncService } from './bulk-product-sync.service.js';
+import { ProductRefreshService } from './product-refresh.service.js';
 import { ProductImportService } from './product-import.service.js';
 
 @Module({
@@ -17,6 +18,7 @@ import { ProductImportService } from './product-import.service.js';
     ProductsService,
     ProductLinkService,
     BulkProductSyncService,
+    ProductRefreshService,
     ProductImportService,
   ],
 })

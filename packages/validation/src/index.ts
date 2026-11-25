@@ -530,6 +530,8 @@ export const productExportSchema = z.object({
 
 export const productSyncJobIdSchema = z.string().uuid('La sincronización no es válida.');
 
+export const productRefreshJobIdSchema = z.string().uuid('La actualización no es válida.');
+
 export const skuSchema = z
   .string()
   .trim()

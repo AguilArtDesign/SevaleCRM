@@ -21,6 +21,7 @@ import {
   productExportSchema,
   productImportCsvSchema,
   productListQuerySchema,
+  productRefreshJobIdSchema,
   productSyncJobIdSchema,
 } from '@sevale/validation';
 import type { ZodType } from 'zod';
@@ -28,6 +29,7 @@ import type { AuthenticatedRequest } from '../auth/auth.guard.js';
 import { RequirePermissions } from '../permissions/require-permissions.decorator.js';
 import { ProductLinkService } from './product-link.service.js';
 import { BulkProductSyncService } from './bulk-product-sync.service.js';
+import { ProductRefreshService } from './product-refresh.service.js';
 import { ProductsService } from './products.service.js';
 import { ProductImportService } from './product-import.service.js';
 
@@ -50,6 +52,7 @@ export class ProductsController {
     private readonly productsService: ProductsService,
     private readonly productLinkService: ProductLinkService,
     private readonly bulkProductSyncService: BulkProductSyncService,
+    private readonly productRefreshService: ProductRefreshService,
     private readonly productImportService: ProductImportService,
   ) {}
 
@@ -147,6 +150,21 @@ export class ProductsController {
       parseInput(productSyncJobIdSchema, jobId),
       request.auth.user.id,
     );
+  }
+
+  // Un barrido completo del catálogo de Siigo es una lectura: se actualiza el espejo local y no
+  // se envía nada a Siigo ni a WooCommerce.
+  @Post('refresh-jobs')
+  @HttpCode(HttpStatus.ACCEPTED)
+  @RequirePermissions('inventory.update')
+  createRefreshJob(@Req() request: AuthenticatedRequest) {
+    return this.productRefreshService.create(request.auth.user.id);
+  }
+
+  @Get('refresh-jobs/:jobId')
+  @RequirePermissions('inventory.update')
+  refreshJob(@Param('jobId') jobId: string) {
+    return this.productRefreshService.find(parseInput(productRefreshJobIdSchema, jobId));
   }
 
   @Get(':id')

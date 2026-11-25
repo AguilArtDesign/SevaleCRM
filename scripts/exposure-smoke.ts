@@ -29,6 +29,8 @@ const protectedRoutes = [
   { method: 'GET', url: '/api/products/link-preview?sku=TEST' },
   { method: 'POST', url: '/api/products', payload: {} },
   { method: 'POST', url: '/api/products/1/refresh-from-siigo' },
+  { method: 'POST', url: '/api/products/refresh-jobs' },
+  { method: 'GET', url: `/api/products/refresh-jobs/${randomUUID()}` },
   { method: 'POST', url: '/api/products/1/warehouses/refresh' },
   { method: 'GET', url: '/api/products/1' },
   { method: 'GET', url: '/api/notifications' },

@@ -76,6 +76,23 @@ export type ProductSyncJob = {
   failedProductIds?: number[];
 };
 
+export type ProductRefreshJob = {
+  id: string;
+  status: 'PENDING' | 'RUNNING' | 'COMPLETED' | 'COMPLETED_WITH_ERRORS' | 'FAILED';
+  pagesProcessed: number;
+  scanned: number;
+  matched: number;
+  updated: number;
+  synced: number;
+  outOfSync: number;
+  discarded: number;
+  failed: number;
+  errorMessage: string | null;
+  createdAt: string;
+  startedAt: string | null;
+  completedAt: string | null;
+};
+
 export type ExternalProductSource = {
   id: string;
   sku: string;
@@ -234,6 +251,9 @@ export const inventoryApi = {
       body: JSON.stringify({ ids }),
     }),
   syncJob: (jobId: string) => request<ProductSyncJob>(`/api/products/sync-jobs/${jobId}`),
+  createRefreshJob: () =>
+    request<ProductRefreshJob>('/api/products/refresh-jobs', { method: 'POST' }),
+  refreshJob: (jobId: string) => request<ProductRefreshJob>(`/api/products/refresh-jobs/${jobId}`),
   exportProducts: (ids: number[]) =>
     download('/api/products/export', { method: 'POST', body: JSON.stringify({ ids }) }),
   remove: (id: number) => request<ProductRecord>(`/api/products/${id}`, { method: 'DELETE' }),

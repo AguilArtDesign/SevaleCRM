@@ -12,7 +12,8 @@ import { WooCommerceService } from '../integrations/woocommerce/woocommerce.serv
 import { RealtimeGateway } from '../realtime/realtime.gateway.js';
 import { ProductsRepository } from './products.repository.js';
 import { createInventoryWorkbook } from './product-export.js';
-import { decimalOrNull, numericChange, pricesAndStockMatch } from './product-prices.js';
+import { decimalOrNull, numericChange } from './product-prices.js';
+import { buildSiigoRefresh } from './product-siigo-refresh.js';
 
 export function serializeProduct(product: Product) {
   return {
@@ -147,62 +148,16 @@ export class ProductsService {
         },
       });
     }
-    if (siigo.priceCop === null || siigo.priceUsd === null) {
-      throw new UnprocessableEntityException({
-        success: false,
-        error: {
-          code: 'SIIGO_PRICES_INCOMPLETE',
-          message: 'Siigo no devolvió los precios COP y USD.',
-        },
-      });
-    }
-    // Las existencias negativas ya vienen normalizadas a 0 desde `normalizeProduct`; aquí solo se
-    // rechaza un stock que no sea un entero, como un decimal.
-    if (!Number.isSafeInteger(siigo.stock)) {
-      throw new UnprocessableEntityException({
-        success: false,
-        error: {
-          code: 'SIIGO_STOCK_INVALID',
-          message: 'Siigo devolvió un stock que no es un entero.',
-        },
-      });
-    }
-
-    const syncStatus = pricesAndStockMatch(
-      {
-        priceCop: siigo.priceCop,
-        priceUsd: siigo.priceUsd,
-        priceMxn: siigo.priceMxn,
-        priceEur: siigo.priceEur,
-      },
-      {
-        priceCop: decimalOrNull(product.wooPriceCop),
-        priceUsd: decimalOrNull(product.wooPriceUsd),
-        priceMxn: decimalOrNull(product.wooPriceMxn),
-        priceEur: decimalOrNull(product.wooPriceEur),
-      },
-      siigo.stock,
-      product.wooStock,
-    )
-      ? SyncStatus.SYNCED
-      : SyncStatus.OUT_OF_SYNC;
-
     const checkedAt = new Date();
-    const updated = await this.productsRepository.update(product.id, {
-      siigoPriceCop: siigo.priceCop,
-      siigoPriceUsd: siigo.priceUsd,
-      siigoPriceMxn: siigo.priceMxn,
-      siigoPriceEur: siigo.priceEur,
-      siigoStock: siigo.stock,
-      ...(siigo.warehouses !== null
-        ? {
-            siigoWarehouses: siigo.warehouses,
-            siigoWarehousesUpdatedAt: checkedAt,
-          }
-        : {}),
-      syncStatus,
-      lastCheckAt: checkedAt,
-    });
+    const refresh = buildSiigoRefresh(product, siigo, checkedAt);
+    if (!refresh.success) {
+      throw new UnprocessableEntityException({
+        success: false,
+        error: { code: refresh.code, message: refresh.message },
+      });
+    }
+
+    const updated = await this.productsRepository.update(product.id, refresh.data);
 
     this.realtime.emitProductUpdated(updated, {
       priceCop: numericChange(decimalOrNull(product.siigoPriceCop), siigo.priceCop),
@@ -211,9 +166,9 @@ export class ProductsService {
       priceEur: numericChange(decimalOrNull(product.siigoPriceEur), siigo.priceEur),
       stock: numericChange(product.siigoStock, siigo.stock),
       syncStatus:
-        product.syncStatus === syncStatus
+        product.syncStatus === refresh.syncStatus
           ? null
-          : { previous: product.syncStatus, current: syncStatus },
+          : { previous: product.syncStatus, current: refresh.syncStatus },
     });
 
     return serializeProduct(updated);
