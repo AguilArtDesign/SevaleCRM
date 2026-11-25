@@ -23,6 +23,7 @@ import { useCurrentUser } from '../users/useCurrentUser';
 import { userAvatarGradient, userAvatarSeed, userInitials } from '../users/presentation';
 import { useRealtimeUpdates } from '../realtime/useRealtimeUpdates';
 import { NotificationCenter } from '../notifications/NotificationCenter';
+import { ProductRefreshBanner } from '../inventory/ProductRefreshBanner';
 import {
   clearSessionActivity,
   useSessionSecurity,
@@ -328,6 +329,8 @@ export function AppShell() {
           </div>
 
           <div className="crm-header-actions">
+            {can('inventory.update') ? <ProductRefreshBanner /> : null}
+
             <ThemeToggle />
 
             <NotificationCenter />

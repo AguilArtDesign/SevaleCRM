@@ -161,6 +161,12 @@ export class ProductsController {
     return this.productRefreshService.create(request.auth.user.id);
   }
 
+  @Get('refresh-jobs/latest')
+  @RequirePermissions('inventory.update')
+  latestRefreshJob() {
+    return this.productRefreshService.latest();
+  }
+
   @Get('refresh-jobs/:jobId')
   @RequirePermissions('inventory.update')
   refreshJob(@Param('jobId') jobId: string) {

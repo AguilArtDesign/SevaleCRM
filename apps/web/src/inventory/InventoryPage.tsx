@@ -43,11 +43,15 @@ import {
   inventoryApi,
   type ProductFilters,
   type ProductRecord,
-  type ProductRefreshJob,
   type ProductStatusFilter,
   type ProductStore,
   type ProductSyncJob,
 } from './api';
+import {
+  isRefreshJobActive,
+  productRefreshJobQueryKey,
+  useLatestProductRefreshJob,
+} from './useProductRefreshJob';
 import { LinkProductModal } from './LinkProductModal';
 import { ProductImportModal } from './ProductImportModal';
 import {
@@ -210,21 +214,6 @@ async function waitForSyncJob(job: ProductSyncJob): Promise<ProductSyncJob> {
   return current;
 }
 
-const refreshJobFinished = (job: ProductRefreshJob) =>
-  job.status === 'COMPLETED' || job.status === 'COMPLETED_WITH_ERRORS' || job.status === 'FAILED';
-
-async function waitForRefreshJob(job: ProductRefreshJob): Promise<ProductRefreshJob> {
-  let current = job;
-  while (!refreshJobFinished(current)) {
-    await new Promise((resolve) => setTimeout(resolve, 800));
-    current = await inventoryApi.refreshJob(job.id);
-  }
-  if (current.status === 'FAILED') {
-    throw new Error(current.errorMessage || 'No se pudo completar la actualización desde Siigo.');
-  }
-  return current;
-}
-
 export function InventoryPage() {
   const queryClient = useQueryClient();
   const { user } = useCurrentUser();
@@ -254,6 +243,10 @@ export function InventoryPage() {
     enabled: isAdmin,
     staleTime: 60_000,
   });
+  // La pestaña global del shell usa la misma clave: ambas vistas siguen el mismo job.
+  const latestRefreshJobQuery = useLatestProductRefreshJob(isAdmin);
+  const refreshJob = latestRefreshJobQuery.data ?? null;
+  const isRefreshActive = isRefreshJobActive(refreshJob);
   const synchronizeProduct = useMutation({
     mutationFn: (product: ProductRecord) => inventoryApi.sync(product.id),
     onSettled: async () => queryClient.invalidateQueries({ queryKey: ['products'] }),
@@ -284,40 +277,21 @@ export function InventoryPage() {
     },
     onError: () => queryClient.invalidateQueries({ queryKey: ['products'] }),
   });
-  const refreshAllProducts = useMutation({
-    mutationFn: async () => waitForRefreshJob(await inventoryApi.createRefreshJob()),
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ['products'] });
+  const createRefreshJob = useMutation({
+    mutationFn: inventoryApi.createRefreshJob,
+    onSuccess: (job) => {
+      // El progreso y el resumen los muestra la pestaña global; aquí solo se comparte el job.
+      queryClient.setQueryData(productRefreshJobQueryKey, job);
     },
-    onError: () => queryClient.invalidateQueries({ queryKey: ['products'] }),
+    onError: (error) => {
+      toast.danger('No pudimos iniciar la actualización', { description: error.message });
+      // Si otro administrador ya tiene un barrido en curso, la pestaña debe mostrarlo.
+      void latestRefreshJobQuery.refetch();
+    },
   });
   const startProductRefresh = () => {
-    if (refreshAllProducts.isPending) return;
-    const loadingId = toast(
-      syncToastContent(
-        'Actualizando desde Siigo',
-        'Se está recorriendo el catálogo completo. Puede tardar un minuto.',
-        'default',
-      ),
-      { isLoading: true, timeout: 0 },
-    );
-    void refreshAllProducts
-      .mutateAsync()
-      .then((job) => {
-        toast.close(loadingId);
-        const summary = `${job.updated} actualizados · ${job.synced} sincronizados · ${job.outOfSync} desactualizados · ${job.discarded} descartados${job.failed > 0 ? ` · ${job.failed} con error` : ''}.`;
-        if (job.failed > 0) {
-          toast.warning(
-            syncToastContent('Actualización completada con errores', summary, 'warning'),
-          );
-          return;
-        }
-        toast.success(syncToastContent('Productos actualizados desde Siigo', summary, 'success'));
-      })
-      .catch((error: Error) => {
-        toast.close(loadingId);
-        toast.danger('No pudimos actualizar desde Siigo', { description: error.message });
-      });
+    if (isRefreshActive || createRefreshJob.isPending) return;
+    createRefreshJob.mutate();
   };
   const exportSelectedProducts = useMutation({
     mutationFn: inventoryApi.exportProducts,
@@ -669,13 +643,13 @@ export function InventoryPage() {
             <div className="inventory-heading-actions">
               <Button
                 variant="secondary"
-                isPending={refreshAllProducts.isPending}
-                isDisabled={refreshAllProducts.isPending}
+                isPending={createRefreshJob.isPending || isRefreshActive}
+                isDisabled={createRefreshJob.isPending || isRefreshActive}
                 aria-label="Actualizar todos los productos desde Siigo"
                 onPress={startProductRefresh}
               >
                 <ArrowRotateRight width={17} height={17} />
-                Actualizar
+                {isRefreshActive ? 'Actualizando…' : 'Actualizar'}
               </Button>
               {importStatusQuery.data?.enabled && (
                 <Button variant="secondary" onPress={() => setImportOpen(true)}>

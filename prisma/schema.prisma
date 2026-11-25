@@ -254,6 +254,9 @@ model ProductRefreshJob {
   status         ProductRefreshJobStatus @default(PENDING)
   /// Páginas ya solicitadas a Siigo; sirve para mostrar el avance mientras corre.
   pagesProcessed Int                     @default(0) @map("pages_processed")
+  /// Total del catálogo que informó Siigo (`pagination.total_results`); null si no vino.
+  /// Es la base del porcentaje y del tiempo restante de la pestaña de progreso.
+  totalResults   Int?                    @map("total_results")
   /// Productos recibidos del catálogo, incluidos los que no se pudieron normalizar.
   scanned        Int                     @default(0)
   /// Productos de Siigo que existen en el CRM (por `siigoId`).

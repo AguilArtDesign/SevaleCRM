@@ -97,6 +97,16 @@ export class ProductRefreshService implements OnApplicationBootstrap {
     return this.summary(job);
   }
 
+  /** El último barrido, para que la pestaña de progreso sobreviva a una recarga. */
+  async latest() {
+    const job = await this.prisma.productRefreshJob.findFirst({
+      orderBy: { createdAt: 'desc' },
+    });
+    // Se envuelve para que no exista job sea un JSON válido: un `null` pelado lo envía Nest sin
+    // cuerpo y el frontend no podría parsearlo.
+    return { job: job ? this.summary(job) : null };
+  }
+
   private schedule() {
     queueMicrotask(() => void this.drain());
   }
@@ -135,6 +145,7 @@ export class ProductRefreshService implements OnApplicationBootstrap {
 
     const counters = {
       pagesProcessed: 0,
+      totalResults: null as number | null,
       scanned: 0,
       matched: 0,
       updated: 0,
@@ -149,6 +160,11 @@ export class ProductRefreshService implements OnApplicationBootstrap {
       for (let page = 1; ; page += 1) {
         const result = await this.siigo.listProductsPage(page, PAGE_SIZE);
         counters.pagesProcessed = page;
+        // Siigo informa el total en cada página; se fija la primera vez para que el porcentaje
+        // no cambie si el catálogo se mueve durante el barrido.
+        if (counters.totalResults === null && result.total !== null) {
+          counters.totalResults = result.total;
+        }
         counters.scanned += result.received;
         // Los que Siigo devolvió con una forma inesperada tampoco tienen vínculo posible.
         counters.discarded += result.received - result.products.length;
@@ -232,6 +248,8 @@ export class ProductRefreshService implements OnApplicationBootstrap {
       id: job.id,
       status: job.status,
       pagesProcessed: job.pagesProcessed,
+      totalResults: job.totalResults,
+      totalPages: job.totalResults === null ? null : Math.ceil(job.totalResults / PAGE_SIZE),
       scanned: job.scanned,
       matched: job.matched,
       updated: job.updated,

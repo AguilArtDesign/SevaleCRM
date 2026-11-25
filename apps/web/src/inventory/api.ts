@@ -80,6 +80,8 @@ export type ProductRefreshJob = {
   id: string;
   status: 'PENDING' | 'RUNNING' | 'COMPLETED' | 'COMPLETED_WITH_ERRORS' | 'FAILED';
   pagesProcessed: number;
+  totalResults: number | null;
+  totalPages: number | null;
   scanned: number;
   matched: number;
   updated: number;
@@ -254,6 +256,8 @@ export const inventoryApi = {
   createRefreshJob: () =>
     request<ProductRefreshJob>('/api/products/refresh-jobs', { method: 'POST' }),
   refreshJob: (jobId: string) => request<ProductRefreshJob>(`/api/products/refresh-jobs/${jobId}`),
+  latestRefreshJob: () =>
+    request<{ job: ProductRefreshJob | null }>('/api/products/refresh-jobs/latest'),
   exportProducts: (ids: number[]) =>
     download('/api/products/export', { method: 'POST', body: JSON.stringify({ ids }) }),
   remove: (id: number) => request<ProductRecord>(`/api/products/${id}`, { method: 'DELETE' }),

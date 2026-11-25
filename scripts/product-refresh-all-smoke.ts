@@ -133,6 +133,8 @@ type RefreshJobResponse = {
   id: string;
   status: 'PENDING' | 'RUNNING' | 'COMPLETED' | 'COMPLETED_WITH_ERRORS' | 'FAILED';
   pagesProcessed: number;
+  totalResults: number | null;
+  totalPages: number | null;
   scanned: number;
   matched: number;
   updated: number;
@@ -306,6 +308,8 @@ try {
   const jobPath = '/api/products/refresh-jobs';
   expectStatus(await api(jobPath, undefined, { method: 'POST' }), 401, 'Barrido anónimo');
   expectStatus(await api(jobPath, commercialCookie, { method: 'POST' }), 403, 'Barrido comercial');
+  expectStatus(await api(`${jobPath}/latest`, undefined), 401, 'Último barrido anónimo');
+  expectStatus(await api(`${jobPath}/latest`, commercialCookie), 403, 'Último barrido comercial');
 
   // Un trabajo pendiente ya en la base rechaza otro: dos barridos en paralelo duplicarían el cupo.
   const pending = await prisma.productRefreshJob.create({
@@ -329,6 +333,8 @@ try {
   if (
     job.status !== 'COMPLETED' ||
     job.pagesProcessed !== 2 ||
+    job.totalResults !== 102 ||
+    job.totalPages !== 2 ||
     job.scanned !== 102 ||
     job.matched !== 3 ||
     job.updated !== 3 ||
@@ -352,6 +358,21 @@ try {
     throw new Error(
       `El barrido no recorrió las páginas esperadas: ${JSON.stringify(requestedPages)}.`,
     );
+  }
+
+  const latestResponse = await api(`${jobPath}/latest`, adminCookie);
+  expectStatus(latestResponse, 200, 'Último barrido');
+  const latestBody = (await latestResponse.json()) as { job: RefreshJobResponse | null };
+  const latest = latestBody.job;
+  if (
+    !latest ||
+    latest.id !== job.id ||
+    latest.status !== 'COMPLETED' ||
+    latest.totalResults !== 102 ||
+    latest.totalPages !== 2 ||
+    latest.updated !== 3
+  ) {
+    throw new Error(`El último barrido no coincide con el terminado: ${JSON.stringify(latest)}.`);
   }
 
   const afterMatch = await prisma.product.findUniqueOrThrow({ where: { id: matchProduct.id } });

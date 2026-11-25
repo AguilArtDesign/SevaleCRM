@@ -564,6 +564,132 @@ select {
   gap: 0.45rem;
 }
 
+/* Progreso global del barrido de Siigo: modal xs, backdrop transparente y píldora minimizada. */
+.product-refresh-pill {
+  display: inline-flex;
+  flex: 0 0 auto;
+  width: auto;
+  min-width: 2rem;
+  height: 2rem;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0 0.65rem;
+  color: var(--foreground);
+  font: inherit;
+  font-size: 0.75rem;
+  white-space: nowrap;
+  background: var(--surface-secondary);
+  border: 0;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.product-refresh-pill:hover,
+.product-refresh-pill:active {
+  background: color-mix(in oklch, var(--foreground) 13%, var(--surface));
+}
+
+.product-refresh-pill strong {
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.product-refresh-pill > span {
+  color: var(--muted);
+}
+
+.product-refresh-icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+}
+
+.product-refresh-icon--progress {
+  color: var(--accent);
+}
+
+.product-refresh-icon--success {
+  color: var(--success);
+}
+
+.product-refresh-icon--danger {
+  color: var(--danger);
+}
+
+.product-refresh-modal {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.product-refresh-progress-label {
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.product-refresh-progress-output {
+  padding-right: 1.5rem;
+  font-size: 1rem;
+  font-weight: 400;
+  font-variant-numeric: normal;
+}
+
+.product-refresh-pages {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.product-refresh-separator {
+  margin: 0;
+}
+
+.product-refresh-summary-section {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.product-refresh-summary-title {
+  margin: 0;
+  color: var(--foreground);
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.product-refresh-summary {
+  display: grid;
+  margin: 0;
+  padding: 0.85rem 1rem;
+  background: var(--surface-secondary);
+  border-radius: var(--field-radius);
+  gap: 0.55rem;
+}
+
+.product-refresh-summary-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.product-refresh-summary-row dt {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.product-refresh-summary-row dd {
+  margin: 0;
+  color: var(--foreground);
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+@media (max-width: 600px) {
+  .product-refresh-pill > span {
+    display: none;
+  }
+}
+
 .shell-popover {
   width: min(20rem, calc(100vw - 2rem));
 }
