@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Avatar, Button, Popover, Skeleton, Tabs } from '@heroui/react';
 import { Bell, Boxes3, Check, CheckDouble, ShoppingCart } from '@gravity-ui/icons';
 import { Chip } from '../components/Chip';
+import { ProductImage } from '../components/ProductImage';
 import { customerAvatarStyle, customerInitials } from '../customers/presentation';
 import { userAvatarGradient, userAvatarSeed, userInitials } from '../users/presentation';
 import { notificationsApi, type NotificationRecord, type NotificationStatus } from './api';
@@ -128,13 +129,13 @@ export function NotificationCenter() {
                     {customerInitials(notification.customer)}
                   </Avatar.Fallback>
                 </Avatar>
+              ) : notification.product ? (
+                <span className="notification-product-image" aria-hidden="true">
+                  <ProductImage src={notification.product.imageUrl} />
+                </span>
               ) : (
                 <span className="notification-product-image" aria-hidden="true">
-                  {notification.product?.imageUrl ? (
-                    <img src={notification.product.imageUrl} alt="" />
-                  ) : (
-                    <Boxes3 width={20} height={20} />
-                  )}
+                  <Boxes3 width={20} height={20} />
                 </span>
               )}
               <div className="notification-copy">
