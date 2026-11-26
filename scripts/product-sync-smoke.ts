@@ -296,7 +296,6 @@ try {
     stock_quantity: 27,
     manage_stock: true,
     meta_data: [
-      { key: '_regular_price_wmcp', value: '{"USD":"23"}' },
       {
         key: 'yay_currency_custom_fixed_prices',
         value: { USD: { regular_price: '23', sale_price: '', price: '23' } },
@@ -354,7 +353,6 @@ try {
     stock_quantity: 27,
     manage_stock: true,
     meta_data: [
-      { key: '_regular_price_wmcp', value: '{"USD":"23","MXN":"847","EUR":"45"}' },
       {
         key: 'yay_currency_custom_fixed_prices',
         value: {

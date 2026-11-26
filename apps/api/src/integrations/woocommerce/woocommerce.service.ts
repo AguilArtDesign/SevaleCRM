@@ -276,17 +276,7 @@ function normalizeOrderSnapshot(value: unknown): WooCommerceOrderSnapshot | null
   };
 }
 
-const WMCP_PRICE_META_KEY = '_regular_price_wmcp';
 const YAY_CURRENCY_PRICE_META_KEY = 'yay_currency_custom_fixed_prices';
-
-/** Las monedas adicionales viajan como texto, igual que el USD, y se omiten cuando no hay dato. */
-function wmcpPriceValue(update: WooCommerceBatchProductUpdate) {
-  return JSON.stringify({
-    USD: String(update.priceUsd),
-    ...(update.priceMxn === null ? {} : { MXN: String(update.priceMxn) }),
-    ...(update.priceEur === null ? {} : { EUR: String(update.priceEur) }),
-  });
-}
 
 /** YayCurrency pide cada moneda como objeto y los precios como texto, sin venta. */
 function yayCurrencyPrice(value: number) {
@@ -294,7 +284,7 @@ function yayCurrencyPrice(value: number) {
   return { regular_price: price, sale_price: '', price };
 }
 
-/** Mismo criterio de omisión que `wmcpPriceValue`: USD siempre, MXN/EUR solo si tienen dato. */
+/** Mismo criterio de omisión: USD siempre, MXN/EUR solo si tienen dato. */
 function yayCurrencyPriceValue(update: WooCommerceBatchProductUpdate) {
   return {
     USD: yayCurrencyPrice(update.priceUsd),
@@ -303,15 +293,9 @@ function yayCurrencyPriceValue(update: WooCommerceBatchProductUpdate) {
   };
 }
 
-/**
- * Las dos claves viajan siempre en la misma petición: la antigua mantiene el plugin actual y la
- * nueva deja los datos listos para YayCurrency.
- */
+/** Las monedas adicionales viajan en la única meta que entiende YayCurrency. */
 function priceMetaData(update: WooCommerceBatchProductUpdate) {
-  return [
-    { key: WMCP_PRICE_META_KEY, value: wmcpPriceValue(update) },
-    { key: YAY_CURRENCY_PRICE_META_KEY, value: yayCurrencyPriceValue(update) },
-  ];
+  return [{ key: YAY_CURRENCY_PRICE_META_KEY, value: yayCurrencyPriceValue(update) }];
 }
 
 function updateBody(update: WooCommerceBatchProductUpdate) {
@@ -323,7 +307,7 @@ function updateBody(update: WooCommerceBatchProductUpdate) {
   };
 }
 
-type WmcpPrices = {
+type StoreCurrencyPrices = {
   priceUsd: number | null;
   priceMxn: number | null;
   priceEur: number | null;
@@ -331,13 +315,28 @@ type WmcpPrices = {
 };
 
 /**
- * La tienda guarda las tres monedas en un mismo meta serializado. USD conserva la advertencia de
- * siempre; MXN y EUR ausentes son un nulo normal, porque la tienda puede no haberlos publicado.
+ * YayCurrency guarda un objeto por moneda. El precio publicado es `regular_price`; `price` es el
+ * efectivo (con descuento aplicado) y solo se usa cuando la entrada no trae precio habitual.
  */
-function wmcpPrices(metaData: unknown): WmcpPrices {
-  const empty: WmcpPrices = { priceUsd: null, priceMxn: null, priceEur: null, invalid: false };
+function currencyPrice(entry: unknown): number | null {
+  if (!isRecord(entry)) return null;
+  return finiteNumber(entry.regular_price) ?? finiteNumber(entry.price);
+}
+
+/**
+ * La tienda publica las tres monedas en la meta de YayCurrency. USD conserva la advertencia de
+ * siempre; MXN y EUR ausentes son un nulo normal, porque la tienda puede no haberlos publicado.
+ * El valor llega como objeto desde REST, pero se admite también el JSON serializado.
+ */
+function yayCurrencyPrices(metaData: unknown): StoreCurrencyPrices {
+  const empty: StoreCurrencyPrices = {
+    priceUsd: null,
+    priceMxn: null,
+    priceEur: null,
+    invalid: false,
+  };
   if (!Array.isArray(metaData)) return empty;
-  const entry = metaData.filter(isRecord).find((item) => item.key === WMCP_PRICE_META_KEY);
+  const entry = metaData.filter(isRecord).find((item) => item.key === YAY_CURRENCY_PRICE_META_KEY);
   if (!entry || entry.value === null || entry.value === '') return empty;
   let value: unknown = entry.value;
   if (typeof value === 'string') {
@@ -348,11 +347,11 @@ function wmcpPrices(metaData: unknown): WmcpPrices {
     }
   }
   if (!isRecord(value)) return { ...empty, invalid: true };
-  const priceUsd = finiteNumber(value.USD);
+  const priceUsd = currencyPrice(value.USD);
   return {
     priceUsd,
-    priceMxn: finiteNumber(value.MXN),
-    priceEur: finiteNumber(value.EUR),
+    priceMxn: currencyPrice(value.MXN),
+    priceEur: currencyPrice(value.EUR),
     invalid: priceUsd === null,
   };
 }
@@ -379,20 +378,20 @@ function normalizeProduct(
   const sku = typeof value.sku === 'string' ? value.sku.trim() : '';
   const productName = typeof value.name === 'string' ? value.name.trim() : '';
   if (!variationId || !sku || sku.toUpperCase() !== requestedSku.toUpperCase()) return null;
-  const wmcp = wmcpPrices(value.meta_data);
+  const storePrices = yayCurrencyPrices(value.meta_data);
   return {
     store,
     parentId,
     variationId,
     sku,
     priceCop: finiteNumber(value.price ?? value.regular_price),
-    priceUsd: wmcp.priceUsd,
-    priceMxn: wmcp.priceMxn,
-    priceEur: wmcp.priceEur,
+    priceUsd: storePrices.priceUsd,
+    priceMxn: storePrices.priceMxn,
+    priceEur: storePrices.priceEur,
     stock: finiteNumber(value.stock_quantity),
     productName,
     imageUrl: imageUrl(value),
-    dataWarnings: wmcp.invalid ? ['INVALID_USD_PRICE'] : [],
+    dataWarnings: storePrices.invalid ? ['INVALID_USD_PRICE'] : [],
   };
 }
 

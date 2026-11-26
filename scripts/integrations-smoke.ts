@@ -110,8 +110,12 @@ const upstream = createServer((request, response) => {
         image: { src: 'https://example.invalid/product.jpg' },
         meta_data: [
           {
-            key: '_regular_price_wmcp',
-            value: '{"USD":"22.5","MXN":"847","EUR":"45"}',
+            key: 'yay_currency_custom_fixed_prices',
+            value: {
+              USD: { regular_price: '22.5', sale_price: '', price: '22.5' },
+              MXN: { regular_price: '847', sale_price: '', price: '847' },
+              EUR: { regular_price: '45', sale_price: '', price: '45' },
+            },
           },
         ],
       },
@@ -126,7 +130,7 @@ const upstream = createServer((request, response) => {
         regular_price: '92000',
         stock_quantity: null,
         images: [{ src: 'https://example.invalid/pali.jpg' }],
-        meta_data: [{ key: '_regular_price_wmcp', value: '{invalid-json' }],
+        meta_data: [{ key: 'yay_currency_custom_fixed_prices', value: '{invalid-json' }],
       },
     ]);
   } else {

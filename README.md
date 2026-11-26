@@ -88,13 +88,11 @@ En la tabla el precio principal es COP y un botón junto a él abre las cuatro m
 
 El estado de sincronización compara **las cuatro monedas y el stock**: coinciden los cuatro precios y las unidades, o el producto queda desactualizado. Un nulo contra un nulo cuenta como igual; un nulo contra un número es una diferencia, que es justo lo que pasa cuando Siigo ya tiene MXN y la tienda todavía no.
 
-Cada sincronización envía las monedas adicionales en dos meta claves a la vez. `_regular_price_wmcp`
-conserva el formato serializado que usa el plugin de multiconeda actual; `yay_currency_custom_fixed_prices`
-lleva el mismo dato en el formato de YayCurrency, con un objeto por moneda y los precios como texto:
+Cada sincronización envía las monedas adicionales en la meta `yay_currency_custom_fixed_prices`, con un
+objeto por moneda y los precios como texto:
 
 ```json
 [
-  { "key": "_regular_price_wmcp", "value": "{\"USD\":\"50\",\"MXN\":\"847\",\"EUR\":\"45\"}" },
   {
     "key": "yay_currency_custom_fixed_prices",
     "value": {
@@ -106,13 +104,13 @@ lleva el mismo dato en el formato de YayCurrency, con un objeto por moneda y los
 ]
 ```
 
-Mientras una moneda no exista, su clave se omite en ambas entradas en lugar de enviarse vacía; USD
-siempre viaja. COP sigue siendo el `regular_price` superior y no aparece en ninguno de los dos metas.
-La escritura dual permite cambiar de plugin sin repoblar precios; antes de activar YayCurrency hay que
-sincronizar todos los productos para que cada uno tenga ya su clave nueva.
+Mientras una moneda no exista, su clave se omite en lugar de enviarse vacía; USD siempre viaja. COP
+sigue siendo el `regular_price` superior y no aparece en la meta. El CRM también lee esta meta —toma
+`regular_price` de cada moneda— y ya no usa `_regular_price_wmcp`, la clave serializada del plugin
+anterior: el valor que WooCommerce aún devuelva en ella es residuo y se ignora.
 
-El flujo de n8n que también escribe precios en WooCommerce envía las mismas dos claves (ver «Webhook
-interno de n8n»). Mientras la escritura dual esté vigente, ambos escritores deben mantenerlas.
+El flujo de n8n que también escribe precios en WooCommerce envía esa misma meta (ver «Webhook interno
+de n8n»). Ambos escritores deben mantener el mismo formato.
 
 ### Bodegas del stock
 
@@ -304,7 +302,7 @@ El payload aceptado es estricto y normalizado:
 
 `siigo_warehouses` acepta `id` y `quantity` por bodega; `name` es **opcional** y solo se usa como respaldo si el id todavía no está en el glosario del CRM. `id: -1` es válido para «Sin asignar», `quantity` debe ser un entero, los valores negativos se normalizan a 0 y los ceros se descartan al guardar. Si el campo se omite, el snapshot anterior se conserva; si se envía `[]`, se limpia. El flujo de n8n vive fuera de este repositorio y debe reenviar `products[].warehouses` de Siigo con esos ids y cantidades.
 
-El nodo de n8n que actualiza productos en WooCommerce envía también las dos meta claves de precios descritas en «Monedas del producto»: `_regular_price_wmcp` y `yay_currency_custom_fixed_prices`, con el mismo criterio de omitir MXN/EUR cuando no hay dato. Al activar YayCurrency se retira `_regular_price_wmcp` del payload de n8n y del CRM, y el CRM pasa a leer la clave nueva; hasta entonces ambos escritores mantienen las dos.
+El nodo de n8n que actualiza productos en WooCommerce envía también la meta de precios descrita en «Monedas del producto»: `yay_currency_custom_fixed_prices`, con el mismo criterio de omitir MXN/EUR cuando no hay dato. `_regular_price_wmcp` ya no se escribe ni se lee: era la clave serializada del plugin anterior.
 
 La API busca el enlace por `siigo_id`, comprueba que el SKU coincida, actualiza los precios de Siigo y el stock, registra `last_check_at` y recalcula `sync_status` comparando las cuatro monedas y el stock contra los valores WooCommerce almacenados. Si el payload trae `siigo_warehouses`, también actualiza el snapshot; un cambio solo de bodegas no altera `sync_status`, no crea notificaciones y no toca WooCommerce. La respuesta incluye el producto normalizado (con `siigoWarehouses` usando los nombres visibles del glosario y `siigoWarehousesUpdatedAt`) y los cambios reales detectados. No se modifican las tiendas externas.
 

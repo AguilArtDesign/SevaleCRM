@@ -84,7 +84,16 @@ function wooProduct(sku: string, store: 'seratus' | 'pali') {
     price: '87500',
     stock_quantity: 12,
     image: { src: `https://example.invalid/${store}-${sku}.jpg` },
-    meta_data: [{ key: '_regular_price_wmcp', value: '{"USD":"21.75","MXN":"847","EUR":"45"}' }],
+    meta_data: [
+      {
+        key: 'yay_currency_custom_fixed_prices',
+        value: {
+          USD: { regular_price: '21.75', sale_price: '', price: '21.75' },
+          MXN: { regular_price: '847', sale_price: '', price: '847' },
+          EUR: { regular_price: '45', sale_price: '', price: '45' },
+        },
+      },
+    ],
   };
 }
 
