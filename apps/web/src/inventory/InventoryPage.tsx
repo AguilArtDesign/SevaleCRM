@@ -38,6 +38,7 @@ import {
 } from '@gravity-ui/icons';
 import { Chip } from '../components/Chip';
 import { getPaginationItems, Pagination } from '../components/Pagination';
+import { ProductImage } from '../components/ProductImage';
 import { Select } from '../components/Select';
 import {
   inventoryApi,
@@ -355,11 +356,7 @@ export function InventoryPage() {
         cell: ({ row }) => (
           <div className="inventory-product-cell">
             <span className="product-thumbnail" aria-hidden="true">
-              {row.original.imageUrl ? (
-                <img src={row.original.imageUrl} alt="" loading="lazy" />
-              ) : (
-                <Boxes3 width={20} height={20} />
-              )}
+              <ProductImage src={row.original.imageUrl} loading="lazy" />
             </span>
             <div className="inventory-product-copy">
               <span className="inventory-product-name">{row.original.productName}</span>
@@ -1145,11 +1142,7 @@ function ProductDetail({ product }: { product: ProductRecord }) {
     <div className="product-detail-body">
       <div className="product-detail-product">
         <span className="product-detail-image" aria-hidden="true">
-          {product.imageUrl ? (
-            <img src={product.imageUrl} alt="" />
-          ) : (
-            <Boxes3 width={28} height={28} />
-          )}
+          <ProductImage src={product.imageUrl} />
         </span>
         <div>
           <strong>{product.productName}</strong>

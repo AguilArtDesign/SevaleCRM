@@ -1,9 +1,10 @@
 import { useState, type FormEvent, type ReactNode } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Alert, Button, Modal, Skeleton, Spinner, TextField, Typography } from '@heroui/react';
-import { Boxes3, Link, Magnifier, TriangleExclamation, Xmark } from '@gravity-ui/icons';
+import { Link, Magnifier, TriangleExclamation, Xmark } from '@gravity-ui/icons';
 import { Chip } from '../components/Chip';
 import { Input } from '../components/Input';
+import { ProductImage } from '../components/ProductImage';
 import { inventoryApi, type ProductLinkPreview, type ProductSyncStatus } from './api';
 import { formatCurrencyPrice, inventoryCurrencies, type InventoryPriceKey } from './presentation';
 import { StockChip } from './StockChip';
@@ -98,11 +99,7 @@ function Preview({ preview }: { preview: ProductLinkPreview }) {
     <div className="link-preview product-detail-body">
       <div className="product-detail-product">
         <span className="product-detail-image" aria-hidden="true">
-          {preview.store.imageUrl ? (
-            <img src={preview.store.imageUrl} alt="" />
-          ) : (
-            <Boxes3 width={28} height={28} />
-          )}
+          <ProductImage src={preview.store.imageUrl} />
         </span>
         <div>
           <strong>{preview.store.productName || preview.siigo.name}</strong>
